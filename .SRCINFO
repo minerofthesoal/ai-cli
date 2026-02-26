@@ -1,0 +1,19 @@
+pkgbase = ai-cli
+	pkgdesc = Universal AI CLI · TUI · Fine-tune · Canvas · TTM/MTM/Mtm with GGUF·PyTorch·Diffusers·OpenAI·Claude·Gemini
+	pkgver = 2.4.0
+	pkgrel = 1
+	url = https://github.com/minerofthesoal/ai-cli
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = git
+	depends = bash
+	depends = python>=3.10
+	depends = curl
+	depends = jq
+	optdepends = cuda: GPU acceleration support
+	optdepends = rocm-hip-runtime: AMD GPU support
+	source = ai-cli::git+https://github.com/minerofthesoal/ai-cli.git#tag=v2.4.0
+	sha256sums = SKIP
+
+pkgname = ai-cli
