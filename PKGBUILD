@@ -1,4 +1,4 @@
-# Maintainer: minerofthesoal <https://github.com/minerofthesoal>
+# Maintainer: minerofthesoal <minerofthesoal@users.noreply.github.com>
 # AUR package: ai-cli
 # Install:  yay -S ai-cli
 # Manual:   makepkg -si
@@ -70,7 +70,7 @@ _pick_script() {
                 [[ -f "${f}" ]] || continue
                 # Extract version numbers from filename
                 local ver_str
-                ver_str=$(basename "${f}" | grep -oP '\d+\.\d+(?:\.\d+)?')
+                ver_str=$(basename "${f}" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?')
                 IFS='.' read -r -a ver <<< "${ver_str}"
                 if (( ${ver[0]:-0} > ${best_ver[0]:-0} )) || \
                    (( ${ver[0]:-0} == ${best_ver[0]:-0} && ${ver[1]:-0} > ${best_ver[1]:-0} )) || \
@@ -91,7 +91,7 @@ _pick_script() {
         # Skip arm64-specific builds for non-arm64 targets
         [[ "${f}" == *-arm64 ]] && [[ "${CARCH}" != "aarch64" ]] && continue
         local ver_str
-        ver_str=$(basename "${f}" | grep -oP '\d+\.\d+(?:\.\d+)?')
+        ver_str=$(basename "${f}" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?')
         IFS='.' read -r -a ver <<< "${ver_str}"
         if (( ${ver[0]:-0} > ${best_ver[0]:-0} )) || \
            (( ${ver[0]:-0} == ${best_ver[0]:-0} && ${ver[1]:-0} > ${best_ver[1]:-0} )) || \
@@ -117,7 +117,7 @@ package() {
     msg2 "Selected script: $(basename "${script}")"
 
     # Main binary
-    install -Dm755 "${script}" "${pkgdir}/usr/local/bin/ai"
+    install -Dm755 "${script}" "${pkgdir}/usr/bin/ai"
 
     # Python installer
     [[ -f "${src}/install.py" ]] && \
