@@ -1,15 +1,16 @@
 # Maintainer: minerofthesoal <https://github.com/minerofthesoal>
 # AUR package: ai-cli
-# Install:  yay -S ai-cli   OR   sudo pacman -S ai-cli  (once in AUR)
+# Install:  yay -S ai-cli
 # Manual:   makepkg -si
 
 pkgname=ai-cli
 pkgver=2.6
 pkgrel=1
-pkgdesc="Universal AI shell — chat, vision, RLHF, LoRA, TTM, GPU/CPU, rclick, GUI"
+pkgdesc="Universal AI shell - chat, vision, RLHF, LoRA fine-tune, TTM, GPU/CPU, rclick, GUI"
 arch=('x86_64' 'aarch64' 'armv7h')
 url="https://github.com/minerofthesoal/ai-cli"
 license=('MIT')
+install=ai-cli.install
 depends=(
     'bash'
     'python'
@@ -18,120 +19,116 @@ depends=(
     'curl'
 )
 optdepends=(
-    'python-torch: PyTorch inference / training'
+    'python-torch: PyTorch inference and training'
     'python-transformers: HuggingFace model support'
-    'python-peft: LoRA fine-tuning'
-    'python-trl: SFT / DPO / PPO training'
-    'python-datasets: HuggingFace datasets'
-    'ffmpeg: audio/video support'
-    'xclip: X11 clipboard (rclick text selection)'
-    'wl-clipboard: Wayland clipboard (rclick text selection)'
-    'zenity: GUI dialogs (rclick action menu)'
-    'kdialog: KDE dialogs (rclick action menu)'
-    'yad: YAD dialogs (alternative to zenity)'
-    'tk: Python Tkinter dialogs fallback'
+    'python-peft: LoRA fine-tuning (AUR)'
+    'python-trl: SFT/DPO/PPO training (AUR)'
+    'python-datasets: HuggingFace datasets (AUR)'
+    'ffmpeg: audio and video support'
+    'xclip: X11 clipboard for rclick text selection'
+    'wl-clipboard: Wayland clipboard for rclick text selection'
+    'zenity: GUI dialogs for rclick action menu'
+    'kdialog: KDE dialogs for rclick action menu'
+    'yad: alternative dialog tool'
+    'tk: Python Tkinter dialog fallback'
     'xdotool: X11 key simulation'
     'libnotify: desktop notifications'
-    'nvml: NVIDIA GPU detection'
+    'cuda: NVIDIA GPU acceleration'
 )
-provides=('ai-cli' 'ai')
+provides=('ai-cli')
 conflicts=('ai-cli-git')
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/heads/claude/cpu-windows-llm-api-uiTei.tar.gz")
-sha256sums=('SKIP')
-
-# Override source for local builds
-_local_src="${SRCDEST}/${pkgname}-local"
+b2sums=('SKIP')
 
 prepare() {
-    # If building from local source (dev mode), use that
-    if [[ -d "$_local_src" ]]; then
-        cp -r "$_local_src" "${srcdir}/${pkgname}-${pkgver}"
+    # Verify the expected directory exists after extraction
+    local src="${srcdir}/ai-cli-claude-cpu-windows-llm-api-uiTei"
+    if [[ ! -d "${src}" ]]; then
+        # GitHub renames the directory; find whatever was extracted
+        local extracted
+        extracted=$(find "${srcdir}" -maxdepth 1 -type d -name 'ai-cli*' | head -1)
+        [[ -z "${extracted}" ]] && { error "Source directory not found after extraction"; return 1; }
+        mv "${extracted}" "${src}"
     fi
 }
 
 build() {
-    # Nothing to compile — pure shell script
+    # Pure shell script — nothing to compile
     :
 }
 
 _pick_script() {
-    # Pick the best script for this architecture
     local src="${srcdir}/ai-cli-claude-cpu-windows-llm-api-uiTei"
-    [[ -d "${src}" ]] || src="${srcdir}/${pkgname}-${pkgver}"
+
+    local best=""
+    local best_ver=(0 0 0)
 
     case "${CARCH}" in
         aarch64)
-            # Prefer ARM64-specific build
-            local arm64_script
-            arm64_script=$(ls "${src}"/main-v*-arm64 2>/dev/null | sort -V | tail -1)
-            if [[ -n "${arm64_script}" ]]; then
-                echo "${arm64_script}"
-                return
-            fi
+            # Prefer arm64-specific builds on aarch64
+            for f in "${src}"/main-v*-arm64; do
+                [[ -f "${f}" ]] || continue
+                # Extract version numbers from filename
+                local ver_str
+                ver_str=$(basename "${f}" | grep -oP '\d+\.\d+(?:\.\d+)?')
+                IFS='.' read -r -a ver <<< "${ver_str}"
+                if (( ${ver[0]:-0} > ${best_ver[0]:-0} )) || \
+                   (( ${ver[0]:-0} == ${best_ver[0]:-0} && ${ver[1]:-0} > ${best_ver[1]:-0} )) || \
+                   (( ${ver[0]:-0} == ${best_ver[0]:-0} && ${ver[1]:-0} == ${best_ver[1]:-0} && ${ver[2]:-0} >= ${best_ver[2]:-0} )); then
+                    best="${f}"
+                    best_ver=("${ver[@]}")
+                fi
+            done
+            [[ -n "${best}" ]] && { echo "${best}"; return 0; }
             ;;
     esac
 
-    # Generic / x86_64 / armv7h: pick latest main-v* without -arm64 suffix
-    local generic_script
-    generic_script=$(ls "${src}"/main-v* 2>/dev/null | grep -v '\-arm64$' | sort -V | tail -1)
-    echo "${generic_script}"
+    # x86_64 / armv7h / aarch64 fallback: pick highest-versioned generic script
+    best=""
+    best_ver=(0 0 0)
+    for f in "${src}"/main-v*; do
+        [[ -f "${f}" ]] || continue
+        # Skip arm64-specific builds for non-arm64 targets
+        [[ "${f}" == *-arm64 ]] && [[ "${CARCH}" != "aarch64" ]] && continue
+        local ver_str
+        ver_str=$(basename "${f}" | grep -oP '\d+\.\d+(?:\.\d+)?')
+        IFS='.' read -r -a ver <<< "${ver_str}"
+        if (( ${ver[0]:-0} > ${best_ver[0]:-0} )) || \
+           (( ${ver[0]:-0} == ${best_ver[0]:-0} && ${ver[1]:-0} > ${best_ver[1]:-0} )) || \
+           (( ${ver[0]:-0} == ${best_ver[0]:-0} && ${ver[1]:-0} == ${best_ver[1]:-0} && ${ver[2]:-0} >= ${best_ver[2]:-0} )); then
+            best="${f}"
+            best_ver=("${ver[@]}")
+        fi
+    done
+
+    echo "${best}"
 }
 
 package() {
     local src="${srcdir}/ai-cli-claude-cpu-windows-llm-api-uiTei"
-    [[ -d "${src}" ]] || src="${srcdir}/${pkgname}-${pkgver}"
 
     local script
     script=$(_pick_script)
     if [[ -z "${script}" || ! -f "${script}" ]]; then
-        error "No main-v* script found in source directory"
+        error "No main-v* script found in source directory: ${src}"
         return 1
     fi
 
-    msg2 "Selected script: $(basename ${script})"
+    msg2 "Selected script: $(basename "${script}")"
 
-    # Install the main 'ai' binary
+    # Main binary
     install -Dm755 "${script}" "${pkgdir}/usr/local/bin/ai"
 
-    # Install the Python installer
-    if [[ -f "${src}/install.py" ]]; then
+    # Python installer
+    [[ -f "${src}/install.py" ]] && \
         install -Dm755 "${src}/install.py" "${pkgdir}/usr/share/ai-cli/install.py"
-    fi
 
-    # Install PKGBUILD for reference
-    install -Dm644 "${src}/PKGBUILD" "${pkgdir}/usr/share/ai-cli/PKGBUILD" 2>/dev/null || true
+    # README
+    [[ -f "${src}/README.md" ]] && \
+        install -Dm644 "${src}/README.md" "${pkgdir}/usr/share/doc/${pkgname}/README.md"
 
-    # Install README if present
-    if [[ -f "${src}/README.md" ]]; then
-        install -Dm644 "${src}/README.md" "${pkgdir}/usr/share/doc/ai-cli/README.md"
-    fi
-
-    # Create config directory placeholder
-    install -dm755 "${pkgdir}/etc/ai-cli"
-
-    # Post-install message
-    msg2 "Run 'ai install-deps' after installing to set up Python dependencies"
-    msg2 "Run 'ai recommended' to browse and download AI models"
-    msg2 "Run 'ai -gui' to launch the interactive TUI"
-}
-
-post_install() {
-    echo ""
-    echo "  AI CLI v${pkgver} installed!"
-    echo ""
-    echo "  Run these commands to get started:"
-    echo "    ai install-deps      # Install Python deps (torch, transformers, etc.)"
-    echo "    ai recommended       # Browse curated models"
-    echo "    ai ask \"Hello!\"    # Test it out"
-    echo "    ai -gui              # Launch TUI"
-    echo "    ai project new work  # Create a project with memory"
-    echo "    ai help              # See all commands"
-    echo ""
-}
-
-post_upgrade() {
-    echo ""
-    echo "  AI CLI upgraded to v${pkgver}"
-    echo "  Run 'ai install-deps' to update Python dependencies"
-    echo ""
+    # License placeholder (add LICENSE file to repo to satisfy AUR checkers)
+    install -dm755 "${pkgdir}/usr/share/licenses/${pkgname}"
+    printf 'MIT License\nCopyright (c) 2024 minerofthesoal\n' \
+        > "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }

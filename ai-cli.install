@@ -1,0 +1,34 @@
+post_install() {
+    echo ""
+    echo "  ╔══════════════════════════════════════════════════╗"
+    echo "  ║  AI CLI v2.6 installed!                         ║"
+    echo "  ╚══════════════════════════════════════════════════╝"
+    echo ""
+    echo "  Getting started:"
+    echo "    ai install-deps      # install Python deps (torch, transformers...)"
+    echo "    ai recommended       # browse and download curated models"
+    echo "    ai ask \"Hello!\"      # test it out"
+    echo "    ai -gui              # launch interactive TUI"
+    echo "    ai project new work  # create a project with persistent memory"
+    echo "    ai help              # see all commands"
+    echo ""
+    echo "  For NVIDIA GPUs: ai status  (shows CUDA arch detection)"
+    echo "  For AUR Python deps: yay -S python-trl python-peft python-datasets"
+    echo ""
+}
+
+post_upgrade() {
+    echo ""
+    echo "  AI CLI upgraded to v2.6"
+    echo "  Run 'ai install-deps' to refresh Python dependencies if needed."
+    echo ""
+}
+
+pre_remove() {
+    # Warn user that config/models are not removed
+    echo ""
+    echo "  Note: AI CLI config and downloaded models are kept at:"
+    echo "    ~/.config/ai-cli/   and   ~/.ai-cli/models/"
+    echo "  Remove them manually if no longer needed."
+    echo ""
+}
