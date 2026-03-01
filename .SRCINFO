@@ -1,19 +1,37 @@
 pkgbase = ai-cli
-	pkgdesc = Universal AI CLI · TUI · Fine-tune · Canvas · TTM/MTM/Mtm with GGUF·PyTorch·Diffusers·OpenAI·Claude·Gemini
-	pkgver = 2.4.0
+	pkgdesc = Universal AI shell - chat, vision, RLHF, LoRA fine-tune, TTM, GPU/CPU, rclick, GUI
+	pkgver = 2.6.0.1
 	pkgrel = 1
 	url = https://github.com/minerofthesoal/ai-cli
 	arch = x86_64
 	arch = aarch64
+	arch = armv7h
 	license = MIT
-	makedepends = git
+	install = ai-cli.install
 	depends = bash
-	depends = python>=3.10
+	depends = python
+	depends = python-pip
+	depends = git
 	depends = curl
-	depends = jq
-	optdepends = cuda: GPU acceleration support
-	optdepends = rocm-hip-runtime: AMD GPU support
-	source = ai-cli::git+https://github.com/minerofthesoal/ai-cli.git#tag=v2.4.0
-	sha256sums = SKIP
+	optdepends = python-torch: PyTorch inference and training
+	optdepends = python-transformers: HuggingFace model support
+	optdepends = python-peft: LoRA fine-tuning (AUR)
+	optdepends = python-trl: SFT/DPO/PPO training (AUR)
+	optdepends = python-datasets: HuggingFace datasets (AUR)
+	optdepends = ffmpeg: audio and video support
+	optdepends = xclip: X11 clipboard for rclick text selection
+	optdepends = wl-clipboard: Wayland clipboard for rclick
+	optdepends = zenity: GUI dialogs for rclick action menu
+	optdepends = kdialog: KDE dialogs for rclick action menu
+	optdepends = yad: alternative dialog tool
+	optdepends = tk: Python Tkinter dialog fallback
+	optdepends = xdotool: X11 key simulation
+	optdepends = libnotify: desktop notifications
+	optdepends = cuda: NVIDIA GPU acceleration
+	provides = ai-cli
+	conflicts = ai-cli-git
+	source = ai-cli-2.6.0.1.tar.gz::https://github.com/minerofthesoal/ai-cli/archive/refs/heads/claude/cpu-windows-llm-api-uiTei.tar.gz
+	b2sums = SKIP
 
 pkgname = ai-cli
+	install = ai-cli.install
