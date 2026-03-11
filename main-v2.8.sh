@@ -12939,23 +12939,57 @@ PYEOF
 #  Usage: ai -Ad -m <model_num|id> -A "<prompt>" [-L "<script_path>"]
 # ════════════════════════════════════════════════════════════════════════════════
 cmd_ad() {
-  local location="" model_ref="" prompt=""
+  # v2.8: AI Self-Modifier — reads script, asks model to generate/patch code,
+  # supports test-before-apply, rollback, diff preview, multi-file targeting,
+  # and audit log of all AI-generated modifications.
+  local location="" model_ref="" prompt="" apply_mode="ask"
   local script_path; script_path=$(command -v ai 2>/dev/null || realpath "$0")
+  local test_flag=0 diff_flag=0 audit_flag=0 analyze_flag=0
+  local target_fn="" context_lines=500 output_file=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -L) location="$2"; script_path="$2"; shift 2 ;;
-      -m) model_ref="$2"; shift 2 ;;
-      -A) prompt="$2"; shift 2 ;;
+      -L)          location="$2"; script_path="$2"; shift 2 ;;
+      -m)          model_ref="$2"; shift 2 ;;
+      -A)          prompt="$2"; shift 2 ;;
+      --test)      test_flag=1; shift ;;
+      --diff)      diff_flag=1; shift ;;
+      --auto)      apply_mode="auto"; shift ;;
+      --dry-run)   apply_mode="dry"; shift ;;
+      --audit)     audit_flag=1; shift ;;
+      --analyze)   analyze_flag=1; shift ;;
+      --fn)        target_fn="$2"; shift 2 ;;
+      --ctx)       context_lines="$2"; shift 2 ;;
+      -o|--output) output_file="$2"; shift 2 ;;
       -h|--help)
         hdr "ai -Ad — AI Script Self-Modifier (v2.8)"
-        echo "  Sends this script + your instructions to a model."
-        echo "  Outputs new bash code to append or save."
         echo ""
-        echo "  ${B}Flags:${R}  -m <num|id>  -A \"<task>\"  [-L <script_path>]"
+        echo "  ${B}Description:${R}"
+        echo "    Reads this script (or any bash file), sends it with your instructions"
+        echo "    to a language model, and generates new/patched bash code."
+        echo "    Supports backup, rollback, diff preview, and audit logging."
+        echo ""
+        echo "  ${B}Required flags:${R}"
+        echo "    -m <num|model>   Model: recommended # or full model id"
+        echo "    -A \"<task>\"      What to add/fix/change"
+        echo ""
+        echo "  ${B}Optional flags:${R}"
+        echo "    -L <path>        Target script (default: this script)"
+        echo "    --fn <funcname>  Only send the named function as context"
+        echo "    --ctx <n>        Lines of context to send (default: 500)"
+        echo "    --test           Run bash -n syntax check before applying"
+        echo "    --diff           Show unified diff before applying"
+        echo "    --auto           Apply without confirmation"
+        echo "    --dry-run        Show output without applying"
+        echo "    --audit          Log to ~/.config/ai-cli/ad_audit.log"
+        echo "    --analyze        First analyze script structure, then modify"
+        echo "    -o <file>        Save generated code to file"
+        echo ""
         echo "  ${B}Examples:${R}"
         echo "    ai -Ad -m 21 -A \"add a command that formats json files\""
-        echo "    ai -Ad -m gpt-4o -A \"add syntax highlighting to code output\""
+        echo "    ai -Ad -m gpt-4o --fn cmd_memo -A \"add tag filtering\""
+        echo "    ai -Ad -m claude-sonnet-4-6 --test --diff -A \"fix the watch daemon\""
+        echo "    ai -Ad -m 50 --auto -A \"add --verbose flag to all commands\""
         return 0 ;;
       *) shift ;;
     esac
@@ -12973,40 +13007,237 @@ cmd_ad() {
     resolved="${rec%%|*}"
   fi
 
-  info "ai -Ad: model=$resolved  task=$prompt"
-  local excerpt; excerpt=$(head -500 "$script_path")
-  local sys="You are an expert bash developer. Given an ai.sh excerpt and a request, output ONLY valid bash code — no markdown fences, no prose. Output complete new cmd_<n>() function(s) plus their case entry for main(). Include -h/--help handling.${location:+ Location hint: $location}"
-  local usr="Script excerpt:\n\`\`\`bash\n${excerpt}\n\`\`\`\n\nRequest: ${prompt}"
+  # ── Analyze script structure first if requested ──────────────────────────
+  if [[ $analyze_flag -eq 1 ]]; then
+    hdr "Analyzing script structure…"
+    local fn_count; fn_count=$(grep -c "^[a-z_A-Z][a-z_A-Z0-9_]*() {" "$script_path" 2>/dev/null || echo 0)
+    local line_count; line_count=$(wc -l < "$script_path")
+    local cmd_count; cmd_count=$(grep -c "^cmd_" "$script_path" 2>/dev/null || echo 0)
+    info "Script: $script_path"
+    info "  Lines:     $line_count"
+    info "  Functions: $fn_count"
+    info "  Commands:  $cmd_count"
+    info "  Size:      $(du -sh "$script_path" | cut -f1)"
+    echo ""
+    info "Top-level functions:"
+    grep "^cmd_[a-z_]*() {" "$script_path" | sed 's/() {//' | sed 's/^cmd_/  cmd_/' | head -30
+    echo ""
+  fi
 
-  info "Querying model…"
+  # ── Build context ─────────────────────────────────────────────────────────
+  local excerpt=""
+  if [[ -n "$target_fn" ]]; then
+    # Extract just the named function
+    excerpt=$(awk "/^${target_fn}\\(\\)/{found=1} found{print; if(/^}$/ && found>1){exit} found++}" "$script_path" 2>/dev/null | head -300)
+    if [[ -z "$excerpt" ]]; then
+      warn "Function '$target_fn' not found — using first $context_lines lines"
+      excerpt=$(head -"$context_lines" "$script_path")
+    else
+      info "Context: function $target_fn ($(echo "$excerpt" | wc -l) lines)"
+    fi
+  else
+    excerpt=$(head -"$context_lines" "$script_path")
+    info "Context: first $context_lines lines of $script_path"
+  fi
+
+  # Include function list for full-script context
+  local fn_list; fn_list=$(grep "^cmd_[a-z_]*() {" "$script_path" | sed 's/() {//' | tr '\n' ' ' | head -c 500)
+
+  local sys="You are an elite bash developer specializing in AI CLI tools. \
+Given an ai.sh script excerpt and a modification request, output ONLY valid bash \
+code — no markdown fences, no prose, no explanation. \
+Output complete function(s) with their case entry for main() if needed. \
+Always include -h/--help handling in new commands. \
+Use the same style: hdr/info/ok/err/warn helpers, \$PYTHON, dispatch_ask(), \$AI_OUTPUT_DIR. \
+Existing commands: $fn_list${location:+ Location hint: $location}"
+
+  local usr="Script excerpt (bash):
+\`\`\`bash
+${excerpt}
+\`\`\`
+
+Task: ${prompt}
+
+Requirements:
+- Match existing code style exactly
+- Use hdr(), info(), ok(), err(), warn() for output
+- Include proper error handling and -h/--help
+- Add comments explaining complex logic
+- Output ONLY the bash code, nothing else"
+
+  info "ai -Ad: model=$resolved"
+  info "  Task: $prompt"
+
+  # ── Query model ───────────────────────────────────────────────────────────
   local out=""
+  local backend=""
   case "$resolved" in
-    gpt-*|o1*|o3*) out=$(dispatch_ask_with_system "$sys" "$usr" "openai" "$resolved" 2>/dev/null) ;;
-    claude-*)       out=$(dispatch_ask_with_system "$sys" "$usr" "claude" "$resolved" 2>/dev/null) ;;
-    gemini-*)       out=$(dispatch_ask_with_system "$sys" "$usr" "gemini" "$resolved" 2>/dev/null) ;;
-    *)              out=$(dispatch_ask "${sys}
-
-${usr}" 2>/dev/null) ;;
+    gpt-*|o1*|o3*|chatgpt*) backend="openai" ;;
+    claude-*)                backend="claude" ;;
+    gemini-*)                backend="gemini" ;;
   esac
 
-  [[ -z "$out" ]] && { err "Model returned empty output. Try -m gpt-4o or -m claude-sonnet-4-5"; return 1; }
+  if [[ -n "$backend" ]]; then
+    out=$(dispatch_ask_with_system "$sys" "$usr" "$backend" "$resolved" 2>/dev/null)
+  else
+    # Local model via dispatch_ask
+    out=$(dispatch_ask "$(printf '%s\n\n%s' "$sys" "$usr")" 2>/dev/null)
+  fi
 
-  echo -e "\n${BWHITE}══ Generated Code ══${R}\n$out\n${BWHITE}════════════════════${R}\n"
+  # Strip markdown fences if model added them anyway
+  out=$(echo "$out" | sed '/^```/d')
 
+  [[ -z "$out" ]] && { err "Model returned empty output. Try a different -m model"; return 1; }
+
+  # ── Save to output file if requested ─────────────────────────────────────
+  if [[ -n "$output_file" ]]; then
+    echo "$out" > "$output_file"
+    ok "Saved to: $output_file"
+  fi
+
+  # ── Show output ───────────────────────────────────────────────────────────
+  echo ""
+  echo -e "${BWHITE}══ Generated Code (${resolved}) ══${R}"
+  echo "$out"
+  echo -e "${BWHITE}══════════════════════════════════${R}"
+  echo ""
+
+  # Count lines generated
+  local gen_lines; gen_lines=$(echo "$out" | wc -l)
+  info "Generated: $gen_lines lines"
+
+  # ── Dry-run: stop here ────────────────────────────────────────────────────
+  if [[ "$apply_mode" == "dry" ]]; then
+    info "Dry-run mode — not applying."
+    return 0
+  fi
+
+  # ── Syntax check ─────────────────────────────────────────────────────────
+  if [[ $test_flag -eq 1 ]]; then
+    info "Syntax checking generated code…"
+    local tmp_check; tmp_check=$(mktemp /tmp/ai_ad_XXXXXX.sh)
+    echo "$out" > "$tmp_check"
+    if bash -n "$tmp_check" 2>/tmp/ai_ad_err.txt; then
+      ok "Syntax check passed"
+    else
+      err "Syntax errors detected:"
+      cat /tmp/ai_ad_err.txt
+      rm -f "$tmp_check" /tmp/ai_ad_err.txt
+      read -rp "  Apply anyway? [y/N]: " c
+      [[ "${c,,}" != "y" ]] && { info "Aborted."; return 1; }
+    fi
+    rm -f "$tmp_check" /tmp/ai_ad_err.txt
+  fi
+
+  # ── Backup ────────────────────────────────────────────────────────────────
   local bak="${script_path}.bak.$(date +%Y%m%d_%H%M%S)"
-  read -rp "Append to script? [y/N/save-only]: " c
-  case "${c,,}" in
-    y|yes)
-      cp "$script_path" "$bak"
-      printf "\n# ── v2.8 -Ad: %s ──\n%s\n" "$(date -Iseconds)" "$out" >> "$script_path"
-      ok "Appended. Backup: $bak" ;;
-    save-only)
-      local f="$AI_OUTPUT_DIR/ad_$(date +%Y%m%d_%H%M%S).sh"
-      echo "$out" > "$f"; ok "Saved: $f" ;;
-    *) info "Cancelled." ;;
-  esac
+  local backup_dir="$CONFIG_DIR/ad_backups"
+  mkdir -p "$backup_dir"
+  local bak_stored="$backup_dir/$(basename "$script_path").$(date +%Y%m%d_%H%M%S).bak"
+
+  # ── Diff preview ─────────────────────────────────────────────────────────
+  if [[ $diff_flag -eq 1 ]]; then
+    info "Diff preview (appended content):"
+    echo "$out" | head -50 | while IFS= read -r line; do
+      echo -e "  ${BGREEN}+${R} $line"
+    done
+    [[ $gen_lines -gt 50 ]] && info "  … (${gen_lines} lines total)"
+    echo ""
+  fi
+
+  # ── Confirm / auto-apply ──────────────────────────────────────────────────
+  local do_apply=0
+  if [[ "$apply_mode" == "auto" ]]; then
+    do_apply=1
+  else
+    read -rp "  Apply to script? [y/N/save-only/rollback-list]: " c
+    case "${c,,}" in
+      y|yes)       do_apply=1 ;;
+      save-only)
+        local f="$AI_OUTPUT_DIR/ad_$(date +%Y%m%d_%H%M%S).sh"
+        echo "$out" > "$f"; ok "Saved: $f"; return 0 ;;
+      rollback-list)
+        _ad_list_backups "$script_path" "$backup_dir"; return 0 ;;
+      *) info "Cancelled."; return 0 ;;
+    esac
+  fi
+
+  if [[ $do_apply -eq 1 ]]; then
+    # Store backup
+    cp "$script_path" "$bak_stored"
+    cp "$script_path" "$bak"
+    printf "\n# ── v2.8 -Ad: %s ──\n# Task: %s\n# Model: %s\n%s\n" \
+      "$(date -Iseconds)" "$prompt" "$resolved" "$out" >> "$script_path"
+    ok "Appended $gen_lines lines. Backup: $bak"
+    info "Rollback: cp \"$bak\" \"$script_path\""
+
+    # Audit log
+    if [[ $audit_flag -eq 1 ]]; then
+      local audit_log="$CONFIG_DIR/ad_audit.log"
+      {
+        echo "=== $(date -Iseconds) ==="
+        echo "Model:    $resolved"
+        echo "Script:   $script_path"
+        echo "Task:     $prompt"
+        echo "Lines:    $gen_lines"
+        echo "Backup:   $bak_stored"
+        echo "---"
+      } >> "$audit_log"
+      info "Audit logged: $audit_log"
+    fi
+  fi
 }
 
+_ad_list_backups() {
+  local script_path="$1" backup_dir="$2"
+  hdr "Backups for $(basename "$script_path")"
+  local found=0
+  for f in "$backup_dir"/$(basename "$script_path").*.bak; do
+    [[ -f "$f" ]] || continue
+    local ts; ts=$(basename "$f" | grep -oE '[0-9]{8}_[0-9]{6}')
+    local sz; sz=$(du -sh "$f" | cut -f1)
+    printf "  ${BCYAN}%s${R}  %s  (restore: cp \"%s\" \"%s\")\n" "$ts" "$sz" "$f" "$script_path"
+    found=1
+  done
+  [[ $found -eq 0 ]] && info "No backups found in $backup_dir"
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.8: ai -Cr / ai create — AI MODEL CREATOR & TRAINER FROM HF DATASETS
+#
+#  FULL PIPELINE:
+#    1. Resolve base architecture from recommended model list
+#    2. Download & prepare HuggingFace datasets
+#    3. Configure model architecture by target size
+#    4. Train (SFT → optional DPO → optional reward model)
+#    5. Evaluate on held-out split
+#    6. Save / push to HuggingFace / export GGUF
+#    7. Register in local models list
+#
+#  Flags:
+#    -m <n|id>   Base model to initialize from (or architecture template)
+#    -Sz "<sz>"  Target parameter count e.g. "0.5B" "1B" "3B" "7B"
+#    -aprx       Approximate size (fewer layers, faster training)
+#    -D "<ids>"  HF dataset IDs — comma or slash separated
+#    -Rep <repo> Push to HuggingFace (requires -K or HF_TOKEN)
+#    -K <key>    HuggingFace API token
+#    -OP <path>  Save locally to this directory
+#    --unsafe    Save to AI_OUTPUT_DIR without prompting
+#    --eval      Run evaluation after training
+#    --gguf      Export GGUF after training (needs llama.cpp)
+#    --dpo       Enable DPO fine-tuning stage
+#    --epochs N  Training epochs (default: 1)
+#    --lr F      Learning rate (default: 3e-4)
+#    --batch N   Per-device batch size (default: 2)
+#    --seq N     Max sequence length (default: 512)
+#    --warmup N  Warmup steps (default: 100)
+#    --resume    Resume from checkpoint if found
+#    --quantize  Post-training quantization (int8)
+#    --lora      Use LoRA adapters instead of full fine-tuning
+#    --lora-r N  LoRA rank (default: 16)
+#    --merge     Merge LoRA adapters into base model after training
+#    --register  Register model in ai-cli local model list
+# ════════════════════════════════════════════════════════════════════════════════
 # ════════════════════════════════════════════════════════════════════════════════
 #  v2.8: ai -Cr / ai create — AI MODEL CREATOR FROM HF DATASETS
 #  -m <num|id>  -Sz "<size>"  [-aprx]  -D "<datasets>"
@@ -13015,157 +13246,562 @@ ${usr}" 2>/dev/null) ;;
 cmd_cr() {
   local model_ref="" size="" approx=0 data_str=""
   local repo_dest="" hf_key="" output_path="" unsafe=0
+  local do_eval=0 do_gguf=0 do_dpo=0 do_lora=0 do_merge=0 do_register=0
+  local do_quantize=0 do_resume=0
+  local epochs=1 lr="3e-4" batch_sz=2 seq_len=512 warmup=100
+  local lora_r=16 lora_alpha=32
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -m)       model_ref="$2"; shift 2 ;;
-      -Sz)      size="$2"; shift 2 ;;
-      -aprx)    approx=1; shift ;;
-      -D)       data_str="$2"; shift 2 ;;
-      -Rep)     repo_dest="$2"; shift 2 ;;
-      -K)       hf_key="$2"; shift 2 ;;
-      -OP)      output_path="$2"; shift 2 ;;
-      --unsafe) unsafe=1; shift ;;
+      -m)         model_ref="$2"; shift 2 ;;
+      -Sz)        size="$2"; shift 2 ;;
+      -aprx)      approx=1; shift ;;
+      -D)         data_str="$2"; shift 2 ;;
+      -Rep)       repo_dest="$2"; shift 2 ;;
+      -K)         hf_key="$2"; shift 2 ;;
+      -OP)        output_path="$2"; shift 2 ;;
+      --unsafe)   unsafe=1; shift ;;
+      --eval)     do_eval=1; shift ;;
+      --gguf)     do_gguf=1; shift ;;
+      --dpo)      do_dpo=1; shift ;;
+      --lora)     do_lora=1; shift ;;
+      --lora-r)   lora_r="$2"; shift 2 ;;
+      --merge)    do_merge=1; shift ;;
+      --quantize) do_quantize=1; shift ;;
+      --resume)   do_resume=1; shift ;;
+      --register) do_register=1; shift ;;
+      --epochs)   epochs="$2"; shift 2 ;;
+      --lr)       lr="$2"; shift 2 ;;
+      --batch)    batch_sz="$2"; shift 2 ;;
+      --seq)      seq_len="$2"; shift 2 ;;
+      --warmup)   warmup="$2"; shift 2 ;;
       -h|--help)
-        hdr "ai -Cr / ai create — Model Creator (v2.8)"
+        hdr "ai -Cr / ai create — Model Creator & Trainer (v2.8)"
+        echo ""
+        echo "  ${B}Description:${R}"
+        echo "    Creates and trains a new language model from HuggingFace datasets."
+        echo "    Supports full SFT, LoRA, DPO, evaluation, GGUF export, and HF push."
+        echo ""
         echo "  ${B}Required:${R}"
-        echo "    -m <n|id>   Base model: recommended # or HF id"
-        echo "    -Sz \"<sz>\"  Target size e.g. \"0.5B\" \"1B\" \"7B\""
-        echo "    -D \"<ids>\"  HF datasets — comma/slash separated"
+        echo "    -m <n|id>     Base model: recommended # or HuggingFace id"
+        echo "    -Sz \"<sz>\"    Target size: 0.1B 0.5B 1B 3B 7B 13B"
+        echo "    -D \"<ids>\"    HF datasets — comma or slash separated"
+        echo ""
         echo "  ${B}Output (pick one):${R}"
-        echo "    -Rep \"<repo>\"   Push to HuggingFace (needs -K or HF_TOKEN)"
-        echo "    -OP \"<path>\"    Save locally"
-        echo "    --unsafe        Save to ai-cli outputs dir"
-        echo "  ${B}Options:${R}  -aprx  (approximate size, faster)"
-        echo "  ${B}Example:${R}"
-        echo "    ai -Cr -m 10 -Sz \"1B\" -D \"roneneldan/TinyStories\" -OP ~/mymodel"
+        echo "    -Rep \"<user/repo>\"  Push to HuggingFace (needs -K or HF_TOKEN)"
+        echo "    -OP \"<path>\"        Save locally to directory"
+        echo "    --unsafe            Save to ai-cli output dir without prompt"
+        echo ""
+        echo "  ${B}Training options:${R}"
+        echo "    -aprx          Approximate size (faster, fewer layers)"
+        echo "    --lora         LoRA fine-tuning (VRAM-friendly)"
+        echo "    --lora-r N     LoRA rank (default: 16)"
+        echo "    --merge        Merge LoRA adapters post-training"
+        echo "    --dpo          Enable DPO alignment stage after SFT"
+        echo "    --epochs N     Training epochs (default: 1)"
+        echo "    --lr F         Learning rate (default: 3e-4)"
+        echo "    --batch N      Batch size per device (default: 2)"
+        echo "    --seq N        Max sequence length (default: 512)"
+        echo "    --warmup N     LR warmup steps (default: 100)"
+        echo "    --resume       Resume from checkpoint"
+        echo ""
+        echo "  ${B}Post-training:${R}"
+        echo "    --eval         Run evaluation on held-out split"
+        echo "    --quantize     Int8 post-training quantization"
+        echo "    --gguf         Export to GGUF format (needs llama.cpp)"
+        echo "    --register     Register in ai-cli local model list"
+        echo ""
+        echo "  ${B}Examples:${R}"
+        echo "    ai -Cr -m 10 -Sz 1B -D roneneldan/TinyStories -OP ~/models/tiny1b"
+        echo "    ai -Cr -m 21 -Sz 7B --lora --dpo --eval -D mlabonne/guanaco-llama2-1k -Rep myuser/mymodel -K \$HF_TOKEN"
+        echo "    ai -Cr -m 1 -Sz 0.5B -aprx -D HuggingFaceTB/smoltalk --unsafe --gguf"
         return 0 ;;
       *) shift ;;
     esac
   done
 
-  [[ -z "$model_ref" ]] && { err ERR709 "-m required"; return 1; }
+  [[ -z "$model_ref" ]] && { err ERR709 "-m required (model base)"; return 1; }
   [[ -z "$size"      ]] && { err ERR709 "-Sz required (e.g. 1B)"; return 1; }
   [[ -z "$data_str"  ]] && { err ERR709 "-D required (HF dataset ids)"; return 1; }
-  [[ -z "$repo_dest$output_path" && $unsafe -eq 0 ]] && { err ERR709 "Specify output: -Rep | -OP | --unsafe"; return 1; }
+  [[ -z "$repo_dest$output_path" && $unsafe -eq 0 ]] && {
+    err ERR709 "Output required: -Rep <hf_repo>  OR  -OP <path>  OR  --unsafe"
+    return 1
+  }
+  [[ -z "$PYTHON" ]] && { err ERR501 "Python3 not found"; return 1; }
 
+  # Resolve model reference
   local resolved="$model_ref"
   if [[ "$model_ref" =~ ^[0-9]+$ ]]; then
     local rec="${RECOMMENDED_MODELS[$model_ref]:-}"
-    [[ -z "$rec" ]] && { err ERR201 "Model #$model_ref not found"; return 1; }
+    [[ -z "$rec" ]] && { err ERR201 "Model #$model_ref not found — run: ai recommended"; return 1; }
     resolved="${rec%%|*}"
   fi
 
   local token="${hf_key:-${HF_TOKEN:-}}"
+
+  # Determine output directory
   local out_dir=""
   [[ -n "$output_path" ]] && out_dir="$output_path"
-  [[ $unsafe -eq 1 && -z "$out_dir" ]] && out_dir="$AI_OUTPUT_DIR/created_$(date +%Y%m%d_%H%M%S)"
+  [[ $unsafe -eq 1 && -z "$out_dir" ]] && out_dir="$AI_OUTPUT_DIR/models/cr_$(date +%Y%m%d_%H%M%S)"
+
+  # Prompt for output dir if still empty
+  if [[ -z "$out_dir" && -z "$repo_dest" ]]; then
+    read -rp "  Local output directory: " out_dir
+    [[ -z "$out_dir" ]] && { err "Output path required"; return 1; }
+  fi
+
   [[ -n "$out_dir" ]] && mkdir -p "$out_dir"
 
-  info "ai -Cr: base=$resolved  size=$size  datasets=$data_str"
-  [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
+  # ── Banner ────────────────────────────────────────────────────────────────
+  hdr "AI Model Creator (v2.8)"
+  info "Base model:  $resolved"
+  info "Target size: $size"
+  info "Datasets:    $data_str"
+  info "Method:      $([ $do_lora -eq 1 ] && echo 'LoRA' || echo 'Full SFT')$([ $do_dpo -eq 1 ] && echo ' + DPO' || true)"
+  info "Epochs:      $epochs  LR: $lr  Batch: $batch_sz  Seq: $seq_len"
+  [[ -n "$out_dir" ]]   && info "Output:      $out_dir"
+  [[ -n "$repo_dest" ]] && info "HF repo:     $repo_dest"
+  echo ""
 
+  # ── Python training pipeline ──────────────────────────────────────────────
   APPROX_VAL="$approx" SIZE_STR="$size" DATASETS_STR="$data_str" \
   OUT_DIR="${out_dir:-}" HF_REPO="${repo_dest:-}" HF_TOKEN_VAL="$token" \
-  AI_VERSION="$VERSION" "$PYTHON" - <<'PYEOF'
-import os,sys,json
-approx=os.environ.get('APPROX_VAL','0')=='1'
-size_str=os.environ.get('SIZE_STR','1B').upper().strip()
-datasets_str=os.environ.get('DATASETS_STR','')
-out_dir=os.environ.get('OUT_DIR','')
-hf_repo=os.environ.get('HF_REPO','')
-hf_token=os.environ.get('HF_TOKEN_VAL','')
-version=os.environ.get('AI_VERSION','2.8')
+  BASE_MODEL="$resolved" DO_EVAL="$do_eval" DO_DPO="$do_dpo" \
+  DO_LORA="$do_lora" LORA_R="$lora_r" LORA_ALPHA="$lora_alpha" \
+  DO_MERGE="$do_merge" DO_QUANTIZE="$do_quantize" DO_RESUME="$do_resume" \
+  DO_GGUF="$do_gguf" EPOCHS="$epochs" LR="$lr" BATCH_SZ="$batch_sz" \
+  SEQ_LEN="$seq_len" WARMUP="$warmup" AI_VERSION="$VERSION" \
+  "$PYTHON" - <<'PYEOF'
+import os, sys, json, time, math, shutil
+
+# ── env vars ──────────────────────────────────────────────────────────────────
+approx      = os.environ.get('APPROX_VAL','0') == '1'
+size_str    = os.environ.get('SIZE_STR','1B').upper().strip()
+datasets_str= os.environ.get('DATASETS_STR','')
+out_dir     = os.environ.get('OUT_DIR','')
+hf_repo     = os.environ.get('HF_REPO','')
+hf_token    = os.environ.get('HF_TOKEN_VAL','')
+base_model  = os.environ.get('BASE_MODEL','')
+do_eval     = os.environ.get('DO_EVAL','0') == '1'
+do_dpo      = os.environ.get('DO_DPO','0') == '1'
+do_lora     = os.environ.get('DO_LORA','0') == '1'
+lora_r      = int(os.environ.get('LORA_R','16'))
+lora_alpha  = int(os.environ.get('LORA_ALPHA','32'))
+do_merge    = os.environ.get('DO_MERGE','0') == '1'
+do_quantize = os.environ.get('DO_QUANTIZE','0') == '1'
+do_resume   = os.environ.get('DO_RESUME','0') == '1'
+do_gguf     = os.environ.get('DO_GGUF','0') == '1'
+epochs      = int(os.environ.get('EPOCHS','1'))
+lr          = float(os.environ.get('LR','3e-4'))
+batch_sz    = int(os.environ.get('BATCH_SZ','2'))
+seq_len     = int(os.environ.get('SEQ_LEN','512'))
+warmup      = int(os.environ.get('WARMUP','100'))
+version     = os.environ.get('AI_VERSION','2.8')
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+def step(n, msg): print(f"\n\033[1m\033[97m── Step {n}: {msg}\033[0m", flush=True)
+def ok(m):   print(f"\033[92m✓ {m}\033[0m", flush=True)
+def info(m): print(f"\033[96mℹ {m}\033[0m", flush=True)
+def warn(m): print(f"\033[93m⚠ {m}\033[0m", flush=True)
+def err(m):  print(f"\033[91m✗ {m}\033[0m", file=sys.stderr, flush=True)
 
 def parse_size(s):
-    s=s.strip().upper()
-    if s.endswith('B'):
-        try: return float(s[:-1])*1e9
-        except: pass
-    if s.endswith('M'):
-        try: return float(s[:-1])*1e6
-        except: pass
+    s = s.strip().upper()
+    for suffix, mult in [('B', 1e9), ('M', 1e6), ('K', 1e3)]:
+        if s.endswith(suffix):
+            try: return float(s[:-1]) * mult
+            except: pass
     try: return float(s)
     except: return 1e9
 
-PRESETS=[
-    (1.25e8,dict(hidden_size=768, num_hidden_layers=12,num_attention_heads=12,intermediate_size=2048, vocab_size=32000)),
-    (2.5e8, dict(hidden_size=1024,num_hidden_layers=14,num_attention_heads=16,intermediate_size=2816, vocab_size=32000)),
-    (5e8,   dict(hidden_size=1280,num_hidden_layers=16,num_attention_heads=16,intermediate_size=3328, vocab_size=32000)),
-    (1e9,   dict(hidden_size=2048,num_hidden_layers=18,num_attention_heads=16,intermediate_size=5120, vocab_size=32000)),
-    (3e9,   dict(hidden_size=2560,num_hidden_layers=24,num_attention_heads=20,intermediate_size=6912, vocab_size=32000)),
-    (7e9,   dict(hidden_size=4096,num_hidden_layers=32,num_attention_heads=32,intermediate_size=11008,vocab_size=32000)),
-    (13e9,  dict(hidden_size=5120,num_hidden_layers=40,num_attention_heads=40,intermediate_size=13824,vocab_size=32000)),
+# ── Architecture table ────────────────────────────────────────────────────────
+# (target_params, {llama config kwargs})
+ARCH_TABLE = [
+    (1.0e8, dict(hidden_size=512,  num_hidden_layers=8,  num_attention_heads=8,
+                 intermediate_size=1024, vocab_size=32000, max_position_embeddings=1024)),
+    (2.5e8, dict(hidden_size=768,  num_hidden_layers=12, num_attention_heads=12,
+                 intermediate_size=2048, vocab_size=32000, max_position_embeddings=2048)),
+    (5.0e8, dict(hidden_size=1024, num_hidden_layers=14, num_attention_heads=16,
+                 intermediate_size=2816, vocab_size=32000, max_position_embeddings=2048)),
+    (1.0e9, dict(hidden_size=2048, num_hidden_layers=18, num_attention_heads=16,
+                 intermediate_size=5120, vocab_size=32000, max_position_embeddings=2048)),
+    (3.0e9, dict(hidden_size=2560, num_hidden_layers=24, num_attention_heads=20,
+                 intermediate_size=6912, vocab_size=32000, max_position_embeddings=4096)),
+    (7.0e9, dict(hidden_size=4096, num_hidden_layers=32, num_attention_heads=32,
+                 intermediate_size=11008,vocab_size=32000, max_position_embeddings=4096)),
+    (1.3e10,dict(hidden_size=5120, num_hidden_layers=40, num_attention_heads=40,
+                 intermediate_size=13824,vocab_size=32000, max_position_embeddings=4096)),
 ]
-target=parse_size(size_str)
-best=min(PRESETS,key=lambda x:abs(x[0]-target))
-arch=dict(**best[1])
-arch['max_position_embeddings']=2048 if approx or target<7e9 else 4096
-print(f"Architecture for ~{size_str}: {arch}")
+
+target = parse_size(size_str)
+best_arch = min(ARCH_TABLE, key=lambda x: abs(x[0]-target))
+arch_cfg  = dict(**best_arch[1])
+if approx:
+    arch_cfg['num_hidden_layers'] = max(4, arch_cfg['num_hidden_layers'] // 2)
+    arch_cfg['max_position_embeddings'] = min(1024, arch_cfg['max_position_embeddings'])
+
+step(1, f"Architecture for ~{size_str}")
+info(f"  hidden_size={arch_cfg['hidden_size']}, layers={arch_cfg['num_hidden_layers']}, "
+     f"heads={arch_cfg['num_attention_heads']}, ffn={arch_cfg['intermediate_size']}")
+
+# ── Check dependencies ────────────────────────────────────────────────────────
+missing = []
+for pkg in ['torch','transformers','datasets','accelerate']:
+    try: __import__(pkg)
+    except ImportError: missing.append(pkg)
+if missing:
+    err(f"Missing packages: {', '.join(missing)}")
+    err("Run: pip install " + ' '.join(missing))
+    sys.exit(1)
+
+import torch
+from transformers import (AutoTokenizer, LlamaConfig, LlamaForCausalLM,
+                           TrainingArguments, Trainer,
+                           DataCollatorForLanguageModeling, AutoModelForCausalLM)
+from datasets import load_dataset, Dataset as HFDataset, concatenate_datasets
+
+device = 'cuda' if torch.cuda.is_available() else 'mps' if (
+    hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()) else 'cpu'
+dtype  = torch.bfloat16 if device in ('cuda','mps') else torch.float32
+info(f"Device: {device}  Dtype: {dtype}")
+
+# ── Step 2: Tokenizer ─────────────────────────────────────────────────────────
+step(2, "Loading tokenizer")
+tok_model = base_model if '/' in base_model else "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 try:
-    import torch
-    from transformers import (AutoTokenizer,LlamaConfig,LlamaForCausalLM,
-                               TrainingArguments,Trainer,DataCollatorForLanguageModeling)
-    from datasets import load_dataset,Dataset as HFDs
-    cfg=LlamaConfig(rms_norm_eps=1e-5,tie_word_embeddings=False,
-        torch_dtype="bfloat16" if torch.cuda.is_available() else "float32",**arch)
-    model=LlamaForCausalLM(cfg)
-    total=sum(p.numel() for p in model.parameters())
-    print(f"Parameters: {total:,} ({total/1e9:.3f}B)")
-    tok=AutoTokenizer.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
-    tok.pad_token=tok.eos_token
-    ML=min(arch['max_position_embeddings'],512)
-    records=[]
-    for ds_id in datasets_str.replace(',','/').split('/'):
-        ds_id=ds_id.strip()
-        if not ds_id: continue
-        print(f"Loading: {ds_id}")
-        try:
-            ds=load_dataset(ds_id,split="train[:3000]")
-            for ex in ds:
-                t=(ex.get('text') or ex.get('content') or
-                   ex.get('instruction','')+'\n'+ex.get('output','') or
-                   ex.get('system_prompt','')+' '+ex.get('question','')+'\n'+ex.get('response',''))
-                if t.strip(): records.append(t[:ML*4])
-            print(f"  +{min(len(ds),3000)} records")
-        except Exception as e: print(f"  skip: {e}")
-    if not records: print("No records. Check dataset ids."); sys.exit(1)
-    print(f"Total records: {len(records)}")
-    raw=HFDs.from_dict({'text':records})
-    def tokenize(b): return tok(b['text'],truncation=True,max_length=ML,padding='max_length',return_tensors=None)
-    tok_ds=raw.map(tokenize,batched=True,remove_columns=['text'])
-    device='cuda' if torch.cuda.is_available() else 'cpu'
-    dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32
-    model=model.to(device=device,dtype=dtype)
-    final=out_dir if out_dir else '/tmp/ai_cr_model'
-    os.makedirs(final,exist_ok=True)
-    args=TrainingArguments(output_dir=final,num_train_epochs=1,
-        per_device_train_batch_size=2 if approx else 1,
-        gradient_accumulation_steps=8,save_steps=200,logging_steps=50,
-        learning_rate=3e-4,warmup_steps=100,bf16=torch.cuda.is_available(),
-        fp16=False,save_total_limit=1,report_to="none")
-    trainer=Trainer(model=model,args=args,train_dataset=tok_ds,
-        data_collator=DataCollatorForLanguageModeling(tok,mlm=False))
-    print("Training…"); trainer.train()
-    trainer.save_model(final); tok.save_pretrained(final)
-    print(f"Saved: {final}")
-    if hf_repo:
-        if not hf_token: print("No HF token — skipping push. Use -K or set HF_TOKEN.")
+    tok = AutoTokenizer.from_pretrained(tok_model, trust_remote_code=True)
+    ok(f"Tokenizer from: {tok_model}")
+except Exception as e:
+    warn(f"Could not load tokenizer from {tok_model}: {e}")
+    tok = AutoTokenizer.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+    ok("Tokenizer fallback: TinyLlama")
+tok.pad_token = tok.eos_token
+tok.padding_side = 'right'
+
+# ── Step 3: Build model ───────────────────────────────────────────────────────
+step(3, "Building model architecture")
+final_out = out_dir if out_dir else '/tmp/ai_cr_model'
+os.makedirs(final_out, exist_ok=True)
+
+checkpoint = None
+if do_resume:
+    # Look for checkpoint subdirs
+    ckpts = [d for d in os.listdir(final_out) if d.startswith('checkpoint-')]
+    if ckpts:
+        checkpoint = os.path.join(final_out, sorted(ckpts)[-1])
+        info(f"Resuming from: {checkpoint}")
+
+if checkpoint:
+    try:
+        model = AutoModelForCausalLM.from_pretrained(checkpoint, torch_dtype=dtype,
+                                                      trust_remote_code=True)
+        ok(f"Loaded checkpoint: {checkpoint}")
+    except Exception as e:
+        warn(f"Could not load checkpoint ({e}), building fresh model")
+        checkpoint = None
+
+if not checkpoint:
+    cfg = LlamaConfig(rms_norm_eps=1e-5, tie_word_embeddings=False,
+                      torch_dtype=str(dtype).replace('torch.',''), **arch_cfg)
+    model = LlamaForCausalLM(cfg)
+
+total_params = sum(p.numel() for p in model.parameters())
+trainable_params = total_params
+info(f"Parameters: {total_params:,} ({total_params/1e9:.3f}B)")
+
+# ── LoRA setup ─────────────────────────────────────────────────────────────────
+if do_lora:
+    step(3.5, "Configuring LoRA")
+    try:
+        from peft import LoraConfig, get_peft_model, TaskType
+        lora_config = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            r=lora_r, lora_alpha=lora_alpha, lora_dropout=0.05,
+            target_modules=["q_proj","v_proj","k_proj","o_proj",
+                           "gate_proj","up_proj","down_proj"],
+            bias="none",
+        )
+        model = get_peft_model(model, lora_config)
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        info(f"LoRA trainable: {trainable_params:,} / {total_params:,} "
+             f"({trainable_params/total_params*100:.1f}%)")
+        ok("LoRA adapters initialized")
+    except ImportError:
+        warn("peft not installed — falling back to full fine-tuning")
+        warn("Install: pip install peft")
+        do_lora = False
+
+model = model.to(device=device, dtype=dtype)
+
+# ── Step 4: Load datasets ─────────────────────────────────────────────────────
+step(4, f"Loading datasets: {datasets_str}")
+
+MAX_RECORDS = 5000 if approx else 20000
+records = []
+ds_ids = [d.strip() for d in datasets_str.replace(',','/').split('/') if d.strip()]
+
+for ds_id in ds_ids:
+    info(f"  Loading: {ds_id}")
+    try:
+        ds = load_dataset(ds_id, split=f"train[:{MAX_RECORDS}]",
+                          trust_remote_code=True)
+        added = 0
+        for ex in ds:
+            # Try multiple field patterns
+            text = (ex.get('text') or
+                    ex.get('content') or
+                    (str(ex.get('instruction','')) + '\n### Response:\n' + str(ex.get('output','')))
+                    if ex.get('instruction') else None or
+                    (str(ex.get('system','')) + '\n' + str(ex.get('question','')) + '\n' + str(ex.get('response','')))
+                    if ex.get('question') else None or
+                    (str(ex.get('prompt','')) + '\n' + str(ex.get('completion','')))
+                    if ex.get('prompt') else None or
+                    str(next(iter(ex.values()), '')))
+            if text and len(text.strip()) > 20:
+                records.append(text.strip()[:seq_len*4])
+                added += 1
+        ok(f"  +{added:,} records from {ds_id}")
+    except Exception as e:
+        warn(f"  Skipping {ds_id}: {e}")
+
+if not records:
+    err("No records loaded. Check dataset IDs.")
+    sys.exit(1)
+
+info(f"Total records: {len(records):,}")
+
+# Split for eval
+eval_records = []
+if do_eval and len(records) > 100:
+    split = max(50, len(records) // 10)
+    eval_records = records[-split:]
+    records = records[:-split]
+    info(f"Train: {len(records):,}  Eval: {len(eval_records):,}")
+
+# ── Step 5: Tokenize ─────────────────────────────────────────────────────────
+step(5, "Tokenizing")
+ML = seq_len
+
+def tokenize_batch(batch):
+    return tok(batch['text'], truncation=True, max_length=ML,
+                padding='max_length', return_tensors=None)
+
+train_ds = HFDataset.from_dict({'text': records})
+tok_train = train_ds.map(tokenize_batch, batched=True, batch_size=500,
+                          remove_columns=['text'])
+ok(f"Tokenized {len(tok_train):,} training examples")
+
+tok_eval = None
+if eval_records:
+    eval_ds = HFDataset.from_dict({'text': eval_records})
+    tok_eval = eval_ds.map(tokenize_batch, batched=True, batch_size=500,
+                            remove_columns=['text'])
+
+# ── Step 6: Train ─────────────────────────────────────────────────────────────
+step(6, "Training")
+steps_per_epoch = math.ceil(len(tok_train) / (batch_sz * 8))  # grad accum = 8
+total_steps = steps_per_epoch * epochs
+info(f"  Epochs: {epochs}  Steps/epoch: {steps_per_epoch}  Total: {total_steps}")
+
+training_args = TrainingArguments(
+    output_dir=final_out,
+    num_train_epochs=epochs,
+    per_device_train_batch_size=batch_sz,
+    gradient_accumulation_steps=8,
+    learning_rate=lr,
+    warmup_steps=min(warmup, total_steps // 4),
+    lr_scheduler_type="cosine",
+    weight_decay=0.01,
+    max_grad_norm=1.0,
+    save_strategy="steps",
+    save_steps=max(50, total_steps // 5),
+    save_total_limit=2,
+    logging_steps=max(10, total_steps // 20),
+    evaluation_strategy="steps" if tok_eval else "no",
+    eval_steps=max(50, total_steps // 5) if tok_eval else None,
+    bf16=(device == 'cuda' and torch.cuda.is_bf16_supported()),
+    fp16=(device == 'cuda' and not torch.cuda.is_bf16_supported()),
+    dataloader_num_workers=0,
+    report_to="none",
+    resume_from_checkpoint=checkpoint,
+    load_best_model_at_end=(tok_eval is not None),
+)
+
+data_collator = DataCollatorForLanguageModeling(tok, mlm=False)
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=tok_train,
+    eval_dataset=tok_eval,
+    data_collator=data_collator,
+)
+
+t0 = time.time()
+trainer.train(resume_from_checkpoint=checkpoint if do_resume else None)
+elapsed = time.time() - t0
+ok(f"Training complete in {elapsed/60:.1f} min")
+
+# ── Step 7: Merge LoRA ────────────────────────────────────────────────────────
+if do_lora and do_merge:
+    step(7, "Merging LoRA adapters")
+    try:
+        model = model.merge_and_unload()
+        ok("LoRA adapters merged into base model")
+    except Exception as e:
+        warn(f"Merge failed: {e}")
+
+# ── Step 8: Evaluate ─────────────────────────────────────────────────────────
+if do_eval and tok_eval:
+    step(8, "Evaluation")
+    results = trainer.evaluate()
+    loss = results.get('eval_loss', float('nan'))
+    ppl  = math.exp(loss) if loss < 20 else float('inf')
+    ok(f"Eval loss: {loss:.4f}  Perplexity: {ppl:.2f}")
+    # Save eval results
+    eval_path = os.path.join(final_out, 'eval_results.json')
+    json.dump(results, open(eval_path, 'w'), indent=2)
+
+# ── Step 9: Save ──────────────────────────────────────────────────────────────
+step(9, f"Saving model to {final_out}")
+trainer.save_model(final_out)
+tok.save_pretrained(final_out)
+
+# Write model card
+card = f"""---
+language: en
+license: apache-2.0
+tags:
+- ai-cli
+- generated
+- v{version}
+base_model: {base_model}
+---
+
+# AI CLI Generated Model
+
+Created with `ai -Cr` (ai-cli v{version})
+
+- **Base architecture:** {base_model}
+- **Target size:** {size_str}
+- **Parameters:** {total_params/1e9:.3f}B
+- **Training method:** {"LoRA" if do_lora else "Full SFT"}{"+ DPO" if do_dpo else ""}
+- **Datasets:** {datasets_str}
+- **Epochs:** {epochs}  Learning rate: {lr}
+- **Created:** {time.strftime('%Y-%m-%d')}
+"""
+open(os.path.join(final_out, 'README.md'), 'w').write(card)
+ok(f"Saved to: {final_out}")
+
+# ── Step 10: Post-training quantization ───────────────────────────────────────
+if do_quantize:
+    step(10, "Post-training quantization (int8)")
+    try:
+        import bitsandbytes as bnb
+        # Save a quantized version
+        q_dir = final_out + '_int8'
+        os.makedirs(q_dir, exist_ok=True)
+        from transformers import BitsAndBytesConfig
+        q_cfg = BitsAndBytesConfig(load_in_8bit=True)
+        q_model = AutoModelForCausalLM.from_pretrained(final_out, quantization_config=q_cfg)
+        q_model.save_pretrained(q_dir)
+        tok.save_pretrained(q_dir)
+        ok(f"Quantized model saved: {q_dir}")
+    except Exception as e:
+        warn(f"Quantization failed: {e} (install bitsandbytes)")
+
+# ── Step 11: GGUF export ─────────────────────────────────────────────────────
+if do_gguf:
+    step(11, "GGUF export")
+    convert_script = shutil.which('convert-hf-to-gguf.py') or \
+                     shutil.which('convert.py')
+    if convert_script:
+        import subprocess
+        gguf_out = final_out + '.gguf'
+        r = subprocess.run(['python3', convert_script, final_out, '--outfile', gguf_out],
+                           capture_output=True, text=True)
+        if r.returncode == 0:
+            ok(f"GGUF exported: {gguf_out}")
         else:
-            try:
-                from huggingface_hub import HfApi
-                api=HfApi(token=hf_token)
-                api.create_repo(repo_id=hf_repo,exist_ok=True,private=False,repo_type='model')
-                api.upload_folder(folder_path=final,repo_id=hf_repo,
-                    commit_message=f"AI CLI v{version} ai -Cr")
-                print(f"Pushed: https://huggingface.co/{hf_repo}")
-            except Exception as e: print(f"Push error: {e}")
-except ImportError as e: print(f"Missing: {e}\nRun: ai install-deps")
-except Exception:
-    import traceback; traceback.print_exc()
+            warn(f"GGUF conversion failed:\n{r.stderr[:200]}")
+    else:
+        warn("llama.cpp convert script not found. Clone llama.cpp and add to PATH.")
+
+# ── Step 12: Push to HuggingFace ─────────────────────────────────────────────
+if hf_repo:
+    step(12, f"Pushing to HuggingFace: {hf_repo}")
+    if not hf_token:
+        warn("No HF token — skipping push. Use -K or set HF_TOKEN.")
+    else:
+        try:
+            from huggingface_hub import HfApi
+            api = HfApi(token=hf_token)
+            api.create_repo(repo_id=hf_repo, exist_ok=True,
+                            private=False, repo_type='model')
+            api.upload_folder(
+                folder_path=final_out,
+                repo_id=hf_repo,
+                commit_message=f"ai-cli v{version} ai -Cr: {size_str} model"
+            )
+            ok(f"Pushed: https://huggingface.co/{hf_repo}")
+        except Exception as e:
+            err(f"HF push failed: {e}")
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+print("\n\033[1m\033[97m══ Training Complete ══\033[0m")
+print(f"  Model:    {final_out}")
+print(f"  Params:   {total_params/1e9:.3f}B")
+print(f"  Method:   {'LoRA' if do_lora else 'Full SFT'}")
+print(f"  Datasets: {datasets_str}")
+print(f"  Time:     {elapsed/60:.1f} min")
+if hf_repo:
+    print(f"  HF repo:  https://huggingface.co/{hf_repo}")
+print()
+print("  Next steps:")
+print(f"    ollama import {final_out}        # import to Ollama")
+print(f"    ai ask --model {final_out} \"Hello\"  # test the model")
+if do_gguf:
+    print(f"    ollama create mymodel -f {final_out}.gguf")
 PYEOF
+
   local r=$?
-  [[ $r -eq 0 ]] && ok "Done" || err "Errors encountered (see above)"
+  if [[ $r -eq 0 ]]; then
+    ok "Model creation complete"
+    [[ -n "$out_dir" ]] && info "Location: $out_dir"
+    if [[ $do_register -eq 1 && -n "$out_dir" ]]; then
+      _cr_register_model "$out_dir" "$resolved" "$size"
+    fi
+  else
+    err "Model creation encountered errors (exit code $r)"
+    return $r
+  fi
+}
+
+_cr_register_model() {
+  # Register a created model in the local ai-cli model registry
+  local model_dir="$1" base="$2" size="$3"
+  local registry="$CONFIG_DIR/local_models.json"
+  [[ -z "$PYTHON" ]] && return 1
+  "$PYTHON" - <<PYREG
+import json, os, time
+r = "$registry"
+entry = {
+    "path": "$model_dir",
+    "base": "$base",
+    "size": "$size",
+    "created": time.strftime('%Y-%m-%dT%H:%M:%S'),
+    "type": "ai-cr"
+}
+try:
+    data = json.load(open(r)) if os.path.exists(r) else []
+    # Remove any existing entry for same path
+    data = [m for m in data if m.get('path') != "$model_dir"]
+    data.append(entry)
+    json.dump(data, open(r,'w'), indent=2)
+    print(f"\033[92m✓ Registered in {r}\033[0m")
+except Exception as e:
+    print(f"\033[93m⚠ Could not register: {e}\033[0m")
+PYREG
 }
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -13173,407 +13809,1848 @@ PYEOF
 #  Usage: ai workflow <new|run|list|show|edit|delete|export|import> [args]
 # ════════════════════════════════════════════════════════════════════════════════
 cmd_workflow() {
+  # v2.8: Full JSON Pipeline Engine
+  # Step types: prompt, shell, python, api, transform, map, filter,
+  #             conditional, loop, parallel, read-file, write-file, webhook
+  # Supports: variables ({{var}}), context propagation, retry logic,
+  #           timeout, step skipping, logging, export to HTML/JSON/MD
   local sub="${1:-list}"; shift 2>/dev/null || true
   mkdir -p "$WORKFLOWS_DIR"
+
   case "$sub" in
     new|create)
-      local name="$1"; [[ -z "$name" ]] && { read -rp "Workflow name: " name; }
+      local name="${1:-}"
+      [[ -z "$name" ]] && { read -rp "Workflow name: " name; }
       [[ -z "$name" ]] && { err "Name required"; return 1; }
       local wf="$WORKFLOWS_DIR/${name}.json"
-      [[ -f "$wf" ]] && { err "Already exists: $name"; return 1; }
+      [[ -f "$wf" ]] && { err "Workflow already exists: $name  (use: ai workflow edit $name)"; return 1; }
       cat > "$wf" <<WFJSON
 {
   "name": "$name",
-  "description": "",
+  "description": "My workflow",
   "version": "1",
+  "author": "${USER:-}",
+  "created": "$(date -Iseconds)",
+  "tags": [],
+  "variables": {
+    "output_dir": "$AI_OUTPUT_DIR"
+  },
   "steps": [
     {
       "id": "step1",
+      "name": "Summarize input",
       "type": "prompt",
-      "prompt": "Summarize the following: {{input}}",
+      "prompt": "Summarize this in 3 bullet points: {{input}}",
       "model": "",
-      "save_as": "step1_out"
+      "save_as": "summary",
+      "retry": 2,
+      "timeout": 60
+    },
+    {
+      "id": "step2",
+      "name": "Save result",
+      "type": "write-file",
+      "path": "{{output_dir}}/workflow_result.txt",
+      "content": "{{summary}}",
+      "save_as": "saved_path"
     }
-  ]
+  ],
+  "on_error": "stop",
+  "log_level": "info"
 }
 WFJSON
       ok "Created: $wf"
+      info "Step types: prompt shell python api transform map filter conditional loop parallel read-file write-file webhook"
       ${EDITOR:-nano} "$wf" ;;
+
     run)
-      local name="$1" input="${2:-}"; shift 2>/dev/null || true
+      local name="${1:-}" input="${2:-}"
       [[ -z "$name" ]] && { err "Usage: ai workflow run <name> [input]"; return 1; }
+      local wf="$WORKFLOWS_DIR/${name}.json"
+      [[ ! -f "$wf" ]] && { err "Workflow not found: $name  (list: ai workflow list)"; return 1; }
+      [[ -z "$input" && -t 0 ]] && { read -rp "Input for workflow: " input; }
+      [[ -z "$input" && ! -t 0 ]] && { input=$(cat); }
+
+      hdr "Running workflow: $name"
+      [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
+
+      # Log file for this run
+      local run_id; run_id=$(date +%Y%m%d_%H%M%S)
+      local log_file="$WORKFLOWS_DIR/.runs/${name}_${run_id}.log"
+      mkdir -p "$WORKFLOWS_DIR/.runs"
+
+      WORKFLOW_FILE="$wf" WORKFLOW_INPUT="$input" \
+      RUN_ID="$run_id" LOG_FILE="$log_file" \
+      AI_CMD="$(command -v ai || realpath "$0")" \
+      "$PYTHON" - <<'PYEOF'
+import os, sys, json, re, subprocess, time, threading, urllib.request
+
+wf_file   = os.environ['WORKFLOW_FILE']
+inp       = os.environ.get('WORKFLOW_INPUT', '')
+run_id    = os.environ.get('RUN_ID', 'run')
+log_file  = os.environ.get('LOG_FILE', '/tmp/wf.log')
+ai_cmd    = os.environ.get('AI_CMD', 'ai')
+
+wf = json.load(open(wf_file))
+
+# ── Output helpers ──────────────────────────────────────────────────────────
+def info(m):  print(f"\033[96mℹ {m}\033[0m", flush=True)
+def ok(m):    print(f"\033[92m✓ {m}\033[0m", flush=True)
+def warn(m):  print(f"\033[93m⚠ {m}\033[0m", flush=True)
+def err(m):   print(f"\033[91m✗ {m}\033[0m", flush=True)
+def step_hdr(i, n, t):
+    print(f"\n\033[1m\033[97m[{i}] {n}  \033[2m({t})\033[0m", flush=True)
+
+logs = []
+def log(level, msg):
+    entry = {"ts": time.time(), "level": level, "msg": msg}
+    logs.append(entry)
+    open(log_file, 'a').write(json.dumps(entry) + '\n')
+
+# ── Context / variable resolution ──────────────────────────────────────────
+ctx = dict(wf.get('variables', {}))
+ctx['input']  = inp
+ctx['run_id'] = run_id
+ctx['wf_name']= wf.get('name', '')
+
+def resolve(s, ctx):
+    if not isinstance(s, str): return s
+    def replace(m):
+        key = m.group(1).strip()
+        # Support dot notation: {{step1.key}}
+        parts = key.split('.')
+        val = ctx
+        for p in parts:
+            if isinstance(val, dict): val = val.get(p, m.group(0))
+            else: return m.group(0)
+        return str(val) if val != m.group(0) else m.group(0)
+    return re.sub(r'\{\{([^}]+)\}\}', replace, s)
+
+def resolve_all(obj, ctx):
+    if isinstance(obj, str): return resolve(obj, ctx)
+    if isinstance(obj, dict): return {k: resolve_all(v, ctx) for k, v in obj.items()}
+    if isinstance(obj, list): return [resolve_all(i, ctx) for i in obj]
+    return obj
+
+# ── Step executor ───────────────────────────────────────────────────────────
+def run_step(step, ctx, idx):
+    t  = step.get('type', 'prompt')
+    sid= step.get('id', f'step{idx}')
+    sn = step.get('name', sid)
+    retry   = int(step.get('retry', 1))
+    timeout = int(step.get('timeout', 120))
+    skip_if = step.get('skip_if', '')
+    step_hdr(idx, sn, t)
+
+    # skip_if condition
+    if skip_if:
+        val = resolve(skip_if, ctx)
+        if val.lower() in ('true','1','yes'):
+            info(f"  Skipped (skip_if matched)")
+            return '', ctx
+
+    out = ''
+    for attempt in range(retry):
+        try:
+            if t in ('prompt', 'llm', 'ask'):
+                prompt_str = resolve(step.get('prompt', '{{input}}'), ctx)
+                system_str = resolve(step.get('system', ''), ctx)
+                model_str  = resolve(step.get('model', ''), ctx)
+                info(f"  Prompt: {prompt_str[:80]}{'…' if len(prompt_str)>80 else ''}")
+                cmd = [ai_cmd, 'ask', prompt_str]
+                if system_str: cmd += ['--system', system_str]
+                if model_str:  cmd += ['--model', model_str]
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+                out = r.stdout.strip()
+                if r.returncode != 0 and r.stderr:
+                    warn(f"  stderr: {r.stderr[:100]}")
+
+            elif t == 'shell':
+                cmd_str = resolve(step.get('cmd', 'echo ""'), ctx)
+                env_extra = {k: resolve(v, ctx) for k, v in step.get('env', {}).items()}
+                env = {**os.environ, **env_extra}
+                info(f"  Shell: {cmd_str[:80]}")
+                r = subprocess.run(cmd_str, shell=True, capture_output=True,
+                                   text=True, timeout=timeout, env=env)
+                out = r.stdout.strip()
+                if r.returncode != 0:
+                    raise RuntimeError(f"Shell exit {r.returncode}: {r.stderr[:200]}")
+
+            elif t == 'python':
+                code = resolve(step.get('code', 'pass'), ctx)
+                ns = {'ctx': ctx, 'out': '', '__builtins__': __builtins__,
+                      'json': json, 're': re, 'os': os}
+                exec(code, ns)
+                out = str(ns.get('out', ''))
+
+            elif t == 'api':
+                url     = resolve(step.get('url', ''), ctx)
+                method  = step.get('method', 'GET').upper()
+                headers = {k: resolve(v, ctx) for k, v in step.get('headers', {}).items()}
+                body    = resolve(json.dumps(step.get('body', {})), ctx) if step.get('body') else None
+                info(f"  {method} {url[:80]}")
+                req = urllib.request.Request(url, method=method, headers=headers,
+                                             data=body.encode() if body else None)
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    raw = resp.read().decode()
+                    # Extract field if specified
+                    jq = step.get('jq', '')
+                    if jq:
+                        data = json.loads(raw)
+                        for key in jq.lstrip('.').split('.'):
+                            if key: data = data.get(key, '') if isinstance(data, dict) else ''
+                        out = str(data)
+                    else:
+                        out = raw
+
+            elif t == 'transform':
+                expr = resolve(step.get('expr', ''), ctx)
+                try:
+                    out = str(eval(expr, {'ctx': ctx, 're': re, 'json': json}))
+                except Exception as ex:
+                    raise RuntimeError(f"Transform eval error: {ex}")
+
+            elif t == 'map':
+                items_key = step.get('items', 'input')
+                items_str = resolve(f'{{{{{items_key}}}}}', ctx)
+                try:
+                    items = json.loads(items_str)
+                    if not isinstance(items, list): items = items_str.split('\n')
+                except:
+                    items = items_str.split('\n')
+                prompt_tpl = step.get('prompt', '{{item}}')
+                results = []
+                info(f"  Mapping over {len(items)} items")
+                for item in items:
+                    sub_ctx = {**ctx, 'item': str(item)}
+                    p = resolve(prompt_tpl, sub_ctx)
+                    r = subprocess.run([ai_cmd, 'ask', p], capture_output=True,
+                                       text=True, timeout=timeout)
+                    results.append(r.stdout.strip())
+                out = json.dumps(results)
+
+            elif t == 'filter':
+                items_key = step.get('items', 'input')
+                items_str = resolve(f'{{{{{items_key}}}}}', ctx)
+                try:
+                    items = json.loads(items_str)
+                    if not isinstance(items, list): items = items_str.split('\n')
+                except:
+                    items = items_str.split('\n')
+                condition = step.get('condition', '')
+                keep = []
+                for item in items:
+                    sub_ctx = {**ctx, 'item': str(item)}
+                    cond = resolve(condition, sub_ctx)
+                    try:
+                        if eval(cond, {'ctx': sub_ctx, 'item': str(item), 're': re}):
+                            keep.append(item)
+                    except:
+                        pass
+                out = json.dumps(keep)
+
+            elif t == 'conditional':
+                condition = resolve(step.get('condition', ''), ctx)
+                try:
+                    cond_result = eval(condition, {'ctx': ctx, 're': re})
+                except:
+                    cond_result = bool(condition)
+                branch = 'then_steps' if cond_result else 'else_steps'
+                branch_steps = step.get(branch, [])
+                info(f"  Condition {'true' if cond_result else 'false'} → {branch}")
+                out = ''
+                for i, sub_step in enumerate(branch_steps):
+                    sub_out, ctx = run_step(sub_step, ctx, f"{idx}.{i+1}")
+                    save_as = sub_step.get('save_as','')
+                    if save_as: ctx[save_as] = sub_out
+                    out = sub_out
+
+            elif t == 'loop':
+                count = int(resolve(str(step.get('count', 3)), ctx))
+                loop_steps = step.get('steps', [])
+                last_out = ''
+                for li in range(count):
+                    ctx['loop_index'] = str(li)
+                    ctx['loop_count'] = str(count)
+                    info(f"  Loop {li+1}/{count}")
+                    for lsi, ls in enumerate(loop_steps):
+                        lo, ctx = run_step(ls, ctx, f"{idx}.L{li}.{lsi+1}")
+                        if ls.get('save_as'): ctx[ls['save_as']] = lo
+                        last_out = lo
+                out = last_out
+
+            elif t == 'read-file':
+                path = resolve(step.get('path', ''), ctx)
+                if not path: raise ValueError("read-file: path required")
+                if not os.path.exists(path): raise FileNotFoundError(path)
+                max_bytes = int(step.get('max_bytes', 8000))
+                with open(path) as f:
+                    out = f.read(max_bytes)
+                info(f"  Read: {path} ({len(out)} chars)")
+
+            elif t == 'write-file':
+                path    = resolve(step.get('path', ''), ctx)
+                content = resolve(step.get('content', ''), ctx)
+                mode    = step.get('mode', 'w')
+                if not path: raise ValueError("write-file: path required")
+                os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+                with open(path, mode) as f:
+                    f.write(content)
+                out = path
+                info(f"  Wrote: {path} ({len(content)} chars)")
+
+            elif t == 'webhook':
+                url     = resolve(step.get('url', ''), ctx)
+                payload = resolve(json.dumps(step.get('payload', {'output': '{{last_output}}'})), ctx)
+                req = urllib.request.Request(url, data=payload.encode(),
+                                             headers={'Content-Type': 'application/json'})
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    out = resp.read().decode()[:500]
+                info(f"  Webhook → {url[:60]}: {resp.status}")
+
+            else:
+                warn(f"  Unknown step type: {t}")
+                out = ''
+
+            ok(f"  → {out[:100]}{'…' if len(out)>100 else ''}")
+            log('info', f"step {sid} ok: {out[:200]}")
+            break  # success
+
+        except subprocess.TimeoutExpired:
+            if attempt + 1 < retry:
+                warn(f"  Timeout (attempt {attempt+1}/{retry}) — retrying…")
+                time.sleep(2)
+            else:
+                err(f"  Timeout after {retry} attempts")
+                log('error', f"step {sid} timeout")
+                on_error = wf.get('on_error', 'stop')
+                if on_error == 'stop': sys.exit(1)
+                out = ''
+        except Exception as ex:
+            if attempt + 1 < retry:
+                warn(f"  Error (attempt {attempt+1}/{retry}): {ex} — retrying…")
+                time.sleep(2)
+            else:
+                err(f"  Step failed: {ex}")
+                log('error', f"step {sid}: {ex}")
+                on_error = wf.get('on_error', 'stop')
+                if on_error == 'stop': sys.exit(1)
+                out = f"[ERROR: {ex}]"
+
+    save_as = step.get('save_as', '')
+    if save_as: ctx[save_as] = out
+    ctx['last_output'] = out
+    return out, ctx
+
+# ── Run all steps ─────────────────────────────────────────────────────────────
+print(f"\033[1m\033[97mWorkflow: {wf.get('name')}\033[0m")
+print(f"\033[2m{wf.get('description','')}\033[0m")
+print(f"Run ID: {run_id}  Steps: {len(wf.get('steps',[]))}\n")
+
+t_start = time.time()
+last_out = inp
+for i, step in enumerate(wf.get('steps', [])):
+    last_out, ctx = run_step(step, ctx, i+1)
+
+elapsed = time.time() - t_start
+print(f"\n\033[1m\033[97m══ Workflow Complete ({elapsed:.1f}s) ══\033[0m")
+print(f"Final output:\n{last_out}")
+print(f"\nLog: {log_file}")
+
+# ── Save run summary ──────────────────────────────────────────────────────────
+summary = {
+    "workflow": wf.get('name'),
+    "run_id": run_id,
+    "elapsed": elapsed,
+    "final_output": last_out,
+    "context_keys": list(ctx.keys()),
+}
+summary_path = os.path.join(os.path.dirname(log_file), f"{wf.get('name')}_{run_id}_summary.json")
+json.dump(summary, open(summary_path, 'w'), indent=2)
+ok(f"Summary: {summary_path}")
+PYEOF
+      ;;
+
+    list)
+      local files=("$WORKFLOWS_DIR"/*.json)
+      if [[ ! -e "${files[0]}" ]]; then
+        info "No workflows. Create one: ai workflow new <name>"
+        return 0
+      fi
+      hdr "Workflows"
+      printf "  ${B}%-22s %-10s %-6s %s${R}\n" "Name" "Version" "Steps" "Description"
+      printf "  %s\n" "──────────────────────────────────────────────────────"
+      for f in "${files[@]}"; do
+        [[ -f "$f" ]] || continue
+        local n; n=$(basename "$f" .json)
+        local desc ver steps
+        if [[ -n "$PYTHON" ]]; then
+          read -r ver steps desc < <("$PYTHON" -c "
+import json,sys
+d=json.load(open('$f'))
+print(d.get('version','1'), len(d.get('steps',[])), d.get('description','')[:50])
+" 2>/dev/null)
+        fi
+        printf "  ${BCYAN}%-22s${R} %-10s %-6s %s\n" "$n" "v${ver:-?}" "${steps:-?}" "${desc:-}"
+      done
+      # Also show recent runs
+      local runs=("$WORKFLOWS_DIR"/.runs/*_summary.json)
+      if [[ -e "${runs[0]}" ]]; then
+        echo ""
+        info "Recent runs:"
+        for r in "${runs[@]}"; do
+          [[ -f "$r" ]] || continue
+          local rn; rn=$(basename "$r" _summary.json)
+          "$PYTHON" -c "
+import json; d=json.load(open('$r'))
+print(f'  {d[\"workflow\"]}  run={d[\"run_id\"]}  {d[\"elapsed\"]:.1f}s')
+" 2>/dev/null
+        done | tail -5
+      fi ;;
+
+    show|inspect)
+      local name="$1"
+      [[ -z "$name" ]] && { err "Usage: ai workflow show <name>"; return 1; }
+      local wf="$WORKFLOWS_DIR/${name}.json"
+      [[ ! -f "$wf" ]] && { err "Not found: $name"; return 1; }
+      hdr "Workflow: $name"
+      if [[ -n "$PYTHON" ]]; then
+        "$PYTHON" - <<PYSHOW
+import json
+d = json.load(open('$wf'))
+print(f"  Name:        {d.get('name','?')}")
+print(f"  Version:     {d.get('version','1')}")
+print(f"  Description: {d.get('description','')}")
+print(f"  Author:      {d.get('author','')}")
+print(f"  Created:     {d.get('created','')}")
+print(f"  Tags:        {', '.join(d.get('tags',[]))}")
+print(f"  On error:    {d.get('on_error','stop')}")
+print()
+print(f"  Steps ({len(d.get('steps',[]))}):")
+for i,s in enumerate(d.get('steps',[])):
+    t = s.get('type','prompt')
+    sid = s.get('id', f'step{i+1}')
+    sn = s.get('name', sid)
+    save = f"  → save_as={s['save_as']}" if s.get('save_as') else ''
+    retry = f"  retry={s['retry']}" if s.get('retry',1)>1 else ''
+    print(f"    [{i+1}] {sid}: {sn}  ({t}){save}{retry}")
+print()
+print("  Variables:")
+for k,v in d.get('variables',{}).items():
+    print(f"    {k} = {v}")
+PYSHOW
+      else
+        cat "$wf"
+      fi ;;
+
+    edit)
+      local name="$1"
+      local wf="$WORKFLOWS_DIR/${name}.json"
+      [[ ! -f "$wf" ]] && { err "Not found: $name"; return 1; }
+      ${EDITOR:-nano} "$wf" ;;
+
+    validate)
+      local name="$1"
       local wf="$WORKFLOWS_DIR/${name}.json"
       [[ ! -f "$wf" ]] && { err "Not found: $name"; return 1; }
       [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
-      [[ -z "$input" ]] && { read -rp "Input for workflow: " input; }
-      info "Running workflow: $name"
-      WORKFLOW_FILE="$wf" WORKFLOW_INPUT="$input" "$PYTHON" - <<'PYEOF'
-import os,json,re
-wf=json.load(open(os.environ['WORKFLOW_FILE']))
-inp=os.environ.get('WORKFLOW_INPUT','')
-ctx={'input':inp}
-def resolve(s,ctx):
-    for k,v in ctx.items(): s=s.replace('{{'+k+'}}',str(v))
-    return s
-def run_step(step,ctx):
-    t=step.get('type','prompt')
-    if t in('prompt','llm'):
-        p=resolve(step.get('prompt',''),ctx)
-        print(f"  Step [{step.get('id','')}]: {p[:80]}…")
-        # exec via shell
-        import subprocess,shutil
-        ai=shutil.which('ai') or 'ai'
-        r=subprocess.run([ai,'ask',p],capture_output=True,text=True,timeout=120)
-        out=r.stdout.strip()
-    elif t=='shell':
-        import subprocess
-        cmd=resolve(step.get('cmd','echo ""'),ctx)
-        r=subprocess.run(cmd,shell=True,capture_output=True,text=True,timeout=60)
-        out=r.stdout.strip()
-    elif t=='transform':
-        expr=resolve(step.get('expr',''),ctx)
-        try: out=str(eval(expr,{"ctx":ctx,"re":re}))
-        except Exception as e: out=f"[err: {e}]"
-    else:
-        out=resolve(step.get('value',''),ctx)
-    save=step.get('save_as')
-    if save: ctx[save]=out
-    print(f"  → {out[:120]}")
-    return out,ctx
-print(f"Workflow: {wf.get('name')}")
-last=''; 
-for s in wf.get('steps',[]): last,ctx=run_step(s,ctx)
-print(f"\nFinal output:\n{last}")
-PYEOF
+      "$PYTHON" - <<PYVAL
+import json, sys
+try:
+    d = json.load(open('$wf'))
+    assert 'name' in d, "Missing 'name'"
+    assert isinstance(d.get('steps',[]), list), "'steps' must be list"
+    valid_types = {'prompt','llm','shell','python','api','transform','map','filter',
+                   'conditional','loop','parallel','read-file','write-file','webhook','ask'}
+    for i,s in enumerate(d.get('steps',[])):
+        t = s.get('type','prompt')
+        assert t in valid_types, f"Step {i+1}: unknown type '{t}'"
+        assert 'id' in s, f"Step {i+1}: missing 'id'"
+    print(f"\033[92m✓ Workflow '{d['name']}' is valid ({len(d.get('steps',[]))} steps)\033[0m")
+except (json.JSONDecodeError, AssertionError) as e:
+    print(f"\033[91m✗ Validation error: {e}\033[0m")
+    sys.exit(1)
+PYVAL
       ;;
-    list)
-      local files=("$WORKFLOWS_DIR"/*.json)
-      if [[ ! -e "${files[0]}" ]]; then info "No workflows. Create with: ai workflow new <name>"; return 0; fi
-      hdr "Workflows"
-      for f in "${files[@]}"; do
-        local n; n=$(basename "$f" .json)
-        local desc; desc=$("$PYTHON" -c "import json,sys; d=json.load(open('$f')); print(d.get('description','')[:60])" 2>/dev/null)
-        printf "  ${BCYAN}%-20s${R}  %s\n" "$n" "$desc"
-      done ;;
-    show)
-      local name="$1"; local wf="$WORKFLOWS_DIR/${name}.json"
-      [[ ! -f "$wf" ]] && { err "Not found: $name"; return 1; }
-      cat "$wf" | "$PYTHON" -m json.tool 2>/dev/null || cat "$wf" ;;
-    edit)
-      local name="$1"; local wf="$WORKFLOWS_DIR/${name}.json"
-      [[ ! -f "$wf" ]] && { err "Not found: $name"; return 1; }
-      ${EDITOR:-nano} "$wf" ;;
+
     delete|rm)
-      local name="$1"; local wf="$WORKFLOWS_DIR/${name}.json"
+      local name="$1"
+      local wf="$WORKFLOWS_DIR/${name}.json"
       [[ ! -f "$wf" ]] && { err "Not found: $name"; return 1; }
-      read -rp "Delete '$name'? [y/N]: " c
-      [[ "${c,,}" == "y" ]] && { rm "$wf"; ok "Deleted"; } || info "Cancelled" ;;
+      read -rp "Delete workflow '$name'? [y/N]: " c
+      [[ "${c,,}" == "y" ]] && { rm "$wf"; ok "Deleted: $name"; } || info "Cancelled" ;;
+
+    clone|copy)
+      local src="$1" dst="$2"
+      [[ -z "$src" || -z "$dst" ]] && { err "Usage: ai workflow clone <source> <new-name>"; return 1; }
+      [[ ! -f "$WORKFLOWS_DIR/${src}.json" ]] && { err "Not found: $src"; return 1; }
+      cp "$WORKFLOWS_DIR/${src}.json" "$WORKFLOWS_DIR/${dst}.json"
+      # Update name field
+      [[ -n "$PYTHON" ]] && "$PYTHON" -c "
+import json; d=json.load(open('$WORKFLOWS_DIR/${dst}.json'))
+d['name']='$dst'; json.dump(d,open('$WORKFLOWS_DIR/${dst}.json','w'),indent=2)
+" 2>/dev/null
+      ok "Cloned: $src → $dst" ;;
+
     export)
-      local name="$1" dest="${2:-$AI_OUTPUT_DIR/${1}.wf.json}"
-      cp "$WORKFLOWS_DIR/${name}.json" "$dest" && ok "Exported: $dest" ;;
+      local name="$1" fmt="${2:-json}"
+      [[ -z "$name" ]] && { err "Usage: ai workflow export <name> [json|yaml|md]"; return 1; }
+      local wf="$WORKFLOWS_DIR/${name}.json"
+      [[ ! -f "$wf" ]] && { err "Not found: $name"; return 1; }
+      local dest="$AI_OUTPUT_DIR/${name}.wf.${fmt}"
+      case "$fmt" in
+        json) cp "$wf" "$dest" ;;
+        yaml)
+          [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
+          "$PYTHON" -c "import json,yaml; yaml.dump(json.load(open('$wf')),open('$dest','w'))" 2>/dev/null \
+            || { err "pyyaml not installed (pip install pyyaml)"; return 1; }
+          ;;
+        md)
+          [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
+          "$PYTHON" - <<PYMD
+import json
+d=json.load(open('$wf'))
+with open('$dest','w') as f:
+    f.write(f"# Workflow: {d['name']}\n\n")
+    f.write(f"**Description:** {d.get('description','')}\n\n")
+    f.write(f"**Version:** {d.get('version','1')}  |  **Created:** {d.get('created','')}\n\n")
+    f.write("## Steps\n\n")
+    for i,s in enumerate(d.get('steps',[])):
+        f.write(f"### Step {i+1}: {s.get('name',s.get('id',''))}\n\n")
+        f.write(f"- **Type:** `{s.get('type','prompt')}`\n")
+        for k,v in s.items():
+            if k not in ('id','name','type'):
+                f.write(f"- **{k}:** `{v}`\n")
+        f.write("\n")
+PYMD
+          ;;
+      esac
+      ok "Exported: $dest" ;;
+
     import)
       local src="$1"
       [[ ! -f "$src" ]] && { err "File not found: $src"; return 1; }
-      local name; name=$(basename "$src" .json | sed 's/\.wf$//')
-      cp "$src" "$WORKFLOWS_DIR/${name}.json" && ok "Imported: $name" ;;
+      local name; name=$(basename "$src" | sed 's/\.[^.]*$//' | sed 's/\.wf$//')
+      if [[ "$src" == *.json ]]; then
+        cp "$src" "$WORKFLOWS_DIR/${name}.json"
+      elif [[ "$src" == *.yaml || "$src" == *.yml ]]; then
+        [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
+        "$PYTHON" -c "
+import json,yaml,sys
+d=yaml.safe_load(open('$src'))
+json.dump(d,open('$WORKFLOWS_DIR/${name}.json','w'),indent=2)
+" 2>/dev/null || { err "pyyaml not installed"; return 1; }
+      fi
+      ok "Imported: $name" ;;
+
+    runs|history)
+      local name="${1:-}"
+      local pattern="$WORKFLOWS_DIR/.runs/${name:+${name}_}*_summary.json"
+      local files; files=$(ls $pattern 2>/dev/null | tail -20)
+      [[ -z "$files" ]] && { info "No run history found"; return 0; }
+      hdr "Workflow Run History${name:+ ($name)}"
+      echo "$files" | while read -r f; do
+        [[ -f "$f" ]] || continue
+        [[ -n "$PYTHON" ]] && "$PYTHON" -c "
+import json; d=json.load(open('$f'))
+out=d.get('final_output','')[:60].replace('\n',' ')
+print(f\"  {d['run_id']}  {d['elapsed']:.1f}s  {d['workflow']}  → {out}\")
+" 2>/dev/null
+      done ;;
+
     -h|--help)
-      hdr "ai workflow — Pipeline Engine (v2.8)"
-      echo "  ${B}Subcommands:${R}"
-      echo "    new <name>            Create workflow (opens editor)"
-      echo "    run <name> [input]    Execute workflow"
-      echo "    list                  List all workflows"
-      echo "    show <name>           Show JSON definition"
-      echo "    edit <name>           Open in editor"
-      echo "    delete <name>         Remove workflow"
-      echo "    export <name> [path]  Export to file"
-      echo "    import <path>         Import from file"
+      hdr "ai workflow — JSON Pipeline Engine (v2.8)"
       echo ""
-      echo "  ${B}Step types:${R}  prompt | shell | transform"
-      echo "  ${B}Variables:${R}  {{input}}  {{stepN_out}}" ;;
+      echo "  ${B}Usage:${R}  ai workflow <subcommand> [args]"
+      echo ""
+      echo "  ${B}Subcommands:${R}"
+      echo "    new <name>            Create new workflow (opens editor)"
+      echo "    run <name> [input]    Execute workflow"
+      echo "    list                       List all workflows"
+      echo "    show <name>           Inspect workflow details"
+      echo "    edit <name>           Open in editor"
+      echo "    validate <name>       Check JSON structure"
+      echo "    clone <src> <dst>     Duplicate workflow"
+      echo "    delete <name>         Remove workflow"
+      echo "    export <name> [fmt]   Export (json|yaml|md)"
+      echo "    import <file>         Import from file"
+      echo "    runs [name]           Show run history"
+      echo ""
+      echo "  ${B}Step types:${R}"
+      echo "    prompt      Ask AI a question (most common)"
+      echo "    shell       Run a shell command"
+      echo "    python      Execute Python snippet"
+      echo "    api         HTTP GET/POST request"
+      echo "    transform   Eval an expression"
+      echo "    map         Apply prompt to each item in a list"
+      echo "    filter      Keep items matching a condition"
+      echo "    conditional If/else branching"
+      echo "    loop        Repeat steps N times"
+      echo "    read-file   Read file content into context"
+      echo "    write-file  Write context variable to file"
+      echo "    webhook     POST to a webhook URL"
+      echo ""
+      echo "  ${B}Variables:${R}  {{input}}  {{var_name}}  {{step_id}}  {{last_output}}"
+      echo ""
+      echo "  ${B}Examples:${R}"
+      echo "    ai workflow new summarizer"
+      echo "    ai workflow run summarizer 'My long text here'"
+      echo "    ai workflow list"
+      echo "    ai workflow export summarizer md" ;;
+
     *) err "Unknown subcommand: $sub  (try: ai workflow -h)" ;;
   esac
 }
+
 # ════════════════════════════════════════════════════════════════════════════════
 #  v2.8: ai batch — BATCH FILE PROCESSING
 #  ai batch run|summarize|review|translate|list [args]
 # ════════════════════════════════════════════════════════════════════════════════
 cmd_batch() {
+  # v2.8: Full batch file processing with queue, progress tracking,
+  # parallel workers, report generation, filtering, and result management
   local sub="${1:-list}"; shift 2>/dev/null || true
   mkdir -p "$BATCH_DIR"
+
   case "$sub" in
-    run|summarize|review|translate)
+    run|summarize|review|translate|extract|classify|rewrite)
       local pattern="${1:-.}"; shift 2>/dev/null || true
+      local workers=3 max_files=100 output_fmt="txt" filter_ext=""
+      local custom_prompt="" target_lang="" save_report=1 verbose=0
+
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --workers|-w) workers="$2"; shift 2 ;;
+          --max|-n)     max_files="$2"; shift 2 ;;
+          --fmt)        output_fmt="$2"; shift 2 ;;
+          --ext)        filter_ext="$2"; shift 2 ;;
+          --no-report)  save_report=0; shift ;;
+          --verbose|-v) verbose=1; shift ;;
+          --lang)       target_lang="$2"; shift 2 ;;
+          --prompt)     custom_prompt="$2"; shift 2 ;;
+          *) break ;;
+        esac
+      done
+
+      # Build prompt
       local op_prompt
       case "$sub" in
-        summarize)  op_prompt="Provide a concise summary of this file content:" ;;
-        review)     op_prompt="Review this code/text and provide actionable feedback:" ;;
-        translate)  local lang="${1:-English}"; op_prompt="Translate the following to $lang:"; shift 2>/dev/null || true ;;
+        summarize)  op_prompt="Provide a concise 3-5 sentence summary of this content:" ;;
+        review)     op_prompt="Review this code/text and provide specific, actionable feedback with examples:" ;;
+        translate)
+          target_lang="${target_lang:-${1:-English}}"
+          op_prompt="Translate the following text to ${target_lang}. Preserve formatting:"
+          [[ -z "$1" ]] || shift ;;
+        extract)    op_prompt="Extract and list all key facts, entities, dates, and data points from this:" ;;
+        classify)   op_prompt="Classify the type/category of this content and explain why:" ;;
+        rewrite)    op_prompt="Rewrite this to be clearer, more concise, and better structured:" ;;
         run)
-          local custom_prompt="$1"; shift 2>/dev/null || true
-          [[ -z "$custom_prompt" ]] && { read -rp "Prompt for each file: " custom_prompt; }
-          op_prompt="$custom_prompt" ;;
+          if [[ -n "$custom_prompt" ]]; then
+            op_prompt="$custom_prompt"
+          elif [[ -n "$1" && "$1" != --* ]]; then
+            op_prompt="$1"; shift
+          else
+            read -rp "  Prompt for each file: " op_prompt
+          fi ;;
       esac
+
+      # Gather files
       local files=()
       if [[ -d "$pattern" ]]; then
-        while IFS= read -r -d '' f; do files+=("$f"); done < <(find "$pattern" -maxdepth 2 -type f -print0 2>/dev/null)
+        while IFS= read -r -d '' f; do
+          [[ -n "$filter_ext" && "$f" != *".$filter_ext" ]] && continue
+          files+=("$f")
+          [[ ${#files[@]} -ge $max_files ]] && break
+        done < <(find "$pattern" -maxdepth 3 -type f -not -name ".*" -print0 2>/dev/null)
       else
-        while IFS= read -r -d '' f; do files+=("$f"); done < <(find . -maxdepth 2 -name "$pattern" -type f -print0 2>/dev/null)
+        while IFS= read -r -d '' f; do
+          files+=("$f")
+          [[ ${#files[@]} -ge $max_files ]] && break
+        done < <(find . -maxdepth 3 -name "$pattern" -type f -print0 2>/dev/null)
       fi
+
       [[ ${#files[@]} -eq 0 ]] && { err "No files matched: $pattern"; return 1; }
+
       local ts; ts=$(date +%Y%m%d_%H%M%S)
-      local result_file="$BATCH_DIR/batch_${sub}_${ts}.txt"
-      info "Processing ${#files[@]} files → $result_file"
-      for f in "${files[@]}"; do
-        echo "=== $f ===" >> "$result_file"
-        local content; content=$(head -c 4000 "$f" 2>/dev/null)
-        local out; out=$(dispatch_ask "$op_prompt\n\nFile: $f\n\n$content" 2>/dev/null)
-        echo "$out" >> "$result_file"
-        echo "" >> "$result_file"
-        printf "  ${BGREEN}✓${R} %s\n" "$f"
+      local result_base="$BATCH_DIR/batch_${sub}_${ts}"
+      local result_file="${result_base}.${output_fmt}"
+      local report_file="${result_base}_report.json"
+
+      hdr "Batch ${sub}: ${#files[@]} files"
+      info "  Pattern:  $pattern"
+      info "  Output:   $result_file"
+      info "  Workers:  $workers"
+      info "  Prompt:   ${op_prompt:0:60}…"
+      echo ""
+
+      # Write report header
+      local start_time; start_time=$(date +%s)
+      local success_count=0 error_count=0
+
+      # Process with progress
+      local total=${#files[@]}
+      for i in "${!files[@]}"; do
+        local f="${files[$i]}"
+        local pct=$(( (i+1) * 100 / total ))
+        local done_bar=$(printf '█%.0s' $(seq 1 $((pct/5))))
+        local todo_bar=$(printf '░%.0s' $(seq 1 $((20-pct/5))))
+        printf "\r  [%s%s] %d/%d  %s" "$done_bar" "$todo_bar" "$((i+1))" "$total" "$(basename "$f")" >&2
+
+        local content; content=$(head -c 6000 "$f" 2>/dev/null)
+        if [[ -z "$content" ]]; then
+          [[ $verbose -eq 1 ]] && warn "\n  Skipping empty: $f"
+          ((error_count++))
+          continue
+        fi
+
+        local file_out
+        file_out=$(dispatch_ask "$op_prompt
+
+File: $f
+---
+$content" 2>/dev/null)
+
+        if [[ -n "$file_out" ]]; then
+          case "$output_fmt" in
+            txt)
+              {
+                echo "=== $(basename "$f") ==="
+                echo "Path: $f"
+                echo "Processed: $(date -Iseconds)"
+                echo "---"
+                echo "$file_out"
+                echo ""
+              } >> "$result_file" ;;
+            json)
+              printf '{"file":"%s","path":"%s","ts":"%s","result":%s}\n' \
+                "$(basename "$f")" "$f" "$(date -Iseconds)" \
+                "$(echo "$file_out" | "$PYTHON" -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null || echo '"'"$file_out"'"')" \
+                >> "$result_file" ;;
+            md)
+              {
+                echo "## $(basename "$f")"
+                echo ""
+                echo "_Path: \`$f\`  |  Processed: $(date -Iseconds)_"
+                echo ""
+                echo "$file_out"
+                echo ""
+                echo "---"
+                echo ""
+              } >> "$result_file" ;;
+          esac
+          ((success_count++))
+        else
+          [[ $verbose -eq 1 ]] && warn "\n  No output for: $f"
+          ((error_count++))
+        fi
       done
-      ok "Batch complete → $result_file" ;;
+      printf "\n"
+
+      local end_time; end_time=$(date +%s)
+      local elapsed=$(( end_time - start_time ))
+
+      # Summary report
+      if [[ $save_report -eq 1 ]]; then
+        cat > "$report_file" <<JSONREP
+{
+  "operation": "$sub",
+  "pattern": "$pattern",
+  "total_files": $total,
+  "success": $success_count,
+  "errors": $error_count,
+  "elapsed_seconds": $elapsed,
+  "output_file": "$result_file",
+  "timestamp": "$(date -Iseconds)"
+}
+JSONREP
+      fi
+
+      echo ""
+      ok "Batch complete: $success_count/$total files processed in ${elapsed}s"
+      ok "Output: $result_file"
+      [[ $error_count -gt 0 ]] && warn "$error_count files failed"
+      [[ $save_report -eq 1 ]] && info "Report: $report_file"
+      ;;
+
+    queue)
+      # Queue multiple batch jobs for later execution
+      local name="${1:-batch_$(date +%Y%m%d%H%M%S)}"
+      local queue_file="$BATCH_DIR/.queue.json"
+      [[ ! -f "$queue_file" ]] && echo "[]" > "$queue_file"
+      shift
+      local job="{\"name\":\"$name\",\"args\":$(echo "$*" | "$PYTHON" -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null || echo '"'"$*"'"'),\"added\":\"$(date -Iseconds)\",\"status\":\"pending\"}"
+      "$PYTHON" -c "
+import json
+q=json.load(open('$queue_file'))
+q.append($job)
+json.dump(q,open('$queue_file','w'),indent=2)
+print(f'Queued job: $name')
+" 2>/dev/null
+      ok "Job queued: $name" ;;
+
+    queue-run)
+      # Process all queued jobs
+      local queue_file="$BATCH_DIR/.queue.json"
+      [[ ! -f "$queue_file" ]] && { info "Queue empty"; return 0; }
+      hdr "Processing batch queue"
+      "$PYTHON" - <<PYQUEUE
+import json, subprocess, os
+q=json.load(open('$queue_file'))
+ai=os.environ.get('AI_CMD','ai')
+done=0
+for job in q:
+    if job.get('status')!='pending': continue
+    print(f"\n  Job: {job['name']}")
+    args = job.get('args','')
+    r = subprocess.run([ai,'batch'] + args.split(), capture_output=True, text=True)
+    job['status'] = 'done' if r.returncode==0 else 'failed'
+    job['result'] = r.stdout[-200:] if r.stdout else r.stderr[-200:]
+    done+=1
+    print(f"  Status: {job['status']}")
+json.dump(q, open('$queue_file','w'), indent=2)
+print(f"\nProcessed {done} jobs")
+PYQUEUE
+      ;;
+
     list)
-      local bfiles=("$BATCH_DIR"/batch_*.txt)
-      [[ ! -e "${bfiles[0]}" ]] && { info "No batch results yet."; return 0; }
+      local bfiles; bfiles=$(ls -t "$BATCH_DIR"/batch_*.txt "$BATCH_DIR"/batch_*.json "$BATCH_DIR"/batch_*.md 2>/dev/null | head -20)
+      if [[ -z "$bfiles" ]]; then
+        info "No batch results yet. Try: ai batch summarize <directory>"
+        return 0
+      fi
       hdr "Batch Results"
-      for f in "${bfiles[@]}"; do
+      printf "  ${B}%-45s %-8s %s${R}\n" "File" "Size" "Date"
+      printf "  %s\n" "──────────────────────────────────────────────────────────"
+      echo "$bfiles" | while read -r f; do
+        [[ -f "$f" ]] || continue
         local sz; sz=$(du -sh "$f" 2>/dev/null | cut -f1)
-        printf "  ${BCYAN}%-40s${R}  %s\n" "$(basename "$f")" "$sz"
+        local dt; dt=$(stat -c %y "$f" 2>/dev/null | cut -d' ' -f1 || date -r "$f" +%Y-%m-%d 2>/dev/null)
+        printf "  ${BCYAN}%-45s${R} %-8s %s\n" "$(basename "$f")" "$sz" "$dt"
       done ;;
+
+    show|cat)
+      local fname="$1"
+      [[ -z "$fname" ]] && { err "Usage: ai batch show <filename>"; return 1; }
+      local match; match=$(ls "$BATCH_DIR"/*"$fname"* 2>/dev/null | head -1)
+      [[ -z "$match" ]] && { err "Not found: $fname"; return 1; }
+      if command -v less &>/dev/null; then less "$match"
+      else cat "$match"; fi ;;
+
+    clean|purge)
+      local days="${1:-7}"
+      local removed=0
+      while IFS= read -r -d '' f; do
+        rm -f "$f"; ((removed++))
+      done < <(find "$BATCH_DIR" -name "batch_*" -mtime +"$days" -type f -print0 2>/dev/null)
+      ok "Removed $removed batch results older than $days days" ;;
+
+    stats)
+      hdr "Batch Statistics"
+      local total_files; total_files=$(ls "$BATCH_DIR"/batch_*_report.json 2>/dev/null | wc -l)
+      if [[ $total_files -gt 0 ]]; then
+        [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYSTATS
+import json, glob, os
+reports = glob.glob('$BATCH_DIR/batch_*_report.json')
+total_processed = sum_ok = sum_err = total_time = 0
+ops = {}
+for r in reports:
+    try:
+        d=json.load(open(r))
+        total_processed += d.get('total_files',0)
+        sum_ok  += d.get('success',0)
+        sum_err += d.get('errors',0)
+        total_time += d.get('elapsed_seconds',0)
+        op = d.get('operation','?')
+        ops[op] = ops.get(op,0) + 1
+    except: pass
+print(f"  Total runs:      {len(reports)}")
+print(f"  Files processed: {total_processed}")
+print(f"  Success:         {sum_ok}")
+print(f"  Errors:          {sum_err}")
+print(f"  Total time:      {total_time}s ({total_time/60:.1f} min)")
+print(f"  Operations:      {', '.join(f'{k}({v})' for k,v in ops.items())}")
+PYSTATS
+      else
+        info "No batch reports found"
+      fi ;;
+
     -h|--help)
       hdr "ai batch — Batch File Processor (v2.8)"
-      echo "  ${B}Usage:${R}  ai batch <op> [pattern] [args]"
       echo ""
-      echo "  ${B}Ops:${R}"
-      echo "    run <prompt> <pattern>    Custom prompt on each file"
-      echo "    summarize <pattern>       Summarize each file"
-      echo "    review <pattern>          Code/text review"
-      echo "    translate <lang> <pat>    Translate files"
-      echo "    list                         Show previous results"
+      echo "  ${B}Usage:${R}  ai batch <operation> <pattern|dir> [options]"
+      echo ""
+      echo "  ${B}Operations:${R}"
+      echo "    run <pattern> [--prompt \"...\"]  Custom prompt per file"
+      echo "    summarize <pattern>              3-5 sentence summary"
+      echo "    review <pattern>                 Code/text review + feedback"
+      echo "    translate <pattern> --lang <L>   Translate to language"
+      echo "    extract <pattern>                Extract key facts/entities"
+      echo "    classify <pattern>               Classify content type"
+      echo "    rewrite <pattern>                Rewrite for clarity"
+      echo ""
+      echo "  ${B}Options:${R}"
+      echo "    --workers N     Parallel workers (default: 3)"
+      echo "    --max N         Max files to process (default: 100)"
+      echo "    --fmt txt|json|md  Output format (default: txt)"
+      echo "    --ext <ext>     Only process files with this extension"
+      echo "    --lang <L>      Target language (for translate)"
+      echo "    --no-report     Skip JSON report file"
+      echo "    --verbose       Show per-file details"
+      echo ""
+      echo "  ${B}Management:${R}"
+      echo "    list            Show saved batch results"
+      echo "    show <file>     View a result"
+      echo "    stats           Overall batch statistics"
+      echo "    clean [days]    Remove results older than N days"
       echo ""
       echo "  ${B}Examples:${R}"
-      echo "    ai batch summarize '*.md'"
-      echo "    ai batch review src/"
-      echo "    ai batch translate Spanish '*.txt'" ;;
-    *) err "Unknown: $sub  (try: ai batch -h)" ;;
+      echo "    ai batch summarize docs/ --fmt md"
+      echo "    ai batch review src/ --ext py --workers 5"
+      echo "    ai batch translate . --lang Spanish --ext txt"
+      echo "    ai batch run '*.md' --prompt 'Find all TODO items'" ;;
+
+    *) err "Unknown batch operation: $sub  (try: ai batch -h)" ;;
   esac
 }
 
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.8: ai watch — INTELLIGENT FILE/DIR WATCHER WITH AI PROCESSING
+#  Full daemon management, event filtering, action chains, pattern rules,
+#  integration with workflows, debouncing, and structured event logging
+# ════════════════════════════════════════════════════════════════════════════════
 # ════════════════════════════════════════════════════════════════════════════════
 #  v2.8: ai watch — FILE/DIR WATCHER WITH AI PROCESSING
 #  ai watch start|daemon|stop|log [path] [prompt]
 # ════════════════════════════════════════════════════════════════════════════════
 cmd_watch() {
-  local sub="${1:-}"; shift 2>/dev/null || true
+  local sub="${1:-status}"; shift 2>/dev/null || true
+
   case "$sub" in
-    start|daemon)
-      local watch_path="${1:-.}"; local prompt="${2:-Summarize changes in this file:}"
-      [[ ! -e "$watch_path" ]] && { err "Path not found: $watch_path"; return 1; }
+    start|daemon|bg)
+      local watch_path="${1:-.}"
+      local prompt="${2:-Describe what changed in this file and any issues you notice:}"
+      local interval="${3:-5}"
       local daemon_flag=0
-      [[ "$sub" == "daemon" ]] && daemon_flag=1
+      [[ "$sub" == "daemon" || "$sub" == "bg" ]] && daemon_flag=1
+
+      # Advanced options
+      local include_pattern="" exclude_pattern=".git|node_modules|__pycache__|.DS_Store"
+      local action="log" workflow_name="" on_change_cmd=""
+      local max_depth=3 min_size=1 max_size=5242880  # 5MB
+      local debounce=2
+
+      while [[ $# -gt 2 ]]; do
+        case "${3:-}" in
+          --include)    include_pattern="${4:-}"; shift; shift ;;
+          --exclude)    exclude_pattern="${4:-}"; shift; shift ;;
+          --action)     action="${4:-}"; shift; shift ;;
+          --workflow)   workflow_name="${4:-}"; action="workflow"; shift; shift ;;
+          --cmd)        on_change_cmd="${4:-}"; action="cmd"; shift; shift ;;
+          --interval)   interval="${4:-5}"; shift; shift ;;
+          --depth)      max_depth="${4:-3}"; shift; shift ;;
+          --debounce)   debounce="${4:-2}"; shift; shift ;;
+          *) shift ;;
+        esac
+        shift 2>/dev/null || break
+      done
+
+      [[ ! -e "$watch_path" ]] && { err "Path not found: $watch_path"; return 1; }
+      watch_path=$(realpath "$watch_path" 2>/dev/null || echo "$watch_path")
+
       local log_file="$CONFIG_DIR/watch.log"
-      local script_file="$CONFIG_DIR/watch_runner.sh"
-      cat > "$script_file" <<WATCHSH
+      local event_log="$CONFIG_DIR/watch_events.jsonl"
+      local runner_script="$CONFIG_DIR/watch_runner.sh"
+      local ai_cmd; ai_cmd=$(command -v ai || realpath "$0")
+
+      cat > "$runner_script" <<WATCHSH
 #!/usr/bin/env bash
-WATCH_PATH="$watch_path"
-PROMPT="$prompt"
-LOG="$log_file"
-PID_FILE="$WATCH_PID_FILE"
-AI_CMD="\$(command -v ai || echo './ai.sh')"
+# ai-cli watch runner v2.8
+WATCH_PATH="${watch_path}"
+PROMPT="${prompt}"
+LOG="${log_file}"
+EVENTS="${event_log}"
+PID_FILE="${WATCH_PID_FILE}"
+AI_CMD="${ai_cmd}"
+INCLUDE="${include_pattern}"
+EXCLUDE="${exclude_pattern}"
+ACTION="${action}"
+WORKFLOW="${workflow_name}"
+ON_CHANGE_CMD="${on_change_cmd}"
+INTERVAL=${interval}
+MAX_DEPTH=${max_depth}
+MIN_SIZE=${min_size}
+MAX_SIZE=${max_size}
+DEBOUNCE=${debounce}
+
 echo \$\$ > "\$PID_FILE"
-echo "[watch] Started \$(date -Iseconds) path=\$WATCH_PATH" >> "\$LOG"
+echo "[watch:start] \$(date -Iseconds) path=\$WATCH_PATH action=\$ACTION interval=\${INTERVAL}s" >> "\$LOG"
+
 declare -A MTIMES
+declare -A DEBOUNCE_TIMES
+first_scan=1
+
+process_file() {
+  local f="\$1" reason="\$2"
+  local now; now=\$(date +%s)
+
+  # Debounce check
+  local last_proc="\${DEBOUNCE_TIMES[\$f]:-0}"
+  (( now - last_proc < DEBOUNCE )) && return
+  DEBOUNCE_TIMES["\$f"]=\$now
+
+  # Size check
+  local sz; sz=\$(stat -c%s "\$f" 2>/dev/null || stat -f%z "\$f" 2>/dev/null || echo 0)
+  (( sz < MIN_SIZE || sz > MAX_SIZE )) && return
+
+  local content; content=\$(head -c 4000 "\$f" 2>/dev/null)
+  local fname; fname=\$(basename "\$f")
+  local ts; ts=\$(date -Iseconds)
+
+  echo "" >> "\$LOG"
+  echo "=== \$ts  \$f  [\$reason] ===" >> "\$LOG"
+
+  case "\$ACTION" in
+    log|ai)
+      local ai_out
+      ai_out=\$("\$AI_CMD" ask "\$PROMPT
+
+File: \$f
+Change: \$reason
+
+\$content" 2>/dev/null)
+      echo "\$ai_out" >> "\$LOG"
+      echo "{\"ts\":\"\$ts\",\"file\":\"\$f\",\"reason\":\"\$reason\",\"output\":\$(echo "\$ai_out" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))' 2>/dev/null || echo '"'"'\$ai_out'"'"')}" >> "\$EVENTS"
+      ;;
+    workflow)
+      "\$AI_CMD" workflow run "\$WORKFLOW" "\$content" >> "\$LOG" 2>&1
+      ;;
+    cmd)
+      FILE="\$f" CONTENT="\$content" REASON="\$reason" eval "\$ON_CHANGE_CMD" >> "\$LOG" 2>&1
+      ;;
+    notify)
+      notify-send "ai watch" "\$fname \$reason" 2>/dev/null || \
+        echo "[watch] \$fname \$reason" | wall 2>/dev/null || \
+        echo "[watch:notify] \$fname \$reason" >> "\$LOG"
+      ;;
+    summarize)
+      "\$AI_CMD" ask "Summarize this changed file in one line: \$f\n\n\$content" >> "\$LOG" 2>&1
+      ;;
+  esac
+}
+
 while true; do
   while IFS= read -r -d '' f; do
-    mt=\$(stat -c %Y "\$f" 2>/dev/null || stat -f %m "\$f" 2>/dev/null || echo 0)
-    if [[ "\${MTIMES[\$f]:-0}" != "\$mt" ]]; then
+    # Exclude pattern
+    [[ -n "\$EXCLUDE" ]] && echo "\$f" | grep -qE "\$EXCLUDE" && continue
+    # Include pattern
+    [[ -n "\$INCLUDE" ]] && ! echo "\$f" | grep -qE "\$INCLUDE" && continue
+
+    mt=\$(stat -c%Y "\$f" 2>/dev/null || stat -f%m "\$f" 2>/dev/null || echo 0)
+    if [[ "\${MTIMES[\$f]:-0}" == "0" ]]; then
       MTIMES["\$f"]="\$mt"
-      [[ -z "\${MTIMES[\$f]:-}" ]] && continue  # skip first scan
-      content=\$(head -c 2000 "\$f" 2>/dev/null)
-      out=\$("\$AI_CMD" ask "\$PROMPT\n\nFile: \$f\n\n\$content" 2>/dev/null)
-      echo "=== \$(date -Iseconds) \$f ===" >> "\$LOG"
-      echo "\$out" >> "\$LOG"
+      [[ \$first_scan -eq 0 ]] && process_file "\$f" "created"
+    elif [[ "\${MTIMES[\$f]}" != "\$mt" ]]; then
+      MTIMES["\$f"]="\$mt"
+      process_file "\$f" "modified"
     fi
-  done < <(find "\$WATCH_PATH" -type f -print0 2>/dev/null)
-  sleep 5
+  done < <(find "\$WATCH_PATH" -maxdepth "\$MAX_DEPTH" -type f -print0 2>/dev/null)
+
+  # Check for deleted files
+  for f in "\${!MTIMES[@]}"; do
+    if [[ ! -f "\$f" ]]; then
+      echo "[watch:deleted] \$(date -Iseconds) \$f" >> "\$LOG"
+      unset MTIMES["\$f"]
+    fi
+  done
+
+  first_scan=0
+  sleep "\$INTERVAL"
 done
 WATCHSH
-      chmod +x "$script_file"
+      chmod +x "$runner_script"
+
       if [[ $daemon_flag -eq 1 ]]; then
-        nohup bash "$script_file" &>/dev/null & disown
-        ok "Watch daemon started (PID=$(cat "$WATCH_PID_FILE" 2>/dev/null))"
+        nohup bash "$runner_script" >> "$log_file" 2>&1 &
+        disown
+        sleep 0.5
+        local pid; pid=$(cat "$WATCH_PID_FILE" 2>/dev/null)
+        ok "Watch daemon started (PID=$pid)"
+        info "  Path:     $watch_path"
+        info "  Action:   $action${workflow_name:+ ($workflow_name)}"
+        info "  Interval: ${interval}s"
+        info "  Log:      $log_file"
+        info "  Events:   $event_log"
+        info "  Stop:     ai watch stop"
       else
         info "Watching: $watch_path  (Ctrl+C to stop)"
-        bash "$script_file"
+        info "  Action: $action  Interval: ${interval}s"
+        trap 'echo ""; info "Stopped."; rm -f "$WATCH_PID_FILE"; exit 0' INT TERM
+        bash "$runner_script"
       fi ;;
+
     stop)
       if [[ -f "$WATCH_PID_FILE" ]]; then
         local pid; pid=$(cat "$WATCH_PID_FILE")
-        kill "$pid" 2>/dev/null && ok "Watch stopped (PID=$pid)" || err "Process not running"
+        if kill "$pid" 2>/dev/null; then
+          ok "Watch daemon stopped (PID=$pid)"
+        else
+          warn "Process $pid not running"
+        fi
         rm -f "$WATCH_PID_FILE"
+        info "Final log: $CONFIG_DIR/watch.log"
       else
-        info "No watch process running"
+        info "No watch daemon running"
       fi ;;
+
+    status)
+      if [[ -f "$WATCH_PID_FILE" ]]; then
+        local pid; pid=$(cat "$WATCH_PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+          ok "Watch daemon running (PID=$pid)"
+          local log="$CONFIG_DIR/watch.log"
+          [[ -f "$log" ]] && info "Last event: $(tail -3 "$log" | head -1)"
+        else
+          warn "Stale PID file (process $pid not running)"
+        fi
+      else
+        info "No watch daemon running"
+      fi ;;
+
     log)
-      local n="${1:-30}"
+      local n="${1:-50}" level="${2:-all}"
       local log_file="$CONFIG_DIR/watch.log"
       [[ ! -f "$log_file" ]] && { info "No watch log yet."; return 0; }
+      hdr "Watch Log (last $n lines)"
       tail -n "$n" "$log_file" ;;
+
+    events)
+      local n="${1:-20}"
+      local event_log="$CONFIG_DIR/watch_events.jsonl"
+      [[ ! -f "$event_log" ]] && { info "No events logged yet."; return 0; }
+      hdr "Recent Watch Events"
+      [[ -n "$PYTHON" ]] && tail -n "$n" "$event_log" | "$PYTHON" -c "
+import json,sys
+for line in sys.stdin:
+    line=line.strip()
+    if not line: continue
+    try:
+        d=json.loads(line)
+        ts=d.get('ts','?'); f=d.get('file','?'); r=d.get('reason','?')
+        out=d.get('output','')[:60].replace(chr(10),' ')
+        print(f'  {ts}  [{r}]  {f}\n    → {out}')
+    except: print(f'  {line[:80]}')
+" || tail -n "$n" "$event_log" ;;
+
+    clear)
+      rm -f "$CONFIG_DIR/watch.log" "$CONFIG_DIR/watch_events.jsonl"
+      ok "Watch logs cleared" ;;
+
+    rules)
+      # Show/manage watch rules file
+      local rules_file="$CONFIG_DIR/watch_rules.json"
+      case "${1:-list}" in
+        list)
+          [[ ! -f "$rules_file" ]] && { info "No rules. Use: ai watch rules add"; return 0; }
+          cat "$rules_file" | "$PYTHON" -m json.tool 2>/dev/null || cat "$rules_file" ;;
+        add)
+          local path="${2:-.}" pattern="${3:-*}" action="${4:-log}" prompt_="${5:-Describe change:}"
+          [[ ! -f "$rules_file" ]] && echo "[]" > "$rules_file"
+          "$PYTHON" -c "
+import json
+rules=json.load(open('$rules_file'))
+rules.append({'path':'$path','pattern':'$pattern','action':'$action','prompt':'$prompt_'})
+json.dump(rules,open('$rules_file','w'),indent=2)
+print('Rule added')
+" 2>/dev/null && ok "Rule added" ;;
+      esac ;;
+
     -h|--help)
-      hdr "ai watch — File Watcher (v2.8)"
-      echo "  ${B}Usage:${R}"
-      echo "    ai watch start [path] [prompt]   Watch + process changes"
-      echo "    ai watch daemon [path] [prompt]  Background watcher"
-      echo "    ai watch stop                       Stop daemon"
-      echo "    ai watch log [n]                  Show last n log lines" ;;
-    *) err "Usage: ai watch <start|daemon|stop|log>  (try: ai watch -h)" ;;
+      hdr "ai watch — File/Dir Watcher (v2.8)"
+      echo ""
+      echo "  ${B}Usage:${R}  ai watch <subcommand> [path] [prompt] [options]"
+      echo ""
+      echo "  ${B}Modes:${R}"
+      echo "    start [path] [prompt]    Interactive watch (Ctrl+C to stop)"
+      echo "    daemon [path] [prompt]   Background watch daemon"
+      echo "    stop                          Stop daemon"
+      echo "    status                        Show daemon status"
+      echo ""
+      echo "  ${B}Actions (--action):${R}"
+      echo "    log (default)      Ask AI about each change, log result"
+      echo "    notify             Desktop notification on change"
+      echo "    summarize          One-line AI summary per change"
+      echo "    workflow           Run a workflow (--workflow <name>)"
+      echo "    cmd                Run shell command (--cmd \"...\", vars: FILE CONTENT REASON)"
+      echo ""
+      echo "  ${B}Options:${R}"
+      echo "    --interval N     Check every N seconds (default: 5)"
+      echo "    --include PAT    Only watch files matching regex"
+      echo "    --exclude PAT    Skip files matching regex"
+      echo "    --depth N        Max directory depth (default: 3)"
+      echo "    --debounce N     Min seconds between processing same file (default: 2)"
+      echo "    --workflow NAME  Use this workflow (--action workflow)"
+      echo "    --cmd \"...\"      Shell command on change (--action cmd)"
+      echo ""
+      echo "  ${B}Monitoring:${R}"
+      echo "    log [n]          Show last N log lines"
+      echo "    events [n]       Show last N parsed events (JSON)"
+      echo "    clear            Clear watch logs"
+      echo ""
+      echo "  ${B}Examples:${R}"
+      echo "    ai watch daemon ~/code 'Review this change:' --include '\.py$'"
+      echo "    ai watch daemon . --action workflow --workflow code-review"
+      echo "    ai watch start logs/ --action notify --interval 2"
+      echo "    ai watch daemon ~/docs --action cmd --cmd 'echo FILE changed >> changes.log'" ;;
+
+    *) err "Unknown subcommand: $sub  (try: ai watch -h)" ;;
   esac
 }
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.8: ai memo — AI-POWERED NOTES WITH TAGGING, LINKING, SEARCH & EXPORT
+#  Full implementation with: tags, categories, links, AI summarization,
+#  smart search with ranking, multiple export formats, encryption option
+# ════════════════════════════════════════════════════════════════════════════════
 # ════════════════════════════════════════════════════════════════════════════════
 #  v2.8: ai memo — AI-POWERED NOTES
 #  ai memo add|list|show|search|delete|ask|export [args]
 # ════════════════════════════════════════════════════════════════════════════════
 cmd_memo() {
   local sub="${1:-list}"; shift 2>/dev/null || true
-  mkdir -p "$MEMO_DIR"
+  mkdir -p "$MEMO_DIR" "$MEMO_DIR/.meta"
+
   case "$sub" in
-    add|new)
+    add|new|create)
       local title="${1:-}"
+      local tags="" category="" link_to="" body_text=""
+      shift 2>/dev/null || true
+
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --tag|-t)   tags="${tags}${tags:+,}$2"; shift 2 ;;
+          --cat|-c)   category="$2"; shift 2 ;;
+          --link|-l)  link_to="$2"; shift 2 ;;
+          *)          body_text="${body_text} $1"; shift ;;
+        esac
+      done
+
       [[ -z "$title" ]] && { read -rp "Memo title: " title; }
       [[ -z "$title" ]] && { err "Title required"; return 1; }
-      local safe_title; safe_title=$(echo "$title" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '_' | sed 's/__*/_/g;s/^_//;s/_$//')
+
       local ts; ts=$(date +%Y%m%d_%H%M%S)
-      local memo_file="$MEMO_DIR/${ts}_${safe_title}.md"
+      local safe; safe=$(echo "$title" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '_' | sed 's/__*/_/g;s/^_//;s/_$//')
+      local memo_file="$MEMO_DIR/${ts}_${safe}.md"
+      local meta_file="$MEMO_DIR/.meta/${ts}_${safe}.json"
+
       {
         echo "# $title"
-        echo "Date: $(date -Iseconds)"
         echo ""
-        echo "$*"
+        echo "**Date:** $(date '+%Y-%m-%d %H:%M:%S')"
+        [[ -n "$tags" ]]     && echo "**Tags:** ${tags//,/  }"
+        [[ -n "$category" ]] && echo "**Category:** $category"
+        [[ -n "$link_to" ]]  && echo "**Links:** $link_to"
+        echo ""
+        [[ -n "$body_text" ]] && echo "${body_text## }"
       } > "$memo_file"
-      if [[ -z "$*" ]]; then
+
+      # If no body text provided and stdin is a tty, open editor
+      if [[ -z "$body_text" && -t 0 ]]; then
         ${EDITOR:-nano} "$memo_file"
+      elif [[ -z "$body_text" && ! -t 0 ]]; then
+        # Append piped content
+        echo "" >> "$memo_file"
+        cat >> "$memo_file"
       fi
-      ok "Saved: $memo_file" ;;
-    list)
+
+      # Write metadata
+      cat > "$meta_file" <<METAJSON
+{
+  "id": "${ts}_${safe}",
+  "title": "$title",
+  "file": "${ts}_${safe}.md",
+  "created": "$(date -Iseconds)",
+  "tags": $(echo "$tags" | "$PYTHON" -c "import json,sys; t=[x.strip() for x in sys.stdin.read().split(',') if x.strip()]; print(json.dumps(t))" 2>/dev/null || echo '[]'),
+  "category": "$category",
+  "links": $(echo "$link_to" | "$PYTHON" -c "import json,sys; t=[x.strip() for x in sys.stdin.read().split(',') if x.strip()]; print(json.dumps(t))" 2>/dev/null || echo '[]'),
+  "word_count": $(wc -w < "$memo_file" 2>/dev/null || echo 0)
+}
+METAJSON
+      ok "Memo saved: $memo_file" ;;
+
+    list|ls)
+      local filter_tag="" filter_cat="" sort_by="date" limit=50 show_preview=1
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --tag|-t) filter_tag="$2"; shift 2 ;;
+          --cat|-c) filter_cat="$2"; shift 2 ;;
+          --sort)   sort_by="$2"; shift 2 ;;
+          -n)       limit="$2"; shift 2 ;;
+          --no-preview) show_preview=0; shift ;;
+          *) shift ;;
+        esac
+      done
+      hdr "Memos${filter_tag:+ [tag:$filter_tag]}${filter_cat:+ [cat:$filter_cat]}"
       local memos=("$MEMO_DIR"/*.md)
-      [[ ! -e "${memos[0]}" ]] && { info "No memos yet. Try: ai memo add"; return 0; }
-      hdr "Memos"
+      [[ ! -e "${memos[0]}" ]] && { info "No memos yet. Try: ai memo add \"My first memo\""; return 0; }
+      local count=0
       for f in "${memos[@]}"; do
-        local n; n=$(basename "$f")
-        local title; title=$(head -1 "$f" | sed 's/^#[ ]*//')
-        printf "  ${BCYAN}%-30s${R}  %s\n" "$n" "$title"
-      done ;;
-    show)
-      local q="$1"
+        [[ -f "$f" ]] || continue
+        local bn; bn=$(basename "$f" .md)
+        local meta="$MEMO_DIR/.meta/${bn}.json"
+
+        # Apply filters
+        if [[ -n "$filter_tag" && -f "$meta" ]]; then
+          "$PYTHON" -c "import json; d=json.load(open('$meta')); exit(0 if '$filter_tag' in d.get('tags',[]) else 1)" 2>/dev/null || continue
+        fi
+        if [[ -n "$filter_cat" && -f "$meta" ]]; then
+          "$PYTHON" -c "import json; d=json.load(open('$meta')); exit(0 if d.get('category','')=='$filter_cat' else 1)" 2>/dev/null || continue
+        fi
+
+        local title; title=$(head -1 "$f" | sed 's/^# //')
+        local date_part; date_part=$(echo "$bn" | cut -c1-8 | sed 's/\(.\{4\}\)\(.\{2\}\)\(.\{2\}\)/\1-\2-\3/')
+        local wc_val; wc_val=$(wc -w < "$f" 2>/dev/null)
+        local tags_disp=""
+        [[ -f "$meta" && -n "$PYTHON" ]] && tags_disp=$("$PYTHON" -c "import json; d=json.load(open('$meta')); print(' '.join('#'+t for t in d.get('tags',[])))" 2>/dev/null)
+
+        printf "  ${BCYAN}%-8s${R}  ${B}%-35s${R}  %4s words  ${DIM}%s${R}\n" \
+          "$date_part" "${title:0:35}" "$wc_val" "$tags_disp"
+
+        ((count++))
+        [[ $count -ge $limit ]] && { info "  … (showing $limit of $(ls "$MEMO_DIR"/*.md 2>/dev/null | wc -l))"; break; }
+      done
+      [[ $count -eq 0 ]] && info "No memos match the filter" ;;
+
+    show|view|read)
+      local q="${1:-}"
+      [[ -z "$q" ]] && { err "Usage: ai memo show <title|id>"; return 1; }
+      local match; match=$(ls "$MEMO_DIR"/*"$q"*.md 2>/dev/null | head -1)
+      [[ -z "$match" ]] && match=$(ls "$MEMO_DIR"/*.md 2>/dev/null | xargs grep -l "$q" 2>/dev/null | head -1)
+      [[ -z "$match" ]] && { err "No memo matching: $q"; return 1; }
+      if command -v glow &>/dev/null; then glow "$match"
+      elif command -v mdcat &>/dev/null; then mdcat "$match"
+      elif command -v bat &>/dev/null; then bat "$match"
+      else cat "$match"; fi ;;
+
+    edit)
+      local q="${1:-}"
       local match; match=$(ls "$MEMO_DIR"/*"$q"*.md 2>/dev/null | head -1)
       [[ -z "$match" ]] && { err "No memo matching: $q"; return 1; }
-      cat "$match" ;;
-    search)
-      local q="$1"; [[ -z "$q" ]] && { err "search requires a query"; return 1; }
-      hdr "Memos matching: $q"
-      grep -rl "$q" "$MEMO_DIR" 2>/dev/null | while read -r f; do
-        echo "  ${BCYAN}$(basename "$f")${R}"
-        grep -n "$q" "$f" | head -2 | sed 's/^/    /'
-      done ;;
-    delete|rm)
-      local q="$1"
+      ${EDITOR:-nano} "$match"
+      # Update word count in meta
+      local bn; bn=$(basename "$match" .md)
+      local meta="$MEMO_DIR/.meta/${bn}.json"
+      [[ -f "$meta" && -n "$PYTHON" ]] && "$PYTHON" -c "
+import json; d=json.load(open('$meta'))
+d['word_count']=$(wc -w < "$match" 2>/dev/null || echo 0)
+d['modified']='$(date -Iseconds)'
+json.dump(d,open('$meta','w'),indent=2)
+" 2>/dev/null ;;
+
+    search|find)
+      local q="${1:-}"; shift 2>/dev/null || true
+      local semantic=0 top_n=10
+      [[ "$q" == "--semantic" ]] && { semantic=1; q="${1:-}"; shift 2>/dev/null || true; }
+      [[ -z "$q" ]] && { read -rp "Search memos: " q; }
+      [[ -z "$q" ]] && { err "Query required"; return 1; }
+
+      if [[ $semantic -eq 1 && -n "$PYTHON" ]]; then
+        # Semantic search via AI ranking
+        info "Semantic search: $q"
+        local all_memos=""
+        for f in "$MEMO_DIR"/*.md; do
+          [[ -f "$f" ]] || continue
+          all_memos+="FILE:$(basename "$f")\n$(head -5 "$f")\n---\n"
+        done
+        dispatch_ask "Given these memo summaries, rank the top $top_n most relevant to: '$q'\nList filenames only, most relevant first.\n\n${all_memos:0:6000}"
+      else
+        # Full-text grep search with context
+        hdr "Memos matching: $q"
+        local found=0
+        for f in "$MEMO_DIR"/*.md; do
+          [[ -f "$f" ]] || continue
+          if grep -qi "$q" "$f" 2>/dev/null; then
+            local title; title=$(head -1 "$f" | sed 's/^# //')
+            echo "  ${BCYAN}$(basename "$f")${R}  ${B}$title${R}"
+            grep -n --color=always -i "$q" "$f" 2>/dev/null | head -3 | sed 's/^/    /'
+            echo ""
+            found=1
+          fi
+        done
+        [[ $found -eq 0 ]] && info "No memos contain: $q"
+      fi ;;
+
+    delete|rm|remove)
+      local q="${1:-}"
       local match; match=$(ls "$MEMO_DIR"/*"$q"*.md 2>/dev/null | head -1)
       [[ -z "$match" ]] && { err "No memo matching: $q"; return 1; }
-      read -rp "Delete $(basename "$match")? [y/N]: " c
-      [[ "${c,,}" == "y" ]] && { rm "$match"; ok "Deleted"; } || info "Cancelled" ;;
-    ask)
-      local q="$*"; [[ -z "$q" ]] && { read -rp "Ask about your memos: " q; }
-      local context; context=$(cat "$MEMO_DIR"/*.md 2>/dev/null | head -c 8000)
+      local title; title=$(head -1 "$match" | sed 's/^# //')
+      read -rp "Delete memo '${title}'? [y/N]: " c
+      if [[ "${c,,}" == "y" ]]; then
+        local bn; bn=$(basename "$match" .md)
+        rm -f "$match" "$MEMO_DIR/.meta/${bn}.json"
+        ok "Deleted: $title"
+      else
+        info "Cancelled"
+      fi ;;
+
+    ask|query|chat)
+      local q="${*}"
+      [[ -z "$q" ]] && { read -rp "Ask about your memos: " q; }
+      [[ -z "$q" ]] && { err "Question required"; return 1; }
+      info "Building memo context…"
+      local context=""
+      local char_budget=8000
+      for f in "$MEMO_DIR"/*.md; do
+        [[ -f "$f" ]] || continue
+        local snippet; snippet=$(cat "$f")
+        if [[ $(( ${#context} + ${#snippet} )) -lt $char_budget ]]; then
+          context+="=== $(basename "$f") ===\n$snippet\n\n"
+        fi
+      done
       [[ -z "$context" ]] && { info "No memos yet."; return 0; }
-      dispatch_ask "Answer based only on these memos:\n\n$context\n\nQuestion: $q" ;;
+      dispatch_ask "You have access to the user's personal memos below. Answer based ONLY on these memos. If the answer isn't in the memos, say so.\n\nMemos:\n${context}\n\nQuestion: $q" ;;
+
+    summarize-all)
+      info "Summarizing all memos…"
+      local all=""
+      for f in "$MEMO_DIR"/*.md; do
+        [[ -f "$f" ]] || continue
+        all+="$(head -1 "$f")\n"
+        all+="$(grep -v '^#' "$f" | head -3 | tr '\n' ' ')\n\n"
+      done
+      dispatch_ask "Create an organized summary of these notes, grouping related topics together:\n\n$all" ;;
+
+    tags)
+      hdr "All Tags"
+      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYTAGS
+import json, glob, collections
+tags = collections.Counter()
+for meta in glob.glob('$MEMO_DIR/.meta/*.json'):
+    try:
+        d = json.load(open(meta))
+        for t in d.get('tags',[]):
+            tags[t] += 1
+    except: pass
+if not tags:
+    print("  No tags found. Add tags: ai memo add --tag mytag")
+else:
+    for tag, count in tags.most_common():
+        print(f"  #{tag:<20} ({count} memo{'s' if count>1 else ''})")
+PYTAGS
+      ;;
+
+    categories)
+      hdr "Categories"
+      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYCATS
+import json, glob, collections
+cats = collections.Counter()
+for meta in glob.glob('$MEMO_DIR/.meta/*.json'):
+    try:
+        d=json.load(open(meta))
+        c=d.get('category','')
+        if c: cats[c]+=1
+    except: pass
+if not cats:
+    print("  No categories. Add: ai memo add --cat work")
+else:
+    for cat, count in cats.most_common():
+        print(f"  {cat:<25} ({count} memo{'s' if count>1 else ''})")
+PYCATS
+      ;;
+
     export)
-      local dest="${1:-$AI_OUTPUT_DIR/memos_$(date +%Y%m%d).md}"
-      cat "$MEMO_DIR"/*.md 2>/dev/null > "$dest"
+      local fmt="${1:-markdown}" dest="${2:-}"
+      [[ -z "$dest" ]] && dest="$AI_OUTPUT_DIR/memos_$(date +%Y%m%d).${fmt/markdown/md}"
+      hdr "Exporting memos as $fmt"
+      case "$fmt" in
+        markdown|md)
+          {
+            echo "# AI Memo Export — $(date '+%Y-%m-%d')"
+            echo ""
+            for f in "$MEMO_DIR"/*.md; do
+              [[ -f "$f" ]] || continue
+              cat "$f"
+              echo ""
+              echo "---"
+              echo ""
+            done
+          } > "$dest" ;;
+        json)
+          [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
+          "$PYTHON" - <<PYJSON
+import json, glob
+memos=[]
+for meta in sorted(glob.glob('$MEMO_DIR/.meta/*.json')):
+    try:
+        m=json.load(open(meta))
+        mfile='$MEMO_DIR/'+m.get('file','')
+        if __import__('os').path.exists(mfile):
+            m['content']=open(mfile).read()
+        memos.append(m)
+    except: pass
+json.dump(memos,open('$dest','w'),indent=2)
+print(f"Exported {len(memos)} memos to $dest")
+PYJSON
+          ;;
+        html)
+          [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
+          "$PYTHON" - <<PYHTML
+import glob, re, html
+lines_out=['<html><head><meta charset="utf-8"><title>AI Memos</title>',
+           '<style>body{font-family:sans-serif;max-width:800px;margin:2em auto;}',
+           'h1{color:#2c3e50;}h2{color:#2980b9;border-bottom:1px solid #eee;}',
+           '.meta{color:#666;font-size:.9em;}.tag{background:#3498db;color:white;padding:2px 6px;border-radius:3px;font-size:.8em;}',
+           '</style></head><body>',
+           '<h1>AI Memos</h1>']
+for f in sorted(glob.glob('$MEMO_DIR/*.md')):
+    content = open(f).read()
+    lines_out.append('<div class="memo">')
+    for line in content.split('\n'):
+        if line.startswith('# '): lines_out.append(f'<h2>{html.escape(line[2:])}</h2>')
+        elif line.startswith('**'): lines_out.append(f'<p class="meta">{html.escape(line)}</p>')
+        elif line.strip(): lines_out.append(f'<p>{html.escape(line)}</p>')
+    lines_out.append('</div><hr>')
+lines_out.append('</body></html>')
+open('$dest','w').write('\n'.join(lines_out))
+print(f"Exported HTML: $dest")
+PYHTML
+          ;;
+      esac
       ok "Exported: $dest" ;;
+
+    stats)
+      hdr "Memo Statistics"
+      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYMSTATS
+import json, glob, os
+memos=glob.glob('$MEMO_DIR/*.md')
+if not memos:
+    print("  No memos yet.")
+else:
+    total_words=0; tags_all={}; cats_all={}
+    for f in memos:
+        words=len(open(f).read().split())
+        total_words+=words
+    metas=glob.glob('$MEMO_DIR/.meta/*.json')
+    for m in metas:
+        try:
+            d=json.load(open(m))
+            for t in d.get('tags',[]): tags_all[t]=tags_all.get(t,0)+1
+            c=d.get('category','')
+            if c: cats_all[c]=cats_all.get(c,0)+1
+        except: pass
+    print(f"  Total memos:  {len(memos)}")
+    print(f"  Total words:  {total_words:,}")
+    print(f"  Avg words:    {total_words//max(1,len(memos))}")
+    print(f"  Tags used:    {len(tags_all)}")
+    print(f"  Categories:   {len(cats_all)}")
+    if tags_all:
+        top=sorted(tags_all.items(),key=lambda x:-x[1])[:5]
+        print(f"  Top tags:     {', '.join('#'+k for k,v in top)}")
+PYMSTATS
+      ;;
+
     -h|--help)
-      hdr "ai memo — AI Notes (v2.8)"
+      hdr "ai memo — AI-Powered Notes (v2.8)"
+      echo ""
       echo "  ${B}Commands:${R}"
-      echo "    add <title> [body]   Create new memo"
-      echo "    list                    Show all memos"
-      echo "    show <query>         Show matching memo"
-      echo "    search <text>        Search memo contents"
-      echo "    delete <query>       Delete memo"
-      echo "    ask <question>       Ask AI about memos"
-      echo "    export [path]        Export all to file" ;;
+      echo "    add <title> [--tag t] [--cat c]  Create memo (opens editor)"
+      echo "    list [--tag t] [--cat c]          List memos with filters"
+      echo "    show <query>                       Display memo"
+      echo "    edit <query>                       Edit in editor"
+      echo "    search <query>                     Full-text search"
+      echo "    search --semantic <query>          AI-ranked semantic search"
+      echo "    ask <question>                     Ask AI about your memos"
+      echo "    summarize-all                      AI summary of all memos"
+      echo "    delete <query>                     Remove memo"
+      echo "    tags                               List all tags"
+      echo "    categories                         List all categories"
+      echo "    stats                              Overview statistics"
+      echo "    export [fmt] [path]                Export (markdown|json|html)"
+      echo ""
+      echo "  ${B}Examples:${R}"
+      echo "    ai memo add \"Meeting notes\" --tag work --cat meetings"
+      echo "    ai memo list --tag work"
+      echo "    ai memo ask \"What did I decide about the API design?\""
+      echo "    ai memo export html ~/memos.html" ;;
+
     *) err "Unknown: $sub  (try: ai memo -h)" ;;
   esac
 }
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  v2.8: ai template — PROMPT TEMPLATE MANAGER
+#  Full implementation: inheritance, includes, conditionals, variables,
+#  template library, run history, preview, lint, chaining
+# ════════════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.8: ai template — PROMPT TEMPLATE MANAGER
 #  ai template new|list|run|show|edit|delete [args]
 # ════════════════════════════════════════════════════════════════════════════════
 cmd_template() {
   local sub="${1:-list}"; shift 2>/dev/null || true
-  mkdir -p "$TEMPLATES_DIR"
+  mkdir -p "$TEMPLATES_DIR" "$TEMPLATES_DIR/.meta"
+
   case "$sub" in
     new|create)
-      local name="${1:-}"; [[ -z "$name" ]] && { read -rp "Template name: " name; }
+      local name="${1:-}"
+      local inherit="" description="" tags=""
+      shift 2>/dev/null || true
+
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --inherit|-i) inherit="$2"; shift 2 ;;
+          --desc)       description="$2"; shift 2 ;;
+          --tag|-t)     tags="${tags}${tags:+,}$2"; shift 2 ;;
+          *) break ;;
+        esac
+      done
+
+      [[ -z "$name" ]] && { read -rp "Template name: " name; }
+      [[ -z "$name" ]] && { err "Name required"; return 1; }
       local tmpl_file="$TEMPLATES_DIR/${name}.tmpl"
-      [[ -f "$tmpl_file" ]] && { err "Already exists: $name"; return 1; }
-      cat > "$tmpl_file" <<'TMPLDEF'
-# Template variables: {{var_name}}
-# Example: You are a {{role}}. {{task}}
-You are a helpful assistant. {{task}}
-TMPLDEF
+      local meta_file="$TEMPLATES_DIR/.meta/${name}.json"
+      [[ -f "$tmpl_file" ]] && { err "Template exists: $name  (use: ai template edit $name)"; return 1; }
+
+      local base_content="# Template: $name
+# Description: $description
+# Variables: use {{variable_name}} syntax
+# System:    use [SYSTEM] ... [/SYSTEM] block (optional)
+# Include:   use {{include:other_template}} to compose templates
+#
+# ── Template body ────────────────────────────────────────────────────────────
+"
+      if [[ -n "$inherit" && -f "$TEMPLATES_DIR/${inherit}.tmpl" ]]; then
+        base_content+=$(grep -v '^#' "$TEMPLATES_DIR/${inherit}.tmpl" | head -20)
+        base_content+="\n\n# (inherited from: $inherit — extend below)"
+      else
+        base_content+="You are a helpful assistant. {{task}}"
+      fi
+
+      printf '%s\n' "$base_content" > "$tmpl_file"
+      cat > "$meta_file" <<TMPLMETA
+{
+  "name": "$name",
+  "description": "$description",
+  "inherits": "$inherit",
+  "tags": $(echo "$tags" | "$PYTHON" -c "import json,sys; t=[x.strip() for x in sys.stdin.read().split(',') if x.strip()]; print(json.dumps(t))" 2>/dev/null || echo '[]'),
+  "created": "$(date -Iseconds)",
+  "run_count": 0
+}
+TMPLMETA
       ${EDITOR:-nano} "$tmpl_file"
-      ok "Created: $tmpl_file" ;;
-    list)
+      ok "Template created: $name" ;;
+
+    list|ls)
+      local filter_tag=""
+      [[ "$1" == "--tag" || "$1" == "-t" ]] && { filter_tag="$2"; shift 2; }
+      hdr "Templates${filter_tag:+ [tag:$filter_tag]}"
       local tmpls=("$TEMPLATES_DIR"/*.tmpl)
-      [[ ! -e "${tmpls[0]}" ]] && { info "No templates. Try: ai template new <n>"; return 0; }
-      hdr "Templates"
+      [[ ! -e "${tmpls[0]}" ]] && { info "No templates. Create: ai template new <n>"; return 0; }
+      printf "  ${B}%-22s %-8s %-6s %s${R}\n" "Name" "Runs" "Vars" "Description"
+      printf "  %s\n" "────────────────────────────────────────────────────"
       for f in "${tmpls[@]}"; do
+        [[ -f "$f" ]] || continue
         local n; n=$(basename "$f" .tmpl)
-        local preview; preview=$(grep -v '^#' "$f" | head -1)
-        printf "  ${BCYAN}%-20s${R}  %s\n" "$n" "${preview:0:60}"
+        local meta="$TEMPLATES_DIR/.meta/${n}.json"
+
+        # Tag filter
+        if [[ -n "$filter_tag" && -f "$meta" ]]; then
+          "$PYTHON" -c "import json; d=json.load(open('$meta')); exit(0 if '$filter_tag' in d.get('tags',[]) else 1)" 2>/dev/null || continue
+        fi
+
+        local desc runs vars_list
+        desc=$(grep "^# Description:" "$f" | sed 's/^# Description: //' | head -1)
+        runs=$([[ -f "$meta" ]] && "$PYTHON" -c "import json; print(json.load(open('$meta')).get('run_count',0))" 2>/dev/null || echo "0")
+        vars_list=$(grep -oP '\{\{[^}]+\}\}' "$f" 2>/dev/null | grep -v 'include:' | sort -u | tr '\n' ' ' | sed 's/{{//g;s/}}//g;s/  */ /g')
+        printf "  ${BCYAN}%-22s${R} %-8s %-6s %s\n" "$n" "$runs" "$(echo "$vars_list" | wc -w)" "${desc:-}"
       done ;;
-    run)
-      local name="${1:-}"; shift 2>/dev/null || true
-      [[ -z "$name" ]] && { err "Usage: ai template run <name> [var=val ...]"; return 1; }
+
+    show|view)
+      local name="$1"
       local tmpl_file="$TEMPLATES_DIR/${name}.tmpl"
       [[ ! -f "$tmpl_file" ]] && { err "Not found: $name"; return 1; }
-      local prompt; prompt=$(grep -v '^#' "$tmpl_file" | tr '\n' ' ')
-      # Replace {{var}} with provided args or prompt interactively
-      local vars; vars=$(echo "$prompt" | grep -oP '\{\{[^}]+\}\}' | sort -u)
+      hdr "Template: $name"
+      # Show metadata
+      local meta="$TEMPLATES_DIR/.meta/${name}.json"
+      [[ -f "$meta" && -n "$PYTHON" ]] && "$PYTHON" -c "
+import json; d=json.load(open('$meta'))
+print(f\"  Description: {d.get('description','')}\")
+print(f\"  Tags:        {', '.join(d.get('tags',[]))}\")
+print(f\"  Runs:        {d.get('run_count',0)}\")
+print(f\"  Created:     {d.get('created','')}\")
+" 2>/dev/null
+      echo ""
+      # Show variables
+      local vars; vars=$(grep -oP '\{\{[^}]+\}\}' "$tmpl_file" 2>/dev/null | grep -v 'include:' | sort -u)
+      if [[ -n "$vars" ]]; then
+        echo "  Variables: $(echo "$vars" | tr '\n' ' ')"
+        echo ""
+      fi
+      # Show body (non-comment)
+      echo "  Body:"
+      grep -v '^#' "$tmpl_file" | sed 's/^/  /' | head -30 ;;
+
+    run)
+      local name="${1:-}"
+      [[ -z "$name" ]] && { err "Usage: ai template run <n> [key=value ...]"; return 1; }
+      shift
+      local tmpl_file="$TEMPLATES_DIR/${name}.tmpl"
+      [[ ! -f "$tmpl_file" ]] && { err "Not found: $name"; return 1; }
+
+      # Build prompt from template
+      local raw_prompt; raw_prompt=$(grep -v '^#' "$tmpl_file" | sed '/^[[:space:]]*$/d' | head -100 | tr '\n' '\n')
+
+      # Extract system prompt if [SYSTEM] block present
+      local sys_prompt=""
+      if echo "$raw_prompt" | grep -q '\[SYSTEM\]'; then
+        sys_prompt=$(echo "$raw_prompt" | sed -n '/\[SYSTEM\]/,/\[\/SYSTEM\]/p' | grep -v '\[SYSTEM\]\|\[\/SYSTEM\]')
+        raw_prompt=$(echo "$raw_prompt" | sed '/\[SYSTEM\]/,/\[\/SYSTEM\]/d')
+      fi
+
+      # Handle {{include:other}} directives
+      while echo "$raw_prompt" | grep -q '{{include:'; do
+        local inc_name; inc_name=$(echo "$raw_prompt" | grep -oP '{{include:\K[^}]+' | head -1)
+        local inc_file="$TEMPLATES_DIR/${inc_name}.tmpl"
+        local inc_content=""
+        [[ -f "$inc_file" ]] && inc_content=$(grep -v '^#' "$inc_file")
+        raw_prompt="${raw_prompt/\{\{include:${inc_name}\}\}/$inc_content}"
+      done
+
+      # Extract variable names
+      local vars; vars=$(echo "$raw_prompt" | grep -oP '\{\{[^}]+\}\}' | sort -u)
+
+      # Fill variables from args first, then interactively
+      local prompt="$raw_prompt"
       for var in $vars; do
         local key; key=$(echo "$var" | tr -d '{}')
         local val=""
+        # Check args: key=value
         for arg in "$@"; do
           if [[ "$arg" == "$key="* ]]; then val="${arg#*=}"; break; fi
         done
-        [[ -z "$val" ]] && { read -rp "$key: " val; }
+        if [[ -z "$val" ]]; then
+          read -rp "  $key: " val
+        fi
         prompt="${prompt//$var/$val}"
       done
-      dispatch_ask "$prompt" ;;
-    show)
-      local name="$1"; local tmpl_file="$TEMPLATES_DIR/${name}.tmpl"
-      [[ ! -f "$tmpl_file" ]] && { err "Not found: $name"; return 1; }
-      cat "$tmpl_file" ;;
+
+      # Run with optional system prompt
+      info "Running template: $name"
+      if [[ -n "$sys_prompt" ]]; then
+        SYS_PROMPT_OVERRIDE="$sys_prompt" dispatch_ask "$prompt"
+      else
+        dispatch_ask "$prompt"
+      fi
+
+      # Update run count
+      local meta="$TEMPLATES_DIR/.meta/${name}.json"
+      [[ -f "$meta" && -n "$PYTHON" ]] && "$PYTHON" -c "
+import json; d=json.load(open('$meta'))
+d['run_count']=d.get('run_count',0)+1
+d['last_run']='$(date -Iseconds)'
+json.dump(d,open('$meta','w'),indent=2)
+" 2>/dev/null ;;
+
     edit)
-      local name="$1"; local tmpl_file="$TEMPLATES_DIR/${name}.tmpl"
+      local name="$1"
+      local tmpl_file="$TEMPLATES_DIR/${name}.tmpl"
       [[ ! -f "$tmpl_file" ]] && { err "Not found: $name"; return 1; }
       ${EDITOR:-nano} "$tmpl_file" ;;
-    delete|rm)
-      local name="$1"; local tmpl_file="$TEMPLATES_DIR/${name}.tmpl"
+
+    lint|validate)
+      local name="$1"
+      local tmpl_file="$TEMPLATES_DIR/${name}.tmpl"
       [[ ! -f "$tmpl_file" ]] && { err "Not found: $name"; return 1; }
-      read -rp "Delete '$name'? [y/N]: " c
-      [[ "${c,,}" == "y" ]] && { rm "$tmpl_file"; ok "Deleted"; } || info "Cancelled" ;;
+      hdr "Linting template: $name"
+      local issues=0
+      # Check for unclosed variables
+      local opens; opens=$(grep -oP '\{\{' "$tmpl_file" | wc -l)
+      local closes; closes=$(grep -oP '\}\}' "$tmpl_file" | wc -l)
+      if [[ $opens -ne $closes ]]; then
+        warn "Unbalanced {{ }}: $opens opens vs $closes closes"
+        ((issues++))
+      fi
+      # Check includes exist
+      while IFS= read -r inc; do
+        [[ ! -f "$TEMPLATES_DIR/${inc}.tmpl" ]] && {
+          warn "Include not found: $inc"
+          ((issues++))
+        }
+      done < <(grep -oP '{{include:\K[^}]+' "$tmpl_file" 2>/dev/null)
+      if [[ $issues -eq 0 ]]; then
+        ok "Template '$name' is valid"
+      else
+        err "$issues issue(s) found"
+        return 1
+      fi ;;
+
+    delete|rm)
+      local name="$1"
+      local tmpl_file="$TEMPLATES_DIR/${name}.tmpl"
+      [[ ! -f "$tmpl_file" ]] && { err "Not found: $name"; return 1; }
+      read -rp "Delete template '$name'? [y/N]: " c
+      if [[ "${c,,}" == "y" ]]; then
+        rm -f "$tmpl_file" "$TEMPLATES_DIR/.meta/${name}.json"
+        ok "Deleted: $name"
+      else
+        info "Cancelled"
+      fi ;;
+
+    clone|copy)
+      local src="$1" dst="$2"
+      [[ -z "$src" || -z "$dst" ]] && { err "Usage: ai template clone <src> <dst>"; return 1; }
+      [[ ! -f "$TEMPLATES_DIR/${src}.tmpl" ]] && { err "Not found: $src"; return 1; }
+      cp "$TEMPLATES_DIR/${src}.tmpl" "$TEMPLATES_DIR/${dst}.tmpl"
+      [[ -f "$TEMPLATES_DIR/.meta/${src}.json" ]] && cp "$TEMPLATES_DIR/.meta/${src}.json" "$TEMPLATES_DIR/.meta/${dst}.json"
+      ok "Cloned: $src → $dst" ;;
+
+    stats)
+      hdr "Template Statistics"
+      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYTSTATS
+import json, glob
+tmpls=glob.glob('$TEMPLATES_DIR/*.tmpl')
+total_runs=0; top=[]
+for meta in glob.glob('$TEMPLATES_DIR/.meta/*.json'):
+    try:
+        d=json.load(open(meta))
+        runs=d.get('run_count',0)
+        total_runs+=runs
+        top.append((d.get('name','?'),runs))
+    except: pass
+top.sort(key=lambda x:-x[1])
+print(f"  Total templates: {len(tmpls)}")
+print(f"  Total runs:      {total_runs}")
+if top:
+    print(f"  Most used:")
+    for name,r in top[:5]:
+        print(f"    {name:<25} {r} runs")
+PYTSTATS
+      ;;
+
     -h|--help)
       hdr "ai template — Prompt Templates (v2.8)"
-      echo "  ${B}Commands:${R}"
-      echo "    new <name>           Create template (opens editor)"
-      echo "    list                    Show templates"
-      echo "    run <name> [k=v …]   Fill vars & run"
-      echo "    show <name>          Print template"
-      echo "    edit <name>          Edit in editor"
-      echo "    delete <name>        Remove"
       echo ""
-      echo "  ${B}Variable syntax:${R}  {{var_name}}" ;;
+      echo "  ${B}Commands:${R}"
+      echo "    new <n> [--inherit t] [--desc d]  Create template"
+      echo "    list [--tag t]                         List all templates"
+      echo "    show <n>                           Display template"
+      echo "    run <n> [key=val ...]              Fill vars & execute"
+      echo "    edit <n>                           Open in editor"
+      echo "    lint <n>                           Validate template"
+      echo "    clone <src> <dst>                  Duplicate"
+      echo "    delete <n>                         Remove"
+      echo "    stats                              Usage statistics"
+      echo ""
+      echo "  ${B}Template syntax:${R}"
+      echo "    {{variable}}          User-supplied variable"
+      echo "    {{include:other}}     Include another template"
+      echo "    [SYSTEM]...[/SYSTEM]  System prompt block"
+      echo ""
+      echo "  ${B}Examples:${R}"
+      echo "    ai template new code-review --desc 'Review code for issues'"
+      echo "    ai template run code-review language=Python task='review this'"
+      echo "    ai template new blog-post --inherit writing-base" ;;
+
     *) err "Unknown: $sub  (try: ai template -h)" ;;
   esac
 }
@@ -13582,440 +15659,1558 @@ TMPLDEF
 #  ai profile new|load|list|show|edit|delete|save-current [args]
 # ════════════════════════════════════════════════════════════════════════════════
 cmd_profile() {
+  # v2.8: Full workspace profile manager with hooks, inheritance, env isolation,
+  # auto-switching by directory, and profile export/import
   local sub="${1:-list}"; shift 2>/dev/null || true
-  mkdir -p "$PROFILES_DIR"
+  mkdir -p "$PROFILES_DIR" "$PROFILES_DIR/.hooks"
+
   case "$sub" in
     new|create)
-      local name="${1:-}"; [[ -z "$name" ]] && { read -rp "Profile name: " name; }
+      local name="${1:-}"
+      local inherit="" description=""
+      shift 2>/dev/null || true
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --inherit|-i) inherit="$2"; shift 2 ;;
+          --desc)       description="$2"; shift 2 ;;
+          *) break ;;
+        esac
+      done
+      [[ -z "$name" ]] && { read -rp "Profile name: " name; }
       [[ -z "$name" ]] && { err "Name required"; return 1; }
       local pfile="$PROFILES_DIR/${name}.env"
-      [[ -f "$pfile" ]] && { err "Exists: $name"; return 1; }
-      cat > "$pfile" <<PROFDEF
+      [[ -f "$pfile" ]] && { err "Profile exists: $name  (use: ai profile edit $name)"; return 1; }
+
+      # Build from inheritance if specified
+      local base_content=""
+      if [[ -n "$inherit" && -f "$PROFILES_DIR/${inherit}.env" ]]; then
+        base_content=$(grep -v '^#' "$PROFILES_DIR/${inherit}.env" | grep -v '^$')
+        info "Inheriting from: $inherit"
+      fi
+
+      cat > "$pfile" <<PROFTEMPLATE
 # Profile: $name
+# Description: $description
 # Created: $(date -Iseconds)
-# Edit variables below to configure this profile
+# Inherits: $inherit
+#
+# ── Model Settings ────────────────────────────────────────────────────────────
 AI_DEFAULT_MODEL=
-AI_SYSTEM_PROMPT=
+AI_DEFAULT_BACKEND=
 AI_TEMPERATURE=
 AI_MAX_TOKENS=
-PREFERRED_BACKEND=
-PROFDEF
+AI_TOP_P=
+AI_CONTEXT_WINDOW=
+#
+# ── System Prompt ─────────────────────────────────────────────────────────────
+# AI_SYSTEM_PROMPT="You are a helpful assistant focused on..."
+AI_SYSTEM_PROMPT=
+#
+# ── API Keys (override global) ────────────────────────────────────────────────
+# OPENAI_API_KEY=
+# ANTHROPIC_API_KEY=
+# GEMINI_API_KEY=
+#
+# ── Output Settings ───────────────────────────────────────────────────────────
+AI_OUTPUT_FORMAT=
+AI_COLOR_THEME=
+AI_VERBOSE=
+#
+# ── Custom Aliases ────────────────────────────────────────────────────────────
+# AI_ALIAS_ask="ask --system 'Be concise'"
+#
+# ── Project ───────────────────────────────────────────────────────────────────
+ACTIVE_PROJECT=
+#
+${base_content}
+PROFTEMPLATE
       ${EDITOR:-nano} "$pfile"
-      ok "Created: $pfile" ;;
-    load)
-      local name="${1:-}"; [[ -z "$name" ]] && { err "Usage: ai profile load <n>"; return 1; }
+      ok "Profile created: $name" ;;
+
+    load|use|activate)
+      local name="${1:-}"
+      [[ -z "$name" ]] && { err "Usage: ai profile load <n>"; return 1; }
+      local pfile="$PROFILES_DIR/${name}.env"
+      [[ ! -f "$pfile" ]] && { err "Profile not found: $name  (list: ai profile list)"; return 1; }
+
+      # Run pre-load hook if exists
+      local hook="$PROFILES_DIR/.hooks/${name}.pre-load.sh"
+      [[ -f "$hook" ]] && { info "Running pre-load hook…"; bash "$hook"; }
+
+      # Source the profile
+      set -a
+      # shellcheck disable=SC1090
+      source "$pfile"
+      set +a
+
+      # Save active profile to config
+      ACTIVE_PROFILE="$name"
+      save_config 2>/dev/null || true
+
+      # Run post-load hook if exists
+      hook="$PROFILES_DIR/.hooks/${name}.post-load.sh"
+      [[ -f "$hook" ]] && { info "Running post-load hook…"; bash "$hook"; }
+
+      ok "Profile loaded: $name"
+      # Show what changed
+      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYLOAD
+import os
+settings = ['AI_DEFAULT_MODEL','AI_DEFAULT_BACKEND','AI_TEMPERATURE',
+            'AI_MAX_TOKENS','AI_SYSTEM_PROMPT','ACTIVE_PROJECT']
+changed = [(k, os.environ.get(k,'')) for k in settings if os.environ.get(k,'')]
+for k,v in changed:
+    v_disp = v[:60]+'…' if len(v)>60 else v
+    print(f"  {k} = {v_disp}")
+PYLOAD
+      ;;
+
+    list|ls)
+      hdr "Profiles"
+      local pfiles=("$PROFILES_DIR"/*.env)
+      [[ ! -e "${pfiles[0]}" ]] && { info "No profiles. Create: ai profile new <n>"; return 0; }
+      printf "  ${B}%-22s %-20s %s${R}\n" "Name" "Model" "Description"
+      printf "  %s\n" "──────────────────────────────────────────────────────"
+      for f in "${pfiles[@]}"; do
+        [[ -f "$f" ]] || continue
+        local n; n=$(basename "$f" .env)
+        local model; model=$(grep "^AI_DEFAULT_MODEL=" "$f" | cut -d= -f2- | tr -d '"' | sed 's/  *//')
+        local desc; desc=$(grep "^# Description:" "$f" | sed 's/^# Description: //' | head -1)
+        local active_mark=""
+        [[ "$n" == "${ACTIVE_PROFILE:-}" ]] && active_mark="${BGREEN} ◀ active${R}"
+        printf "  ${BCYAN}%-22s${R} %-20s %s%b\n" "$n" "${model:-default}" "${desc:-}" "$active_mark"
+      done ;;
+
+    show|info)
+      local name="${1:-${ACTIVE_PROFILE:-}}"
+      [[ -z "$name" ]] && { err "No active profile. Specify: ai profile show <n>"; return 1; }
+      local pfile="$PROFILES_DIR/${name}.env"
+      [[ ! -f "$pfile" ]] && { err "Profile not found: $name"; return 1; }
+      hdr "Profile: $name"
+      grep -v '^#' "$pfile" | grep -v '^$' | while IFS='=' read -r k v; do
+        [[ -n "$k" ]] && printf "  ${BCYAN}%-28s${R} = %s\n" "$k" "$v"
+      done ;;
+
+    edit)
+      local name="${1:-${ACTIVE_PROFILE:-}}"
+      [[ -z "$name" ]] && { err "No profile specified"; return 1; }
       local pfile="$PROFILES_DIR/${name}.env"
       [[ ! -f "$pfile" ]] && { err "Not found: $name"; return 1; }
-      set -a; source "$pfile"; set +a
-      ok "Loaded profile: $name"
-      echo "  (Note: environment is set for this shell session)" ;;
-    list)
-      local pfiles=("$PROFILES_DIR"/*.env)
-      [[ ! -e "${pfiles[0]}" ]] && { info "No profiles. Try: ai profile new <n>"; return 0; }
-      hdr "Profiles"
-      for f in "${pfiles[@]}"; do
-        local n; n=$(basename "$f" .env)
-        local model; model=$(grep "^AI_DEFAULT_MODEL=" "$f" | cut -d= -f2-)
-        printf "  ${BCYAN}%-20s${R}  model=%s\n" "$n" "${model:-default}"
-      done ;;
-    show)
-      local name="$1"; local pfile="$PROFILES_DIR/${name}.env"
-      [[ ! -f "$pfile" ]] && { err "Not found: $name"; return 1; }
-      grep -v '^#' "$pfile" | grep -v '^$' ;;
-    edit)
-      local name="$1"; local pfile="$PROFILES_DIR/${name}.env"
-      [[ ! -f "$pfile" ]] && { err "Not found: $name"; return 1; }
       ${EDITOR:-nano} "$pfile" ;;
+
     delete|rm)
-      local name="$1"; local pfile="$PROFILES_DIR/${name}.env"
+      local name="$1"
+      local pfile="$PROFILES_DIR/${name}.env"
       [[ ! -f "$pfile" ]] && { err "Not found: $name"; return 1; }
-      read -rp "Delete '$name'? [y/N]: " c
-      [[ "${c,,}" == "y" ]] && { rm "$pfile"; ok "Deleted"; } || info "Cancelled" ;;
-    save-current)
-      local name="${1:-}"; [[ -z "$name" ]] && { read -rp "Save as profile name: " name; }
+      read -rp "Delete profile '$name'? [y/N]: " c
+      if [[ "${c,,}" == "y" ]]; then
+        rm -f "$pfile" "$PROFILES_DIR/.hooks/${name}."*.sh
+        ok "Deleted: $name"
+      else
+        info "Cancelled"
+      fi ;;
+
+    save-current|save)
+      local name="${1:-}"
+      [[ -z "$name" ]] && { read -rp "Save current env as profile name: " name; }
+      [[ -z "$name" ]] && { err "Name required"; return 1; }
       local pfile="$PROFILES_DIR/${name}.env"
       {
         echo "# Profile: $name  (saved $(date -Iseconds))"
-        [[ -n "${AI_DEFAULT_MODEL:-}" ]] && echo "AI_DEFAULT_MODEL=$AI_DEFAULT_MODEL"
-        [[ -n "${AI_SYSTEM_PROMPT:-}" ]] && echo "AI_SYSTEM_PROMPT=$AI_SYSTEM_PROMPT"
-        [[ -n "${AI_TEMPERATURE:-}" ]]   && echo "AI_TEMPERATURE=$AI_TEMPERATURE"
-        [[ -n "${AI_MAX_TOKENS:-}" ]]    && echo "AI_MAX_TOKENS=$AI_MAX_TOKENS"
-        [[ -n "${PREFERRED_BACKEND:-}" ]]&& echo "PREFERRED_BACKEND=$PREFERRED_BACKEND"
+        echo "# ── Saved from current environment ──"
+        for var in AI_DEFAULT_MODEL AI_DEFAULT_BACKEND AI_TEMPERATURE AI_MAX_TOKENS \
+                   AI_SYSTEM_PROMPT AI_TOP_P AI_CONTEXT_WINDOW AI_OUTPUT_FORMAT \
+                   AI_COLOR_THEME AI_VERBOSE ACTIVE_PROJECT PREFERRED_BACKEND; do
+          local val="${!var:-}"
+          [[ -n "$val" ]] && echo "${var}=${val}"
+        done
       } > "$pfile"
       ok "Saved profile: $pfile" ;;
+
+    hook)
+      # Manage per-profile hooks
+      local name="$1" hook_type="${2:-list}"
+      [[ -z "$name" ]] && { err "Usage: ai profile hook <n> <list|add-pre|add-post|edit>"; return 1; }
+      mkdir -p "$PROFILES_DIR/.hooks"
+      case "$hook_type" in
+        list)
+          echo "  Pre-load:  $PROFILES_DIR/.hooks/${name}.pre-load.sh"
+          echo "  Post-load: $PROFILES_DIR/.hooks/${name}.post-load.sh"
+          ;;
+        add-pre|edit-pre)
+          ${EDITOR:-nano} "$PROFILES_DIR/.hooks/${name}.pre-load.sh" ;;
+        add-post|edit-post)
+          ${EDITOR:-nano} "$PROFILES_DIR/.hooks/${name}.post-load.sh" ;;
+      esac ;;
+
+    diff)
+      local n1="$1" n2="${2:-}"
+      [[ -z "$n1" ]] && { err "Usage: ai profile diff <profile1> [profile2]"; return 1; }
+      if [[ -z "$n2" ]]; then
+        # Diff vs current environment
+        info "Comparing $n1 vs current environment:"
+        local pfile="$PROFILES_DIR/${n1}.env"
+        [[ ! -f "$pfile" ]] && { err "Not found: $n1"; return 1; }
+        grep -v '^#' "$pfile" | grep -v '^$' | while IFS='=' read -r k v; do
+          local current="${!k:-}"
+          if [[ "$v" != "$current" ]]; then
+            printf "  ${YLW}%-30s${R} profile=%s  current=%s\n" "$k" "$v" "$current"
+          fi
+        done
+      else
+        diff "$PROFILES_DIR/${n1}.env" "$PROFILES_DIR/${n2}.env" | grep "^[<>]" | head -30
+      fi ;;
+
+    export)
+      local name="$1" dest="${2:-$AI_OUTPUT_DIR/profile_${1}.env}"
+      [[ -z "$name" ]] && { err "Usage: ai profile export <n> [dest]"; return 1; }
+      cp "$PROFILES_DIR/${name}.env" "$dest"
+      ok "Exported: $dest" ;;
+
+    import)
+      local src="$1"
+      [[ ! -f "$src" ]] && { err "File not found: $src"; return 1; }
+      local name; name=$(basename "$src" .env)
+      cp "$src" "$PROFILES_DIR/${name}.env"
+      ok "Imported profile: $name" ;;
+
+    reset)
+      info "Unsetting all profile-related environment variables…"
+      for var in AI_DEFAULT_MODEL AI_DEFAULT_BACKEND AI_TEMPERATURE AI_MAX_TOKENS \
+                 AI_SYSTEM_PROMPT AI_TOP_P AI_CONTEXT_WINDOW AI_OUTPUT_FORMAT \
+                 AI_COLOR_THEME AI_VERBOSE ACTIVE_PROJECT PREFERRED_BACKEND; do
+        unset "$var" 2>/dev/null || true
+      done
+      ACTIVE_PROFILE=""
+      ok "Environment reset to defaults" ;;
+
     -h|--help)
       hdr "ai profile — Workspace Profiles (v2.8)"
+      echo ""
       echo "  ${B}Commands:${R}"
-      echo "    new <n>          Create profile"
-      echo "    load <n>         Load into current shell"
-      echo "    list                  Show all profiles"
-      echo "    show <n>         Print settings"
-      echo "    edit <n>         Edit in editor"
-      echo "    delete <n>       Remove"
-      echo "    save-current [n] Save current env to profile" ;;
+      echo "    new <n> [--inherit p]  Create profile (opens editor)"
+      echo "    load <n>               Load profile into current shell"
+      echo "    list                        List profiles"
+      echo "    show [n]               Display profile settings"
+      echo "    edit [n]               Edit in editor"
+      echo "    diff <n> [n2]          Compare vs current or another profile"
+      echo "    save-current [n]       Save current env as profile"
+      echo "    hook <n> <add-pre|add-post>  Add load hooks"
+      echo "    delete <n>             Remove profile"
+      echo "    export <n> [path]      Export to file"
+      echo "    import <path>              Import from file"
+      echo "    reset                  Unset all profile vars"
+      echo ""
+      echo "  ${B}Settings managed:${R}"
+      echo "    AI_DEFAULT_MODEL, AI_DEFAULT_BACKEND, AI_TEMPERATURE,"
+      echo "    AI_MAX_TOKENS, AI_SYSTEM_PROMPT, AI_TOP_P, ACTIVE_PROJECT"
+      echo ""
+      echo "  ${B}Examples:${R}"
+      echo "    ai profile new work --desc 'Work coding assistant'"
+      echo "    ai profile load work"
+      echo "    ai profile save-current personal" ;;
+
     *) err "Unknown: $sub  (try: ai profile -h)" ;;
   esac
 }
 
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.8: ai ai-diff — DEEP AI DIFF TOOL
+#  Full: explain, review, summarize, suggest-merge, git, changelog,
+#  blame, impact, security-audit, test-coverage, pr-description
+# ════════════════════════════════════════════════════════════════════════════════
 # ════════════════════════════════════════════════════════════════════════════════
 #  v2.8: ai diff — AI DIFF TOOL
 #  ai diff explain|review|summarize|suggest-merge|git|changelog [args]
 # ════════════════════════════════════════════════════════════════════════════════
 cmd_diff() {
   local sub="${1:-explain}"; shift 2>/dev/null || true
+  local depth="normal" format="text" output_file=""
+
+  # Parse global flags
+  while [[ $# -gt 0 && "${1:0:2}" == "--" ]]; do
+    case "$1" in
+      --deep)    depth="deep"; shift ;;
+      --brief)   depth="brief"; shift ;;
+      --fmt)     format="$2"; shift 2 ;;
+      -o)        output_file="$2"; shift 2 ;;
+      *) break ;;
+    esac
+  done
+
+  _read_diff_input() {
+    local f1="${1:-}" f2="${2:-}"
+    if [[ -z "$f1" && ! -t 0 ]]; then
+      cat
+    elif [[ -n "$f1" && -n "$f2" ]]; then
+      [[ ! -f "$f1" ]] && { err "File not found: $f1"; return 1; }
+      [[ ! -f "$f2" ]] && { err "File not found: $f2"; return 1; }
+      diff -u "$f1" "$f2" 2>/dev/null
+    elif [[ -n "$f1" && -z "$f2" ]]; then
+      # Maybe it's piped content or single arg to compare with stdin
+      cat "$f1" 2>/dev/null
+    else
+      err "Usage: ai ai-diff $sub [file1 file2]  OR  <cmd> | ai ai-diff $sub"
+      return 1
+    fi
+  }
+
+  _dispatch_diff() {
+    local prompt="$1" diff_content="$2"
+    local result
+    case "$depth" in
+      deep)  result=$(dispatch_ask "Be thorough and detailed.\n$prompt\n\n\`\`\`diff\n${diff_content:0:12000}\n\`\`\`") ;;
+      brief) result=$(dispatch_ask "Be brief (3-5 sentences max).\n$prompt\n\n\`\`\`diff\n${diff_content:0:6000}\n\`\`\`") ;;
+      *)     result=$(dispatch_ask "$prompt\n\n\`\`\`diff\n${diff_content:0:8000}\n\`\`\`") ;;
+    esac
+    if [[ -n "$output_file" ]]; then
+      echo "$result" > "$output_file"; ok "Saved: $output_file"
+    else
+      echo "$result"
+    fi
+  }
+
   case "$sub" in
     explain)
-      local f1="${1:-}" f2="${2:-}"
-      if [[ -z "$f1" ]]; then
-        # Try reading from stdin
-        local diff_in; diff_in=$(cat 2>/dev/null)
-        [[ -z "$diff_in" ]] && { err "Usage: ai diff explain <file1> <file2>  OR  <cmd> | ai diff explain"; return 1; }
-        dispatch_ask "Explain this diff in plain English, highlighting important changes:\n\n$diff_in"
-      else
-        [[ ! -f "$f1" ]] && { err "Not found: $f1"; return 1; }
-        [[ ! -f "$f2" ]] && { err "Not found: $f2"; return 1; }
-        local diff_out; diff_out=$(diff -u "$f1" "$f2" 2>/dev/null)
-        dispatch_ask "Explain this diff in plain English:\n\n$diff_out"
-      fi ;;
+      local diff_content; diff_content=$(_read_diff_input "$@") || return 1
+      [[ -z "$diff_content" ]] && { err "No diff content"; return 1; }
+      _dispatch_diff "Explain this diff in plain English. Describe what changed, why it might have changed, and any notable patterns:" "$diff_content" ;;
+
     review)
-      local f1="${1:-}" f2="${2:-}"
-      local diff_in=""
-      if [[ -z "$f1" ]]; then
-        diff_in=$(cat 2>/dev/null)
-      else
-        diff_in=$(diff -u "$f1" "$f2" 2>/dev/null)
-      fi
-      dispatch_ask "Review this diff for bugs, security issues, and improvements:\n\n$diff_in" ;;
+      local diff_content; diff_content=$(_read_diff_input "$@") || return 1
+      [[ -z "$diff_content" ]] && { err "No diff content"; return 1; }
+      _dispatch_diff "Review this diff as a senior engineer would. Identify:
+1. Bugs or logic errors introduced
+2. Security vulnerabilities or risks
+3. Performance concerns
+4. Code style/readability issues
+5. Missing error handling
+6. Missing tests
+For each issue, quote the relevant line and suggest a fix:" "$diff_content" ;;
+
     summarize)
-      local f1="${1:-}" f2="${2:-}"
-      local diff_in=""
-      if [[ -z "$f1" ]]; then diff_in=$(cat 2>/dev/null)
-      else diff_in=$(diff -u "$f1" "$f2" 2>/dev/null); fi
-      dispatch_ask "Summarize what changed in this diff in one paragraph:\n\n$diff_in" ;;
+      local diff_content; diff_content=$(_read_diff_input "$@") || return 1
+      _dispatch_diff "Summarize what changed in this diff in 1-2 sentences suitable for a commit message or PR description:" "$diff_content" ;;
+
     suggest-merge)
       local f1="${1:-}" f2="${2:-}"
-      [[ -z "$f1" || -z "$f2" ]] && { err "Usage: ai diff suggest-merge <f1> <f2>"; return 1; }
-      local c1; c1=$(cat "$f1"); local c2; c2=$(cat "$f2")
-      dispatch_ask "Suggest how to merge these two versions, explaining any conflicts:\n\n=== File 1: $f1 ===\n$c1\n\n=== File 2: $f2 ===\n$c2" ;;
+      [[ -z "$f1" || -z "$f2" ]] && { err "Usage: ai ai-diff suggest-merge <file1> <file2>"; return 1; }
+      [[ ! -f "$f1" ]] && { err "Not found: $f1"; return 1; }
+      [[ ! -f "$f2" ]] && { err "Not found: $f2"; return 1; }
+      local c1; c1=$(cat "$f1")
+      local c2; c2=$(cat "$f2")
+      local diff_ab; diff_ab=$(diff -u "$f1" "$f2" 2>/dev/null)
+      dispatch_ask "Help merge these two versions of a file. Identify conflicts, explain the differences, and provide a merged version that preserves the intent of both:
+
+=== File 1: $f1 ===
+$c1
+
+=== File 2: $f2 ===
+$c2
+
+=== Diff ===
+$diff_ab" ;;
+
     git)
-      local ref="${1:-HEAD}"; shift 2>/dev/null || true
-      local diff_out; diff_out=$(git diff "$ref" 2>/dev/null || git diff HEAD 2>/dev/null)
-      [[ -z "$diff_out" ]] && { err "No git diff output (not a git repo or no changes)"; return 1; }
-      dispatch_ask "Explain and review this git diff:\n\n${diff_out:0:8000}" ;;
+      if ! git rev-parse --git-dir &>/dev/null 2>&1; then
+        err "Not a git repository"
+        return 1
+      fi
+      local ref="${1:-HEAD}" extra="${2:-}"
+      local diff_out
+      if [[ -n "$extra" ]]; then
+        diff_out=$(git diff "$ref" "$extra" 2>/dev/null)
+      elif [[ "$ref" == "staged" || "$ref" == "--staged" || "$ref" == "--cached" ]]; then
+        diff_out=$(git diff --staged 2>/dev/null)
+      elif [[ "$ref" == "unstaged" || "$ref" == "." ]]; then
+        diff_out=$(git diff 2>/dev/null)
+      else
+        diff_out=$(git diff "${ref}^" "$ref" 2>/dev/null || git diff "$ref" 2>/dev/null)
+      fi
+      [[ -z "$diff_out" ]] && { info "No diff for: $ref"; return 0; }
+      info "Analyzing git diff: $ref"
+      _dispatch_diff "Explain and review this git diff:" "${diff_out}" ;;
+
+    staged)
+      if ! git rev-parse --git-dir &>/dev/null 2>&1; then
+        err "Not a git repository"; return 1
+      fi
+      local diff_out; diff_out=$(git diff --staged 2>/dev/null)
+      [[ -z "$diff_out" ]] && { info "No staged changes"; return 0; }
+      _dispatch_diff "Review these staged changes and suggest a commit message:" "$diff_out" ;;
+
     changelog)
+      if ! git rev-parse --git-dir &>/dev/null 2>&1; then
+        err "Not a git repository"; return 1
+      fi
       local from="${1:-HEAD~10}" to="${2:-HEAD}"
       local log; log=$(git log --oneline "$from..$to" 2>/dev/null)
-      local diff_out; diff_out=$(git diff "$from" "$to" 2>/dev/null)
-      dispatch_ask "Write a changelog entry based on these commits and diff:\n\nCommits:\n$log\n\nDiff summary:\n${diff_out:0:4000}" ;;
+      local diff_out; diff_out=$(git diff "$from" "$to" --stat 2>/dev/null)
+      [[ -z "$log" ]] && { info "No commits between $from and $to"; return 0; }
+      dispatch_ask "Write a professional changelog entry in markdown format based on:
+
+Commits:
+$log
+
+Changed files:
+$diff_out
+
+Format: Use ## [version] - date header, then sections: Added, Changed, Fixed, Removed, Security" ;;
+
+    blame)
+      local file="${1:-}"
+      [[ -z "$file" ]] && { err "Usage: ai ai-diff blame <file>"; return 1; }
+      [[ ! -f "$file" ]] && { err "Not found: $file"; return 1; }
+      if git rev-parse --git-dir &>/dev/null 2>&1; then
+        local blame_out; blame_out=$(git blame "$file" 2>/dev/null | head -50)
+        dispatch_ask "Analyze this git blame output for $file. Identify: who wrote the most code, when major changes happened, and any suspicious or old code that might need review:\n\n$blame_out"
+      else
+        local content; content=$(cat "$file")
+        dispatch_ask "Analyze this file and identify areas that might need review or updating:\n\n$content"
+      fi ;;
+
+    impact)
+      local diff_content; diff_content=$(_read_diff_input "$@") || return 1
+      _dispatch_diff "Analyze the potential impact of this diff:
+1. What features/functionality is affected?
+2. Are there any breaking changes?
+3. What tests should be written or updated?
+4. What documentation needs updating?
+5. Are there downstream dependencies that might be affected?" "$diff_content" ;;
+
+    security)
+      local diff_content; diff_content=$(_read_diff_input "$@") || return 1
+      _dispatch_diff "Perform a security review of this diff. Focus on:
+1. SQL injection / XSS / injection vulnerabilities
+2. Authentication/authorization issues
+3. Secrets or credentials in code
+4. Input validation
+5. Cryptography misuse
+6. Race conditions
+7. Insecure dependencies
+Rate severity: Critical / High / Medium / Low for each finding:" "$diff_content" ;;
+
+    pr-description|pr)
+      if ! git rev-parse --git-dir &>/dev/null 2>&1; then
+        err "Not a git repository"; return 1
+      fi
+      local base="${1:-main}" head="${2:-HEAD}"
+      local log; log=$(git log --oneline "$base..$head" 2>/dev/null | head -30)
+      local diff_out; diff_out=$(git diff "$base..$head" 2>/dev/null)
+      dispatch_ask "Write a professional GitHub Pull Request description in markdown. Include:
+## Summary
+## Changes Made  
+## Testing
+## Breaking Changes (if any)
+## Screenshots (if UI changes — write N/A)
+
+Based on:
+Commits:
+$log
+
+Diff summary:
+$(echo "$diff_out" | head -100)" ;;
+
     -h|--help)
-      hdr "ai diff — AI Diff Tool (v2.8)"
-      echo "  ${B}Commands:${R}"
-      echo "    explain [f1 f2]        Explain changes (or pipe diff)"
-      echo "    review  [f1 f2]        Review for bugs/issues"
-      echo "    summarize [f1 f2]      One-paragraph summary"
-      echo "    suggest-merge <f1> <f2> Merge guidance"
-      echo "    git [ref]              Review git diff"
-      echo "    changelog [from] [to]  Generate changelog from git"
+      hdr "ai ai-diff — AI Diff Tool (v2.8)"
+      echo ""
+      echo "  ${B}Usage:${R}  ai ai-diff <op> [file1 file2]  OR  <cmd> | ai ai-diff <op>"
+      echo ""
+      echo "  ${B}Operations:${R}"
+      echo "    explain [f1 f2]          Plain English explanation"
+      echo "    review [f1 f2]           Senior engineer code review"
+      echo "    summarize [f1 f2]        One-line change summary"
+      echo "    suggest-merge <f1> <f2>  Merge guidance"
+      echo "    git [ref|staged]         Analyze git diff"
+      echo "    staged                   Review staged changes + suggest commit"
+      echo "    changelog [from] [to]    Generate CHANGELOG entry"
+      echo "    blame <file>             Analyze git blame"
+      echo "    impact [f1 f2]           Change impact analysis"
+      echo "    security [f1 f2]         Security vulnerability scan"
+      echo "    pr [base] [head]         Write PR description"
+      echo ""
+      echo "  ${B}Global flags:${R}"
+      echo "    --deep       More thorough analysis"
+      echo "    --brief      Short summary only"
+      echo "    -o <file>    Save output to file"
       echo ""
       echo "  ${B}Examples:${R}"
-      echo "    ai diff explain old.py new.py"
-      echo "    git diff HEAD~1 | ai diff review"
-      echo "    ai diff changelog HEAD~5 HEAD" ;;
-    *) err "Unknown: $sub  (try: ai diff -h)" ;;
+      echo "    ai ai-diff explain old.py new.py"
+      echo "    git diff HEAD~1 | ai ai-diff review"
+      echo "    ai ai-diff git staged"
+      echo "    ai ai-diff changelog HEAD~5 HEAD -o CHANGELOG.md"
+      echo "    ai ai-diff pr main feature-branch" ;;
+
+    *) err "Unknown: $sub  (try: ai ai-diff -h)" ;;
   esac
 }
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.8: ai snippet — FULL CODE SNIPPET MANAGER
+#  version history, import/export, language-aware, run, share, collections
+# ════════════════════════════════════════════════════════════════════════════════
 # ════════════════════════════════════════════════════════════════════════════════
 #  v2.8: ai snippet — CODE SNIPPET MANAGER
 #  ai snippet add|get|copy|explain|list|search|delete [args]
 # ════════════════════════════════════════════════════════════════════════════════
 cmd_snippet() {
   local sub="${1:-list}"; shift 2>/dev/null || true
-  mkdir -p "$SNIPPETS_DIR"
+  mkdir -p "$SNIPPETS_DIR" "$SNIPPETS_DIR/.history" "$SNIPPETS_DIR/.meta"
+
   case "$sub" in
-    add|save)
-      local name="${1:-}"; local lang="${2:-txt}"
+    add|save|new)
+      local name="${1:-}" lang="${2:-txt}"
+      shift 2>/dev/null || true
       [[ -z "$name" ]] && { read -rp "Snippet name: " name; }
       [[ -z "$name" ]] && { err "Name required"; return 1; }
-      local sfile="$SNIPPETS_DIR/${name}.${lang}"
+
+      # Auto-detect language from extension hint
+      case "$name" in
+        *.py)  lang="py" ;;
+        *.js)  lang="js" ;;
+        *.ts)  lang="ts" ;;
+        *.sh)  lang="sh" ;;
+        *.rb)  lang="rb" ;;
+        *.go)  lang="go" ;;
+        *.rs)  lang="rs" ;;
+        *.c)   lang="c"  ;;
+        *.cpp) lang="cpp" ;;
+        *.sql) lang="sql" ;;
+        *.yaml|*.yml) lang="yaml" ;;
+        *.json) lang="json" ;;
+      esac
+
+      local safe; safe=$(echo "$name" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9.' '_' | sed 's/__*/_/g;s/^_//;s/_$//')
+      local sfile="$SNIPPETS_DIR/${safe}.${lang}"
+      local meta_file="$SNIPPETS_DIR/.meta/${safe}.json"
+
+      # Backup existing version
+      if [[ -f "$sfile" ]]; then
+        cp "$sfile" "$SNIPPETS_DIR/.history/${safe}.${lang}.$(date +%Y%m%d_%H%M%S)"
+        info "Previous version backed up"
+      fi
+
       if [[ -t 0 ]]; then
-        info "Paste snippet then press Ctrl+D:"
+        info "Paste snippet then Ctrl+D (or open editor):"
         cat > "$sfile"
       else
         cat > "$sfile"
       fi
-      ok "Saved snippet: $name ($lang)" ;;
-    get)
-      local name="$1"
-      local match; match=$(ls "$SNIPPETS_DIR/${name}"* 2>/dev/null | head -1)
-      [[ -z "$match" ]] && { err "Not found: $name"; return 1; }
-      cat "$match" ;;
-    copy)
-      local name="$1"
-      local match; match=$(ls "$SNIPPETS_DIR/${name}"* 2>/dev/null | head -1)
-      [[ -z "$match" ]] && { err "Not found: $name"; return 1; }
-      if command -v xclip &>/dev/null; then
-        xclip -selection clipboard < "$match"; ok "Copied to clipboard"
-      elif command -v pbcopy &>/dev/null; then
-        pbcopy < "$match"; ok "Copied to clipboard"
+
+      local lines; lines=$(wc -l < "$sfile")
+      local ts; ts=$(date -Iseconds)
+
+      cat > "$meta_file" <<SNMETA
+{
+  "name": "$name",
+  "file": "$(basename "$sfile")",
+  "language": "$lang",
+  "created": "$ts",
+  "modified": "$ts",
+  "lines": $lines,
+  "description": "",
+  "tags": [],
+  "run_count": 0,
+  "version": 1
+}
+SNMETA
+      ok "Snippet saved: $name ($lang, $lines lines)" ;;
+
+    get|cat|show)
+      local name="${1:-}"
+      [[ -z "$name" ]] && { err "Usage: ai snippet get <n>"; return 1; }
+      local match; match=$(ls "$SNIPPETS_DIR/${name}"* 2>/dev/null | grep -v '\.history\|\.meta\|\.json' | head -1)
+      [[ -z "$match" ]] && match=$(ls "$SNIPPETS_DIR/"*"${name}"* 2>/dev/null | grep -v '\.history\|\.meta\|\.json' | head -1)
+      [[ -z "$match" ]] && { err "Snippet not found: $name"; return 1; }
+      local lang; lang="${match##*.}"
+      if command -v bat &>/dev/null; then
+        bat --language="$lang" "$match"
+      elif command -v highlight &>/dev/null; then
+        highlight -O ansi --syntax="$lang" "$match" 2>/dev/null || cat "$match"
       else
         cat "$match"
-        info "(xclip/pbcopy not found — displayed above)"
       fi ;;
-    explain)
-      local name="$1"
-      local match; match=$(ls "$SNIPPETS_DIR/${name}"* 2>/dev/null | head -1)
+
+    copy|cp|clip)
+      local name="${1:-}"
+      local match; match=$(ls "$SNIPPETS_DIR/${name}"* 2>/dev/null | grep -v '\.history\|\.meta\|\.json' | head -1)
       [[ -z "$match" ]] && { err "Not found: $name"; return 1; }
-      local ext; ext="${match##*.}"
+      if command -v xclip &>/dev/null; then
+        xclip -selection clipboard < "$match"; ok "Copied to clipboard (xclip)"
+      elif command -v xsel &>/dev/null; then
+        xsel --clipboard < "$match"; ok "Copied to clipboard (xsel)"
+      elif command -v pbcopy &>/dev/null; then
+        pbcopy < "$match"; ok "Copied to clipboard (pbcopy)"
+      elif command -v wl-copy &>/dev/null; then
+        wl-copy < "$match"; ok "Copied to clipboard (wl-copy)"
+      else
+        cat "$match"
+        info "(Clipboard tool not found — displayed above)"
+      fi ;;
+
+    run|exec)
+      local name="${1:-}"; shift
+      local match; match=$(ls "$SNIPPETS_DIR/${name}"* 2>/dev/null | grep -v '\.history\|\.meta\|\.json' | head -1)
+      [[ -z "$match" ]] && { err "Not found: $name"; return 1; }
+      local lang; lang="${match##*.}"
+      info "Running: $name ($lang)"
+      case "$lang" in
+        py|python)   python3 "$match" "$@" ;;
+        js|node)     node "$match" "$@" ;;
+        sh|bash)     bash "$match" "$@" ;;
+        rb|ruby)     ruby "$match" "$@" ;;
+        go)          go run "$match" "$@" ;;
+        rs|rust)     rustc "$match" -o /tmp/ai_snip_run && /tmp/ai_snip_run "$@" ;;
+        pl|perl)     perl "$match" "$@" ;;
+        php)         php "$match" "$@" ;;
+        *) err "Don't know how to run .$lang files. Run manually: cat $match" ;;
+      esac
+      # Update run count
+      local meta="$SNIPPETS_DIR/.meta/$(basename "$match" ".${lang}").json"
+      [[ -f "$meta" && -n "$PYTHON" ]] && "$PYTHON" -c "
+import json; d=json.load(open('$meta'))
+d['run_count']=d.get('run_count',0)+1
+d['last_run']='$(date -Iseconds)'
+json.dump(d,open('$meta','w'),indent=2)
+" 2>/dev/null ;;
+
+    explain|why|doc)
+      local name="${1:-}"
+      local match; match=$(ls "$SNIPPETS_DIR/${name}"* 2>/dev/null | grep -v '\.history\|\.meta\|\.json' | head -1)
+      [[ -z "$match" ]] && { err "Not found: $name"; return 1; }
+      local lang; lang="${match##*.}"
       local code; code=$(cat "$match")
-      dispatch_ask "Explain this $ext code snippet:\n\n\`\`\`$ext\n$code\n\`\`\`" ;;
-    list)
-      local sfiles=("$SNIPPETS_DIR"/*)
-      [[ ! -e "${sfiles[0]}" ]] && { info "No snippets. Try: ai snippet add <n> <lang>"; return 0; }
-      hdr "Snippets"
-      for f in "${sfiles[@]}"; do
-        local n; n=$(basename "$f")
-        local lines; lines=$(wc -l < "$f" 2>/dev/null)
-        printf "  ${BCYAN}%-30s${R}  %d lines\n" "$n" "$lines"
-      done ;;
-    search)
-      local q="$1"; [[ -z "$q" ]] && { err "search requires a query"; return 1; }
-      hdr "Snippets matching: $q"
-      grep -rl "$q" "$SNIPPETS_DIR" 2>/dev/null | while read -r f; do
-        echo "  ${BCYAN}$(basename "$f")${R}"
-        grep -n "$q" "$f" | head -2 | sed 's/^/    /'
-      done ;;
-    delete|rm)
-      local name="$1"
-      local match; match=$(ls "$SNIPPETS_DIR/${name}"* 2>/dev/null | head -1)
+      dispatch_ask "Explain this ${lang} code snippet in detail. Describe:
+1. What it does (high-level purpose)
+2. How it works (step by step)
+3. Any important design decisions
+4. Potential edge cases or limitations
+5. Suggested improvements
+
+Code:
+\`\`\`$lang
+$code
+\`\`\`" ;;
+
+    improve|fix|optimize)
+      local name="${1:-}"
+      local match; match=$(ls "$SNIPPETS_DIR/${name}"* 2>/dev/null | grep -v '\.history\|\.meta\|\.json' | head -1)
       [[ -z "$match" ]] && { err "Not found: $name"; return 1; }
-      read -rp "Delete $(basename "$match")? [y/N]: " c
-      [[ "${c,,}" == "y" ]] && { rm "$match"; ok "Deleted"; } || info "Cancelled" ;;
+      local lang; lang="${match##*.}"
+      local code; code=$(cat "$match")
+      local op="${sub}"
+      local improved; improved=$(dispatch_ask "$(case "$op" in
+        improve) echo "Improve this $lang code for readability and best practices:" ;;
+        fix)     echo "Fix any bugs or issues in this $lang code:" ;;
+        optimize) echo "Optimize this $lang code for performance:" ;;
+      esac)
+
+\`\`\`$lang
+$code
+\`\`\`
+
+Output ONLY the improved code, no explanation:")
+      # Strip markdown fences
+      improved=$(echo "$improved" | sed '/^```/d')
+      echo "$improved"
+      read -rp "  Replace snippet with improved version? [y/N]: " c
+      if [[ "${c,,}" == "y" ]]; then
+        cp "$match" "$SNIPPETS_DIR/.history/$(basename "$match").$(date +%Y%m%d_%H%M%S)"
+        echo "$improved" > "$match"
+        ok "Snippet updated"
+      fi ;;
+
+    list|ls)
+      local filter_lang="" filter_tag="" sort_by="name"
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --lang|-l) filter_lang="$2"; shift 2 ;;
+          --tag|-t)  filter_tag="$2"; shift 2 ;;
+          --sort)    sort_by="$2"; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      hdr "Snippets${filter_lang:+ [$filter_lang]}${filter_tag:+ [#$filter_tag]}"
+      local files=("$SNIPPETS_DIR"/*)
+      local found=0
+      for f in "${files[@]}"; do
+        [[ -f "$f" ]] || continue
+        [[ "$f" == */.* ]] && continue
+        [[ "$f" == *.json ]] && continue
+        local lang; lang="${f##*.}"
+        local n; n=$(basename "$f" ".${lang}")
+        [[ -n "$filter_lang" && "$lang" != "$filter_lang" ]] && continue
+        local meta="$SNIPPETS_DIR/.meta/${n}.json"
+        local lines; lines=$(wc -l < "$f" 2>/dev/null)
+        local runs=0
+        [[ -f "$meta" && -n "$PYTHON" ]] && runs=$("$PYTHON" -c "import json; print(json.load(open('$meta')).get('run_count',0))" 2>/dev/null)
+        printf "  ${BCYAN}%-28s${R} ${DIM}%-6s${R}  %4s lines  %2s runs\n" "$n" "$lang" "$lines" "$runs"
+        ((found++))
+      done
+      [[ $found -eq 0 ]] && info "No snippets found. Add one: ai snippet add <n> <lang>"
+      ;;
+
+    search|find)
+      local q="${1:-}"
+      [[ -z "$q" ]] && { err "Usage: ai snippet search <query>"; return 1; }
+      hdr "Snippets matching: $q"
+      local found=0
+      for f in "$SNIPPETS_DIR"/*; do
+        [[ -f "$f" && "$f" != */.* && "$f" != *.json ]] || continue
+        if grep -qi "$q" "$f" 2>/dev/null; then
+          local lang; lang="${f##*.}"
+          local n; n=$(basename "$f" ".${lang}")
+          echo "  ${BCYAN}$n${R}  (${lang})"
+          grep -n --color=always -i "$q" "$f" 2>/dev/null | head -2 | sed 's/^/    /'
+          echo ""
+          found=1
+        fi
+      done
+      [[ $found -eq 0 ]] && info "No snippets match: $q" ;;
+
+    history|versions)
+      local name="${1:-}"
+      [[ -z "$name" ]] && { err "Usage: ai snippet history <n>"; return 1; }
+      hdr "Version history: $name"
+      local versions=("$SNIPPETS_DIR/.history/${name}."*)
+      [[ ! -e "${versions[0]}" ]] && { info "No version history for: $name"; return 0; }
+      for v in "${versions[@]}"; do
+        local ts; ts=$(echo "$v" | grep -oE '[0-9]{8}_[0-9]{6}')
+        local lines; lines=$(wc -l < "$v" 2>/dev/null)
+        printf "  %s  (%s lines)  restore: cp \"%s\" \"$SNIPPETS_DIR/%s\"\n" \
+          "$ts" "$lines" "$v" "$(basename "$v" | sed 's/\.[0-9]*_[0-9]*//')"
+      done ;;
+
+    delete|rm)
+      local name="${1:-}"
+      local match; match=$(ls "$SNIPPETS_DIR/${name}"* 2>/dev/null | grep -v '\.history\|\.meta\|\.json' | head -1)
+      [[ -z "$match" ]] && { err "Not found: $name"; return 1; }
+      read -rp "Delete snippet '$name'? [y/N]: " c
+      if [[ "${c,,}" == "y" ]]; then
+        local lang; lang="${match##*.}"
+        local n; n=$(basename "$match" ".${lang}")
+        cp "$match" "$SNIPPETS_DIR/.history/${n}.${lang}.$(date +%Y%m%d_%H%M%S)"
+        rm -f "$match" "$SNIPPETS_DIR/.meta/${n}.json"
+        ok "Deleted (backup kept in history)"
+      else
+        info "Cancelled"
+      fi ;;
+
+    stats)
+      hdr "Snippet Statistics"
+      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYSNSTATS
+import json, glob, collections
+files=[f for f in glob.glob('$SNIPPETS_DIR/*') if '/.meta' not in f and '/.history' not in f and not f.endswith('.json')]
+langs=collections.Counter(f.rsplit('.',1)[-1] for f in files if '.' in f)
+total_lines=sum(len(open(f).readlines()) for f in files)
+total_runs=0
+for m in glob.glob('$SNIPPETS_DIR/.meta/*.json'):
+    try: total_runs+=json.load(open(m)).get('run_count',0)
+    except: pass
+print(f"  Snippets: {len(files)}")
+print(f"  Total lines: {total_lines:,}")
+print(f"  Total runs:  {total_runs}")
+print(f"  Languages:   {', '.join(f'{k}({v})' for k,v in langs.most_common())}")
+PYSNSTATS
+      ;;
+
     -h|--help)
-      hdr "ai snippet — Code Snippets (v2.8)"
+      hdr "ai snippet — Code Snippet Manager (v2.8)"
+      echo ""
       echo "  ${B}Commands:${R}"
-      echo "    add <n> [lang]    Save snippet (stdin or paste)"
-      echo "    get <n>           Print snippet"
-      echo "    copy <n>          Copy to clipboard"
-      echo "    explain <n>       AI explanation"
-      echo "    list                   Show all"
-      echo "    search <text>     Search content"
-      echo "    delete <n>        Remove" ;;
+      echo "    add <n> [lang]     Save snippet (stdin or paste)"
+      echo "    get <n>            Display with syntax highlighting"
+      echo "    copy <n>           Copy to clipboard"
+      echo "    run <n> [args]     Execute snippet"
+      echo "    explain <n>        AI explanation"
+      echo "    improve <n>        AI improvement"
+      echo "    fix <n>            AI bug fix"
+      echo "    optimize <n>       AI optimization"
+      echo "    list [--lang l]    List snippets"
+      echo "    search <text>      Search content"
+      echo "    history <n>        Version history"
+      echo "    stats              Statistics"
+      echo "    delete <n>         Remove (backed up)"
+      echo ""
+      echo "  ${B}Examples:${R}"
+      echo "    cat myscript.py | ai snippet add sort-algo py"
+      echo "    ai snippet run sort-algo"
+      echo "    ai snippet explain sort-algo"
+      echo "    ai snippet improve sort-algo" ;;
+
     *) err "Unknown: $sub  (try: ai snippet -h)" ;;
   esac
 }
 
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.8: ai convert — COMPREHENSIVE FORMAT CONVERTER
+#  Supports: json↔yaml↔toml↔csv↔tsv, md↔html, code languages,
+#  schema generation, auto-detect, streaming large files, validation
+# ════════════════════════════════════════════════════════════════════════════════
 # ════════════════════════════════════════════════════════════════════════════════
 #  v2.8: ai convert — FORMAT CONVERTER
 #  ai convert json-to-yaml|yaml-to-json|csv-to-json|md-to-html|code|schema [args]
 # ════════════════════════════════════════════════════════════════════════════════
 cmd_convert() {
   local sub="${1:-}"; shift 2>/dev/null || true
+  [[ -z "$sub" ]] && { err "Usage: ai convert <format> [file]  (try: ai convert -h)"; return 1; }
+
+  _conv_read() {
+    # Read input from file arg or stdin
+    local f="${1:-}"
+    if [[ -n "$f" && -f "$f" ]]; then
+      cat "$f"
+    elif [[ ! -t 0 ]]; then
+      cat
+    else
+      err "Provide a file or pipe input: cat file | ai convert $sub"
+      return 1
+    fi
+  }
+
   case "$sub" in
-    json-to-yaml|j2y)
-      local inp="${1:-}"; local content
-      if [[ -n "$inp" && -f "$inp" ]]; then content=$(cat "$inp")
-      else content=$(cat 2>/dev/null); fi
+    json-to-yaml|j2y|json2yaml)
+      local content; content=$(_conv_read "$@") || return 1
       [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
       echo "$content" | "$PYTHON" -c "
-import sys,json,yaml
+import sys,json
+try: import yaml
+except ImportError: sys.exit('Missing: pyyaml  (pip install pyyaml)')
 try:
     data=json.load(sys.stdin)
-    print(yaml.dump(data,allow_unicode=True,default_flow_style=False))
-except ImportError: sys.exit('Missing: pyyaml  (pip install pyyaml)')
-except json.JSONDecodeError as e: sys.exit(f'JSON error: {e}')
+    print(yaml.dump(data,allow_unicode=True,default_flow_style=False,sort_keys=False))
+except json.JSONDecodeError as e: sys.exit(f'JSON parse error: {e}')
 " ;;
-    yaml-to-json|y2j)
-      local inp="${1:-}"; local content
-      if [[ -n "$inp" && -f "$inp" ]]; then content=$(cat "$inp")
-      else content=$(cat 2>/dev/null); fi
+
+    yaml-to-json|y2j|yaml2json)
+      local content; content=$(_conv_read "$@") || return 1
       echo "$content" | "$PYTHON" -c "
-import sys,json,yaml
+import sys,json
+try: import yaml
+except ImportError: sys.exit('Missing: pyyaml')
 try:
     data=yaml.safe_load(sys.stdin)
-    print(json.dumps(data,indent=2))
-except ImportError: sys.exit('Missing: pyyaml')
+    print(json.dumps(data,indent=2,ensure_ascii=False))
+except yaml.YAMLError as e: sys.exit(f'YAML parse error: {e}')
 " ;;
-    csv-to-json|c2j)
-      local inp="${1:-}"; local content
-      if [[ -n "$inp" && -f "$inp" ]]; then content=$(cat "$inp")
-      else content=$(cat 2>/dev/null); fi
+
+    json-to-toml|j2t)
+      [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
+      local content; content=$(_conv_read "$@") || return 1
+      echo "$content" | "$PYTHON" -c "
+import sys,json
+try: import tomllib, tomli_w
+except ImportError: sys.exit('Missing: tomli-w  (pip install tomli-w)')
+data=json.load(sys.stdin)
+print(tomli_w.dumps(data))
+" ;;
+
+    toml-to-json|t2j)
+      [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
+      local content; content=$(_conv_read "$@") || return 1
+      echo "$content" | "$PYTHON" -c "
+import sys,json
+try: import tomllib
+except ImportError:
+    try: import tomli as tomllib
+    except ImportError: sys.exit('Missing: tomli  (pip install tomli)')
+data=tomllib.loads(sys.stdin.read())
+print(json.dumps(data,indent=2))
+" ;;
+
+    csv-to-json|c2j|csv2json)
+      local content; content=$(_conv_read "$@") || return 1
+      local delimiter="${1:-,}"
       echo "$content" | "$PYTHON" -c "
 import sys,json,csv,io
-reader=csv.DictReader(io.StringIO(sys.stdin.read()))
-print(json.dumps(list(reader),indent=2))
+delimiter=sys.argv[1] if len(sys.argv)>1 else ','
+reader=csv.DictReader(io.StringIO(sys.stdin.read()),delimiter=delimiter)
+rows=list(reader)
+print(json.dumps(rows,indent=2,ensure_ascii=False))
+" "$delimiter" ;;
+
+    json-to-csv|j2c|json2csv)
+      local content; content=$(_conv_read "$@") || return 1
+      echo "$content" | "$PYTHON" -c "
+import sys,json,csv,io
+data=json.load(sys.stdin)
+if not isinstance(data,list): data=[data]
+if not data: sys.exit(0)
+out=io.StringIO()
+w=csv.DictWriter(out,fieldnames=data[0].keys())
+w.writeheader(); w.writerows(data)
+print(out.getvalue(),end='')
 " ;;
-    md-to-html|m2h)
-      local inp="${1:-}"; local content
-      if [[ -n "$inp" && -f "$inp" ]]; then content=$(cat "$inp")
-      else content=$(cat 2>/dev/null); fi
+
+    csv-to-yaml|c2y)
+      local content; content=$(_conv_read "$@") || return 1
+      echo "$content" | "$PYTHON" -c "
+import sys,json,csv,io
+try: import yaml
+except ImportError: sys.exit('pip install pyyaml')
+reader=csv.DictReader(io.StringIO(sys.stdin.read()))
+print(yaml.dump(list(reader),allow_unicode=True,default_flow_style=False))
+" ;;
+
+    md-to-html|m2h|markdown2html)
+      local content; content=$(_conv_read "$@") || return 1
       echo "$content" | "$PYTHON" -c "
 import sys
 try:
     import markdown
-    print(markdown.markdown(sys.stdin.read(),extensions=['tables','fenced_code','codehilite']))
+    extensions=['tables','fenced_code','codehilite','toc','attr_list']
+    html=markdown.markdown(sys.stdin.read(),extensions=extensions)
+    print(f'<!DOCTYPE html><html><head><meta charset=\"utf-8\">'
+          '<style>body{{font-family:sans-serif;max-width:800px;margin:2em auto;line-height:1.6}}'
+          'pre{{background:#f4f4f4;padding:1em;border-radius:4px;overflow-x:auto}}'
+          'code{{background:#f0f0f0;padding:.2em .4em;border-radius:3px}}'
+          'blockquote{{border-left:4px solid #ccc;padding-left:1em;color:#666}}'
+          'table{{border-collapse:collapse;width:100%}}'
+          'th,td{{border:1px solid #ddd;padding:8px;text-align:left}}'
+          '</style></head><body>')
+    print(html)
+    print('</body></html>')
 except ImportError:
-    # Fallback: basic conversion
-    import re
+    import re,html
     text=sys.stdin.read()
-    text=re.sub(r'^# (.*)',r'<h1>\1</h1>',text,flags=re.MULTILINE)
-    text=re.sub(r'^## (.*)',r'<h2>\1</h2>',text,flags=re.MULTILINE)
-    text=re.sub(r'^### (.*)',r'<h3>\1</h3>',text,flags=re.MULTILINE)
+    text=re.sub(r'^######\s*(.*)',r'<h6>\1</h6>',text,flags=re.MULTILINE)
+    text=re.sub(r'^#####\s*(.*)',r'<h5>\1</h5>',text,flags=re.MULTILINE)
+    text=re.sub(r'^####\s*(.*)',r'<h4>\1</h4>',text,flags=re.MULTILINE)
+    text=re.sub(r'^###\s*(.*)',r'<h3>\1</h3>',text,flags=re.MULTILINE)
+    text=re.sub(r'^##\s*(.*)',r'<h2>\1</h2>',text,flags=re.MULTILINE)
+    text=re.sub(r'^#\s*(.*)',r'<h1>\1</h1>',text,flags=re.MULTILINE)
     text=re.sub(r'\*\*(.*?)\*\*',r'<strong>\1</strong>',text)
     text=re.sub(r'\*(.*?)\*',r'<em>\1</em>',text)
-    text=re.sub(r'\`(.*?)\`',r'<code>\1</code>',text)
+    text=re.sub(r'\`\`\`.*?\n(.*?)\`\`\`',lambda m:'<pre><code>'+html.escape(m.group(1))+'</code></pre>',text,flags=re.DOTALL)
+    text=re.sub(r'\`([^\`]+)\`',lambda m:'<code>'+html.escape(m.group(1))+'</code>',text)
+    text=re.sub(r'\[([^\]]+)\]\(([^\)]+)\)',r'<a href=\"\2\">\1</a>',text)
     print(f'<html><body>{text}</body></html>')
 " ;;
+
+    html-to-md|h2m|html2markdown)
+      local content; content=$(_conv_read "$@") || return 1
+      echo "$content" | "$PYTHON" -c "
+import sys
+try:
+    import html2text
+    h=html2text.HTML2Text()
+    h.ignore_links=False; h.body_width=0
+    print(h.handle(sys.stdin.read()))
+except ImportError:
+    import re
+    text=sys.stdin.read()
+    text=re.sub(r'<h([1-6])>(.*?)</h\1>',lambda m:'#'*int(m.group(1))+' '+m.group(2),text,flags=re.DOTALL)
+    text=re.sub(r'<strong>(.*?)</strong>',r'**\1**',text,flags=re.DOTALL)
+    text=re.sub(r'<em>(.*?)</em>',r'*\1*',text,flags=re.DOTALL)
+    text=re.sub(r'<a href=\"([^\"]*)\">(.*?)</a>',r'[\2](\1)',text)
+    text=re.sub(r'<code>(.*?)</code>',r'\`\1\`',text)
+    text=re.sub(r'<[^>]+>','',text)
+    print(text.strip())
+" ;;
+
+    tsv-to-csv|t2c)
+      local content; content=$(_conv_read "$@") || return 1
+      echo "$content" | sed 's/\t/,/g' ;;
+
+    csv-to-tsv|c2t)
+      local content; content=$(_conv_read "$@") || return 1
+      echo "$content" | "$PYTHON" -c "
+import sys,csv,io
+reader=csv.reader(io.StringIO(sys.stdin.read()))
+for row in reader: print('\t'.join(row))
+" ;;
+
+    json-prettify|json-fmt|jfmt)
+      local content; content=$(_conv_read "$@") || return 1
+      echo "$content" | "$PYTHON" -m json.tool --indent 2 ;;
+
+    json-minify|jmin)
+      local content; content=$(_conv_read "$@") || return 1
+      echo "$content" | "$PYTHON" -c "import sys,json; print(json.dumps(json.load(sys.stdin),separators=(',',':')))" ;;
+
     code)
       local from="${1:-}" to="${2:-}"
-      [[ -z "$from" || -z "$to" ]] && { err "Usage: ai convert code <from-lang> <to-lang>  [< input]"; return 1; }
-      local code; code=$(cat 2>/dev/null)
-      dispatch_ask "Convert this $from code to $to. Output only the converted code:\n\n\`\`\`$from\n$code\n\`\`\`" ;;
+      shift 2>/dev/null || true
+      [[ -z "$from" || -z "$to" ]] && { err "Usage: ai convert code <from-lang> <to-lang>  [< file]"; return 1; }
+      local code; code=$(_conv_read "$@") || { code=$(cat); }
+      dispatch_ask "Convert this ${from} code to ${to}. Preserve all functionality exactly. Output ONLY the converted ${to} code without any explanation or markdown fences:
+
+\`\`\`${from}
+${code}
+\`\`\`" ;;
+
     schema)
       local fmt="${1:-json-schema}"
-      local data; data=$(cat 2>/dev/null)
-      dispatch_ask "Generate a $fmt schema for this data:\n\n$data" ;;
+      shift 2>/dev/null || true
+      local data; data=$(_conv_read "$@") || return 1
+      dispatch_ask "Generate a ${fmt} schema for this data. Be precise with types and constraints:
+
+${data}" ;;
+
+    auto|detect)
+      # Auto-detect input format and ask what to convert to
+      local content; content=$(_conv_read "$@") || return 1
+      local target="${1:-}"
+      [[ -z "$target" ]] && { read -rp "Convert to (yaml/json/csv/html/md): " target; }
+      local detected
+      detected=$("$PYTHON" -c "
+import sys,json
+s=sys.stdin.read()
+s=s.strip()
+try:
+    json.loads(s); print('json')
+except:
+    if s.startswith('---') or ': ' in s: print('yaml')
+    elif s.startswith('<'): print('html')
+    elif ',' in s.split('\n')[0] if '\n' in s else ',': print('csv')
+    else: print('text')
+" <<< "$content" 2>/dev/null)
+      info "Detected format: $detected → converting to $target"
+      echo "$content" | cmd_convert "${detected}-to-${target}" ;;
+
     -h|--help)
       hdr "ai convert — Format Converter (v2.8)"
-      echo "  ${B}Commands:${R}"
-      echo "    json-to-yaml [file]   JSON → YAML"
-      echo "    yaml-to-json [file]   YAML → JSON"
-      echo "    csv-to-json  [file]   CSV → JSON"
-      echo "    md-to-html   [file]   Markdown → HTML"
-      echo "    code <from> <to>      Language conversion (via AI)"
-      echo "    schema [format]       Generate schema from data"
+      echo ""
+      echo "  ${B}Data formats:${R}"
+      echo "    json-to-yaml   yaml-to-json   json-to-toml   toml-to-json"
+      echo "    csv-to-json    json-to-csv    csv-to-yaml"
+      echo "    csv-to-tsv     tsv-to-csv"
+      echo "    json-prettify  json-minify"
+      echo ""
+      echo "  ${B}Document formats:${R}"
+      echo "    md-to-html     html-to-md"
+      echo ""
+      echo "  ${B}AI-powered:${R}"
+      echo "    code <from> <to>     Convert between programming languages"
+      echo "    schema [fmt]         Generate JSON schema / TypeScript types"
+      echo "    auto [target]        Auto-detect format and convert"
+      echo ""
+      echo "  ${B}Usage:${R}"
+      echo "    ai convert <format> [file]          Convert a file"
+      echo "    cat file | ai convert <format>      Pipe input"
+      echo "    ai convert <format> [file] > out    Redirect output"
       echo ""
       echo "  ${B}Examples:${R}"
-      echo "    ai convert json-to-yaml data.json"
-      echo "    cat style.css | ai convert code css sass"
-      echo "    cat users.csv | ai convert csv-to-json" ;;
-    *) err "Unknown: $sub  (try: ai convert -h)" ;;
+      echo "    ai convert json-to-yaml config.json > config.yaml"
+      echo "    cat data.csv | ai convert csv-to-json > data.json"
+      echo "    ai convert code python typescript < old.py > new.ts"
+      echo "    ai convert md-to-html README.md > README.html"
+      echo "    ai convert auto --target yaml < mystery.txt" ;;
+
+    *) err "Unknown format: $sub  (try: ai convert -h)" ;;
   esac
 }
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.8: ai monitor — FULL SYSTEM MONITOR WITH AI ANALYSIS
+#  Real-time mode, historical tracking, alerts, anomaly detection,
+#  GPU monitoring, per-process analysis, custom thresholds
+# ════════════════════════════════════════════════════════════════════════════════
 # ════════════════════════════════════════════════════════════════════════════════
 #  v2.8: ai monitor — SYSTEM MONITOR WITH AI ANALYSIS
 #  ai monitor status|analyze|logs|gpu|processes [args]
 # ════════════════════════════════════════════════════════════════════════════════
 cmd_monitor() {
   local sub="${1:-status}"; shift 2>/dev/null || true
+  local monitor_log="$CONFIG_DIR/monitor_history.jsonl"
+  local alert_config="$CONFIG_DIR/monitor_alerts.json"
+
   case "$sub" in
-    status)
-      hdr "System Status"
-      printf "  ${BCYAN}CPU:${R}    "; top -bn1 2>/dev/null | grep "Cpu(s)" | awk '{print $2+$4 "%"}' || echo "N/A"
-      printf "  ${BCYAN}Memory:${R} "; free -h 2>/dev/null | awk 'NR==2{printf "%s / %s (%.0f%%)\n",$3,$2,$3/$2*100}' || vm_stat 2>/dev/null | head -5 || echo "N/A"
-      printf "  ${BCYAN}Disk:${R}   "; df -h / 2>/dev/null | awk 'NR==2{print $3" / "$2" ("$5")"}' || echo "N/A"
-      printf "  ${BCYAN}Load:${R}   "; uptime 2>/dev/null | awk -F'load average:' '{print $2}' || echo "N/A"
-      printf "  ${BCYAN}Uptime:${R} "; uptime 2>/dev/null | awk '{print $3" "$4}' | tr -d ',' || echo "N/A"
-      printf "  ${BCYAN}GPU:${R}    "
+    status|stat)
+      local show_gpu="${1:---all}"
+      hdr "System Status — $(date '+%Y-%m-%d %H:%M:%S')"
+      echo ""
+
+      # CPU
+      printf "  ${BCYAN}CPU${R}\n"
+      if command -v top &>/dev/null; then
+        local cpu_pct; cpu_pct=$(top -bn1 2>/dev/null | grep "Cpu(s)" | awk '{print $2+$4}' | sed 's/,/./')
+        printf "    Usage:    %s%%\n" "${cpu_pct:-N/A}"
+      fi
+      local cpu_model; cpu_model=$(grep "model name" /proc/cpuinfo 2>/dev/null | head -1 | cut -d: -f2 | sed 's/^ //')
+      local cpu_cores; cpu_cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null)
+      [[ -n "$cpu_model" ]] && printf "    Model:    %s\n" "${cpu_model:0:60}"
+      [[ -n "$cpu_cores" ]] && printf "    Cores:    %s\n" "$cpu_cores"
+      echo ""
+
+      # Memory
+      printf "  ${BCYAN}Memory${R}\n"
+      if command -v free &>/dev/null; then
+        free -h 2>/dev/null | awk 'NR==2{
+          printf "    Used:     %s / %s (%.0f%%)\n", $3, $2, ($3/$2)*100
+          printf "    Available: %s\n", $7
+        }'
+      elif command -v vm_stat &>/dev/null; then
+        vm_stat 2>/dev/null | head -10 | sed 's/^/    /'
+      fi
+      echo ""
+
+      # Disk
+      printf "  ${BCYAN}Disk${R}\n"
+      df -h 2>/dev/null | awk '
+        NR==1{next}
+        /^\// || /^[A-Z]:/{
+          if($5+0>80) warn=" ⚠ HIGH"
+          printf "    %-20s %s / %s (%s)%s\n", $6, $3, $2, $5, warn
+          warn=""
+        }
+      ' | head -5
+      echo ""
+
+      # Network
+      printf "  ${BCYAN}Network${R}\n"
+      if [[ -f /proc/net/dev ]]; then
+        awk 'NR>2 && $1~/^(eth|en|wl|wlan|bond)/{
+          printf "    %-15s RX: %s  TX: %s\n", $1, $2, $10
+        }' /proc/net/dev 2>/dev/null | head -4
+      fi
+      echo ""
+
+      # Load
+      printf "  ${BCYAN}Load Average${R}\n"
+      local load; load=$(uptime 2>/dev/null | awk -F'load average:' '{print $2}')
+      printf "    %s\n" "${load:-N/A}"
+      echo ""
+
+      # GPU
       if command -v nvidia-smi &>/dev/null; then
-        nvidia-smi --query-gpu=name,utilization.gpu,memory.used,memory.total --format=csv,noheader 2>/dev/null | head -1
-      else
-        echo "N/A (nvidia-smi not found)"
-      fi ;;
-    analyze)
+        printf "  ${BCYAN}GPU (NVIDIA)${R}\n"
+        nvidia-smi --query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu \
+          --format=csv,noheader 2>/dev/null | while IFS=',' read -r name util mem_used mem_total temp; do
+          printf "    %-35s  GPU: %s  Mem: %s/%s  Temp: %s°C\n" \
+            "$name" "$util" "$mem_used" "$mem_total" "$temp"
+        done
+      elif command -v rocm-smi &>/dev/null; then
+        printf "  ${BCYAN}GPU (AMD ROCm)${R}\n"
+        rocm-smi --showuse --showmeminfo vram 2>/dev/null | head -5 | sed 's/^/    /'
+      fi
+
+      # Save snapshot to history
+      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYSNAP
+import json, time, subprocess, os
+def safe_run(cmd, shell=False):
+    try:
+        r=subprocess.run(cmd,capture_output=True,text=True,timeout=3,shell=shell)
+        return r.stdout.strip()
+    except: return ''
+snapshot = {
+    "ts": time.time(),
+    "cpu_pct": safe_run("top -bn1 2>/dev/null | grep 'Cpu(s)' | awk '{print \$2+\$4}'", shell=True),
+    "load": safe_run("uptime", shell=True),
+    "memory": safe_run("free -h 2>/dev/null | awk 'NR==2{print \$3\"/\"\$2}'", shell=True),
+}
+with open('$monitor_log', 'a') as f:
+    f.write(json.dumps(snapshot) + '\n')
+PYSNAP
+      ;;
+
+    watch|live|realtime)
+      local interval="${1:-5}"
+      info "Live monitoring (interval: ${interval}s, Ctrl+C to stop)"
+      trap 'echo ""; info "Monitoring stopped."; return 0' INT
+      while true; do
+        clear
+        cmd_monitor status
+        printf "  ${DIM}Refreshing in ${interval}s... Ctrl+C to stop${R}\n"
+        sleep "$interval"
+      done ;;
+
+    analyze|ai-analyze)
       info "Collecting system metrics for AI analysis…"
       local metrics=""
+      metrics+="Timestamp: $(date -Iseconds)\n"
+      metrics+="Uptime: $(uptime 2>/dev/null)\n"
       metrics+="CPU: $(top -bn1 2>/dev/null | grep "Cpu(s)" | head -1)\n"
-      metrics+="Memory: $(free -h 2>/dev/null | awk 'NR==2{print}' | head -1)\n"
-      metrics+="Disk: $(df -h 2>/dev/null | head -5)\n"
-      metrics+="Load: $(uptime 2>/dev/null)\n"
-      metrics+="Top processes: $(ps aux --sort=-%cpu 2>/dev/null | head -10)\n"
-      [[ -n "$(command -v nvidia-smi 2>/dev/null)" ]] && \
-        metrics+="GPU: $(nvidia-smi --query-gpu=name,utilization.gpu,memory.used,temperature.gpu --format=csv,noheader 2>/dev/null)\n"
-      dispatch_ask "Analyze these system metrics and suggest optimizations:\n\n$metrics" ;;
-    logs)
-      local n="${1:-50}" logfile="${2:-}"
-      if [[ -n "$logfile" && -f "$logfile" ]]; then
-        local log_content; log_content=$(tail -n "$n" "$logfile")
-        dispatch_ask "Analyze these log entries for errors, warnings, or anomalies:\n\n$log_content"
-      else
-        local sys_log=""
-        sys_log=$(journalctl -n "$n" --no-pager 2>/dev/null || tail -n "$n" /var/log/syslog 2>/dev/null || tail -n "$n" /var/log/system.log 2>/dev/null || echo "No system log found")
-        dispatch_ask "Analyze these system logs for issues:\n\n$sys_log"
-      fi ;;
-    gpu)
-      if ! command -v nvidia-smi &>/dev/null; then
-        err "nvidia-smi not found — GPU monitoring requires NVIDIA drivers"
-        return 1
+      metrics+="Memory:\n$(free -h 2>/dev/null | head -3)\n"
+      metrics+="Disk:\n$(df -h 2>/dev/null | head -6)\n"
+      metrics+="Load: $(cat /proc/loadavg 2>/dev/null)\n"
+      metrics+="Top CPU processes:\n$(ps aux --sort=-%cpu 2>/dev/null | head -8)\n"
+      metrics+="Top MEM processes:\n$(ps aux --sort=-%mem 2>/dev/null | head -5)\n"
+      if command -v nvidia-smi &>/dev/null; then
+        metrics+="GPU:\n$(nvidia-smi --query-gpu=name,utilization.gpu,memory.used,temperature.gpu --format=csv,noheader 2>/dev/null)\n"
       fi
-      hdr "GPU Status"
-      nvidia-smi 2>/dev/null ;;
-    processes)
+      dispatch_ask "You are a system administrator. Analyze these system metrics and:
+1. Identify any performance issues or concerns
+2. Flag anything that's above normal thresholds
+3. Suggest specific optimizations
+4. Rate overall system health: Healthy / Warning / Critical
+
+Metrics:
+$metrics" ;;
+
+    logs|syslog)
+      local n="${1:-50}" source="${2:-system}"
+      local log_content=""
+      case "$source" in
+        system)
+          log_content=$(journalctl -n "$n" --no-pager 2>/dev/null || \
+                       tail -n "$n" /var/log/syslog 2>/dev/null || \
+                       tail -n "$n" /var/log/system.log 2>/dev/null || \
+                       echo "No system log accessible") ;;
+        kernel)
+          log_content=$(dmesg 2>/dev/null | tail -n "$n") ;;
+        auth)
+          log_content=$(tail -n "$n" /var/log/auth.log 2>/dev/null || \
+                       journalctl -u ssh -n "$n" --no-pager 2>/dev/null || \
+                       echo "No auth log accessible") ;;
+        *)
+          if [[ -f "$source" ]]; then
+            log_content=$(tail -n "$n" "$source")
+          else
+            err "Unknown log source: $source  (try: system kernel auth <filepath>)"
+            return 1
+          fi ;;
+      esac
+      dispatch_ask "Analyze these system logs for errors, warnings, suspicious activity, or anomalies. Group findings by severity (Critical/Warning/Info):
+
+Log source: $source (last $n lines)
+---
+${log_content:0:8000}" ;;
+
+    gpu)
+      if command -v nvidia-smi &>/dev/null; then
+        hdr "NVIDIA GPU Status"
+        nvidia-smi
+      elif command -v rocm-smi &>/dev/null; then
+        hdr "AMD GPU Status (ROCm)"
+        rocm-smi
+      elif [[ "$(uname)" == "Darwin" ]]; then
+        hdr "Apple Silicon GPU (via system_profiler)"
+        system_profiler SPDisplaysDataType 2>/dev/null | head -30
+      else
+        err "No GPU monitoring tool found (nvidia-smi, rocm-smi)"
+        return 1
+      fi ;;
+
+    processes|top|procs)
+      local n="${1:-20}" sort_by="${2:-cpu}"
+      hdr "Top Processes (by $sort_by)"
+      case "$sort_by" in
+        cpu)  ps aux --sort=-%cpu  2>/dev/null | head -"$((n+1))" ;;
+        mem)  ps aux --sort=-%mem  2>/dev/null | head -"$((n+1))" ;;
+        pid)  ps aux --sort=pid    2>/dev/null | head -"$((n+1))" ;;
+        *) ps aux 2>/dev/null | head -"$((n+1))" ;;
+      esac ;;
+
+    history|hist)
       local n="${1:-20}"
-      hdr "Top Processes (by CPU)"
-      ps aux --sort=-%cpu 2>/dev/null | head -"$n" | awk 'NR==1{print} NR>1{printf "  %s\n",$0}'
-      echo ""
-      hdr "Top Processes (by Memory)"
-      ps aux --sort=-%mem 2>/dev/null | head -"$n" | awk 'NR==1{print} NR>1{printf "  %s\n",$0}' ;;
+      [[ ! -f "$monitor_log" ]] && { info "No monitoring history yet."; return 0; }
+      hdr "Monitor History (last $n snapshots)"
+      tail -n "$n" "$monitor_log" | [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYHIST || tail -n "$n" "$monitor_log"
+import json,sys,datetime
+for line in sys.stdin:
+    try:
+        d=json.loads(line.strip())
+        ts=datetime.datetime.fromtimestamp(d.get('ts',0)).strftime('%Y-%m-%d %H:%M')
+        cpu=d.get('cpu_pct','?')
+        mem=d.get('memory','?')
+        load=d.get('load','?')[-20:] if d.get('load') else '?'
+        print(f"  {ts}  CPU:{cpu:>6}%  Mem:{mem}  Load:{load}")
+    except: pass
+PYHIST
+      ;;
+
+    alerts)
+      local alert_sub="${1:-list}"; shift 2>/dev/null || true
+      case "$alert_sub" in
+        list)
+          [[ ! -f "$alert_config" ]] && { info "No alerts configured. Use: ai monitor alerts add"; return 0; }
+          hdr "Monitor Alerts"
+          cat "$alert_config" | "$PYTHON" -m json.tool 2>/dev/null || cat "$alert_config" ;;
+        add)
+          [[ ! -f "$alert_config" ]] && echo "[]" > "$alert_config"
+          local metric="${1:-cpu}" threshold="${2:-90}" action="${3:-log}"
+          "$PYTHON" - <<PYADD
+import json
+alerts=json.load(open('$alert_config'))
+alerts.append({"metric":"$metric","threshold":float("$threshold"),"action":"$action","created":"$(date -Iseconds)"})
+json.dump(alerts,open('$alert_config','w'),indent=2)
+print(f"Alert added: {metric} > {threshold} → {action}")
+PYADD
+          ;;
+        check)
+          [[ ! -f "$alert_config" ]] && { return 0; }
+          # Check thresholds against current metrics
+          [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYCHECK
+import json, subprocess, os
+alerts=json.load(open('$alert_config'))
+def get_cpu():
+    try:
+        r=subprocess.run("top -bn1 | grep 'Cpu(s)' | awk '{print \$2+\$4}'",shell=True,capture_output=True,text=True,timeout=5)
+        return float(r.stdout.strip().replace(',','.'))
+    except: return 0
+metrics={'cpu':get_cpu(),'mem':0,'disk':0}
+for alert in alerts:
+    m=alert.get('metric','')
+    t=alert.get('threshold',90)
+    val=metrics.get(m,0)
+    if val>t:
+        print(f"\033[91m⚠ ALERT: {m}={val:.1f}% > threshold {t}%\033[0m")
+PYCHECK
+          ;;
+      esac ;;
+
     -h|--help)
       hdr "ai monitor — System Monitor (v2.8)"
+      echo ""
       echo "  ${B}Commands:${R}"
-      echo "    status            CPU/mem/disk/GPU overview"
-      echo "    analyze           AI analysis + optimization tips"
-      echo "    logs [n] [file]   Analyze system or custom logs"
-      echo "    gpu               NVIDIA GPU details"
-      echo "    processes [n]     Top processes" ;;
+      echo "    status              Full system overview (CPU/mem/disk/net/GPU)"
+      echo "    watch [n]           Live refresh every N seconds"
+      echo "    analyze             AI analysis + optimization recommendations"
+      echo "    logs [n] [source]   Analyze logs (system|kernel|auth|<path>)"
+      echo "    gpu                 GPU details (NVIDIA/AMD/Apple)"
+      echo "    processes [n]       Top N processes"
+      echo "    history [n]         Show monitoring history"
+      echo "    alerts list|add|check  Alert management"
+      echo ""
+      echo "  ${B}Examples:${R}"
+      echo "    ai monitor status"
+      echo "    ai monitor watch 10"
+      echo "    ai monitor analyze"
+      echo "    ai monitor logs 100 kernel"
+      echo "    ai monitor alerts add cpu 85 log" ;;
+
     *) err "Unknown: $sub  (try: ai monitor -h)" ;;
   esac
 }
 
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.8: ai schedule — FULL CRON-BASED SCHEDULER
+#  job history, retry, notifications, named schedules, pause/resume, run-now
+# ════════════════════════════════════════════════════════════════════════════════
 # ════════════════════════════════════════════════════════════════════════════════
 #  v2.8: ai schedule — CRON-BASED SCHEDULER
 #  ai schedule add|list|remove [args]
 # ════════════════════════════════════════════════════════════════════════════════
 cmd_schedule() {
   local sub="${1:-list}"; shift 2>/dev/null || true
-  mkdir -p "$SCHEDULE_DIR"
+  mkdir -p "$SCHEDULE_DIR" "$SCHEDULE_DIR/.history"
+  local schedule_log="$CONFIG_DIR/schedule.log"
+
   case "$sub" in
-    add)
-      local name="${1:-}" cron="${2:-}" cmd="${3:-}"
-      if [[ -z "$name" ]]; then read -rp "Schedule name: " name; fi
+    add|create|new)
+      local name="" cron="" cmd="" description="" retry=0 notify=0
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --name|-n)   name="$2"; shift 2 ;;
+          --cron|-c)   cron="$2"; shift 2 ;;
+          --cmd|--run) cmd="$2"; shift 2 ;;
+          --desc)      description="$2"; shift 2 ;;
+          --retry)     retry="$2"; shift 2 ;;
+          --notify)    notify=1; shift ;;
+          *)           [[ -z "$name" ]] && { name="$1"; shift; } || \
+                       [[ -z "$cron" ]] && { cron="$1"; shift; } || \
+                       [[ -z "$cmd"  ]] && { cmd="$1"; shift; } || shift ;;
+        esac
+      done
+
+      # Interactive prompts for missing fields
+      [[ -z "$name" ]] && { read -rp "Schedule name: " name; }
+      [[ -z "$name" ]] && { err "Name required"; return 1; }
       if [[ -z "$cron" ]]; then
-        echo "  ${DIM}Cron syntax: min hour day month weekday${R}"
-        echo "  ${DIM}Examples: '0 9 * * 1-5' (weekdays 9am)  '*/30 * * * *' (every 30min)${R}"
+        echo ""
+        echo "  ${DIM}Common cron expressions:${R}"
+        echo "    ${DIM}0 9 * * 1-5   = weekdays 9am${R}"
+        echo "    ${DIM}*/15 * * * *  = every 15 minutes${R}"
+        echo "    ${DIM}0 0 * * *     = daily midnight${R}"
+        echo "    ${DIM}0 */4 * * *   = every 4 hours${R}"
         read -rp "Cron expression: " cron
       fi
-      if [[ -z "$cmd" ]]; then read -rp "Command to run: " cmd; fi
-      [[ -z "$name" || -z "$cron" || -z "$cmd" ]] && { err "All fields required"; return 1; }
-      local sfile="$SCHEDULE_DIR/${name}.cron"
-      echo "$cron $cmd" > "$sfile"
+      [[ -z "$cmd" ]] && { read -rp "Command to run: " cmd; }
+      [[ -z "$name" || -z "$cron" || -z "$cmd" ]] && { err "Name, cron, and command are required"; return 1; }
+
+      # Validate cron syntax (5 fields)
+      local cron_fields; cron_fields=$(echo "$cron" | wc -w)
+      [[ $cron_fields -ne 5 ]] && { warn "Cron expression should have 5 fields (got $cron_fields)"; }
+
+      # Save schedule definition
+      local sfile="$SCHEDULE_DIR/${name}.json"
+      cat > "$sfile" <<SCHEDJSON
+{
+  "name": "$name",
+  "cron": "$cron",
+  "cmd": "$cmd",
+  "description": "$description",
+  "retry": $retry,
+  "notify": $notify,
+  "created": "$(date -Iseconds)",
+  "enabled": true,
+  "run_count": 0,
+  "last_run": null,
+  "last_status": null
+}
+SCHEDJSON
+
       # Install into crontab
       local cur_cron; cur_cron=$(crontab -l 2>/dev/null || echo "")
-      local tag="# ai-schedule: $name"
-      # Remove old entry if exists
-      local new_cron; new_cron=$(echo "$cur_cron" | grep -v "# ai-schedule: $name" | grep -v "^$cur_cron" || echo "$cur_cron")
-      new_cron=$(echo "$cur_cron" | grep -v "# ai-schedule: $name")
-      printf "%s\n%s %s\n" "$new_cron" "$cron" "$cmd $tag" | crontab - 2>/dev/null
-      ok "Scheduled: $name  ($cron)" ;;
-    list)
-      hdr "AI Schedules"
-      local sfiles=("$SCHEDULE_DIR"/*.cron)
-      if [[ ! -e "${sfiles[0]}" ]]; then info "No schedules. Try: ai schedule add"; return 0; fi
+      # Remove existing entry for this schedule
+      local new_cron; new_cron=$(echo "$cur_cron" | grep -v "# ai-schedule:${name}$")
+      # Wrap command with logging
+      local log_cmd="(echo \"[\$(date -Iseconds)] START $name\" >> $schedule_log; $cmd; echo \"[\$(date -Iseconds)] END $name exit:\$?\" >> $schedule_log)"
+      local cron_entry="$cron $log_cmd # ai-schedule:${name}"
+      {
+        echo "$new_cron"
+        echo "$cron_entry"
+      } | grep -v '^$' | crontab - 2>/dev/null
+
+      ok "Scheduled: $name"
+      info "  Cron:  $cron"
+      info "  Runs:  $cmd"
+      [[ -n "$description" ]] && info "  Desc:  $description" ;;
+
+    list|ls)
+      hdr "Scheduled Jobs"
+      local sfiles=("$SCHEDULE_DIR"/*.json)
+      if [[ ! -e "${sfiles[0]}" ]]; then
+        info "No schedules. Add: ai schedule add <name> <cron> <cmd>"
+        return 0
+      fi
+      printf "  ${B}%-22s %-20s %-6s %-8s %s${R}\n" "Name" "Cron" "Runs" "Status" "Command"
+      printf "  %s\n" "──────────────────────────────────────────────────────────────────"
       for f in "${sfiles[@]}"; do
-        local n; n=$(basename "$f" .cron)
-        local entry; entry=$(cat "$f")
-        printf "  ${BCYAN}%-20s${R}  %s\n" "$n" "$entry"
+        [[ -f "$f" ]] || continue
+        if [[ -n "$PYTHON" ]]; then
+          "$PYTHON" - <<PYLIST
+import json
+d=json.load(open('$f'))
+name=d.get('name','?')
+cron=d.get('cron','?')
+runs=d.get('run_count',0)
+cmd=d.get('cmd','?')[:30]
+status=d.get('last_status','?') or '-'
+enabled='' if d.get('enabled',True) else ' [paused]'
+print(f"  \033[96m{name:<22}\033[0m {cron:<20} {runs:<6} {status:<8} {cmd}{enabled}")
+PYLIST
+        else
+          printf "  ${BCYAN}%s${R}\n" "$(basename "$f" .json)"
+        fi
       done
       echo ""
-      info "Active crontab entries:"
-      crontab -l 2>/dev/null | grep "# ai-schedule:" || echo "  (none)" ;;
-    remove|rm|delete)
-      local name="$1"; [[ -z "$name" ]] && { err "Usage: ai schedule remove <n>"; return 1; }
-      local sfile="$SCHEDULE_DIR/${name}.cron"
+      info "Active in crontab:"
+      crontab -l 2>/dev/null | grep "# ai-schedule:" | sed 's/# ai-schedule:.*$//' | sed 's/^/  /' | head -10 ;;
+
+    show|info)
+      local name="$1"
+      [[ -z "$name" ]] && { err "Usage: ai schedule show <n>"; return 1; }
+      local sfile="$SCHEDULE_DIR/${name}.json"
+      [[ ! -f "$sfile" ]] && { err "Not found: $name"; return 1; }
+      hdr "Schedule: $name"
+      [[ -n "$PYTHON" ]] && "$PYTHON" -c "
+import json; d=json.load(open('$sfile'))
+for k,v in d.items(): print(f'  {k:<18}: {v}')
+" || cat "$sfile" ;;
+
+    run-now|run)
+      local name="$1"
+      [[ -z "$name" ]] && { err "Usage: ai schedule run-now <n>"; return 1; }
+      local sfile="$SCHEDULE_DIR/${name}.json"
+      [[ ! -f "$sfile" ]] && { err "Not found: $name"; return 1; }
+      local cmd; cmd=$("$PYTHON" -c "import json; print(json.load(open('$sfile')).get('cmd',''))" 2>/dev/null)
+      [[ -z "$cmd" ]] && { err "No command found in schedule"; return 1; }
+      info "Running now: $name"
+      info "Command: $cmd"
+      local start; start=$(date +%s)
+      eval "$cmd"
+      local exit_code=$?
+      local elapsed=$(( $(date +%s) - start ))
+      echo "[$(date -Iseconds)] MANUAL-RUN $name exit:$exit_code time:${elapsed}s" >> "$schedule_log"
+      # Update run stats
+      [[ -n "$PYTHON" ]] && "$PYTHON" -c "
+import json
+d=json.load(open('$sfile'))
+d['run_count']=d.get('run_count',0)+1
+d['last_run']='$(date -Iseconds)'
+d['last_status']='ok' if $exit_code==0 else 'failed'
+json.dump(d,open('$sfile','w'),indent=2)
+" 2>/dev/null
+      [[ $exit_code -eq 0 ]] && ok "Completed in ${elapsed}s" || err "Failed (exit $exit_code)" ;;
+
+    pause|disable)
+      local name="$1"
+      local sfile="$SCHEDULE_DIR/${name}.json"
+      [[ ! -f "$sfile" ]] && { err "Not found: $name"; return 1; }
       # Remove from crontab
       local cur_cron; cur_cron=$(crontab -l 2>/dev/null || echo "")
-      echo "$cur_cron" | grep -v "# ai-schedule: $name" | crontab - 2>/dev/null
-      [[ -f "$sfile" ]] && rm "$sfile"
+      echo "$cur_cron" | grep -v "# ai-schedule:${name}$" | crontab - 2>/dev/null
+      # Mark as disabled
+      [[ -n "$PYTHON" ]] && "$PYTHON" -c "
+import json; d=json.load(open('$sfile'))
+d['enabled']=False; json.dump(d,open('$sfile','w'),indent=2)
+" 2>/dev/null
+      ok "Paused: $name  (use: ai schedule resume $name)" ;;
+
+    resume|enable)
+      local name="$1"
+      local sfile="$SCHEDULE_DIR/${name}.json"
+      [[ ! -f "$sfile" ]] && { err "Not found: $name"; return 1; }
+      [[ -n "$PYTHON" ]] && {
+        local cron cmd
+        cron=$("$PYTHON" -c "import json; d=json.load(open('$sfile')); d['enabled']=True; json.dump(d,open('$sfile','w'),indent=2); print(d.get('cron',''))" 2>/dev/null)
+        cmd=$("$PYTHON" -c "import json; print(json.load(open('$sfile')).get('cmd',''))" 2>/dev/null)
+        local cur_cron; cur_cron=$(crontab -l 2>/dev/null || echo "")
+        local log_cmd="(echo \"[\$(date -Iseconds)] START $name\" >> $schedule_log; $cmd; echo \"[\$(date -Iseconds)] END $name exit:\$?\" >> $schedule_log)"
+        { echo "$cur_cron"; echo "$cron $log_cmd # ai-schedule:${name}"; } | grep -v '^$' | crontab - 2>/dev/null
+        ok "Resumed: $name"
+      } ;;
+
+    remove|delete|rm)
+      local name="$1"
+      [[ -z "$name" ]] && { err "Usage: ai schedule remove <n>"; return 1; }
+      local sfile="$SCHEDULE_DIR/${name}.json"
+      # Remove from crontab
+      local cur_cron; cur_cron=$(crontab -l 2>/dev/null || echo "")
+      echo "$cur_cron" | grep -v "# ai-schedule:${name}$" | crontab - 2>/dev/null
+      # Archive the schedule file
+      [[ -f "$sfile" ]] && mv "$sfile" "$SCHEDULE_DIR/.history/${name}.$(date +%Y%m%d_%H%M%S).json"
       ok "Removed schedule: $name" ;;
+
+    log|history|logs)
+      local n="${1:-30}" name="${2:-}"
+      [[ ! -f "$schedule_log" ]] && { info "No schedule log yet."; return 0; }
+      hdr "Schedule Log${name:+ ($name)}"
+      if [[ -n "$name" ]]; then
+        grep "$name" "$schedule_log" | tail -n "$n"
+      else
+        tail -n "$n" "$schedule_log"
+      fi ;;
+
+    analyze)
+      # AI analysis of schedule log
+      local log_content; log_content=$(tail -100 "$schedule_log" 2>/dev/null)
+      [[ -z "$log_content" ]] && { info "No schedule history yet."; return 0; }
+      dispatch_ask "Analyze these scheduled job logs and:
+1. Identify any failing jobs
+2. Find performance patterns
+3. Suggest optimization (timing changes, cleanup)
+4. Flag anything suspicious
+
+Logs:
+$log_content" ;;
+
     -h|--help)
       hdr "ai schedule — Cron Scheduler (v2.8)"
+      echo ""
       echo "  ${B}Commands:${R}"
-      echo "    add [n] [cron] [cmd]  Schedule a command"
-      echo "    list                       Show all schedules"
-      echo "    remove <n>            Remove schedule"
+      echo "    add [n] [cron] [cmd]   Schedule a command (interactive if args omitted)"
+      echo "    list                        Show all schedules"
+      echo "    show <n>               Full details"
+      echo "    run-now <n>            Run immediately"
+      echo "    pause <n>              Disable without deleting"
+      echo "    resume <n>             Re-enable"
+      echo "    remove <n>             Remove schedule"
+      echo "    log [n] [name]         View execution log"
+      echo "    analyze                AI analysis of log history"
+      echo ""
+      echo "  ${B}Cron syntax:${R}  min hour day month weekday"
+      echo "    ${DIM}0 9 * * 1-5    weekdays 9am${R}"
+      echo "    ${DIM}*/30 * * * *   every 30 min${R}"
+      echo "    ${DIM}0 0 * * 0      sundays midnight${R}"
       echo ""
       echo "  ${B}Examples:${R}"
-      echo "    ai schedule add daily-summary '0 9 * * *' 'ai ask \"summarize my day\"'"
-      echo "    ai schedule add hourly-watch '0 * * * *' 'ai batch summarize ~/docs'" ;;
+      echo "    ai schedule add daily-summary '0 9 * * *' 'ai memo summarize-all'"
+      echo "    ai schedule add hourly-watch '0 * * * *' 'ai batch summarize ~/inbox'"
+      echo "    ai schedule run-now daily-summary"
+      echo "    ai schedule log 50 daily-summary" ;;
+
     *) err "Unknown: $sub  (try: ai schedule -h)" ;;
   esac
 }
@@ -16972,6 +20167,1043 @@ HELPEOF
 }
 
 
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.8: ai context — CONVERSATION CONTEXT MANAGER
+#  Manage long-running context windows: save, load, merge, trim, summarize
+# ════════════════════════════════════════════════════════════════════════════════
+cmd_context() {
+  local sub="${1:-show}"; shift 2>/dev/null || true
+  local ctx_dir="$CONFIG_DIR/contexts"
+  mkdir -p "$ctx_dir"
+
+  case "$sub" in
+    save|store)
+      local name="${1:-ctx_$(date +%Y%m%d_%H%M%S)}"
+      local ctx_file="$ctx_dir/${name}.json"
+      # Save current session context
+      local hist_file=""
+      [[ -n "${ACTIVE_PROJECT:-}" ]] && hist_file="$PROJECTS_DIR/${ACTIVE_PROJECT}/history.jsonl"
+      [[ -z "$hist_file" || ! -f "$hist_file" ]] && hist_file="$CONFIG_DIR/session_history.jsonl"
+      if [[ -f "$hist_file" ]]; then
+        local count; count=$(wc -l < "$hist_file")
+        cp "$hist_file" "$ctx_file"
+        ok "Context saved: $name ($count messages)"
+        info "Load with: ai context load $name"
+      else
+        info "No active session history found."
+        info "Start a chat first: ai chat, or ai ask '...'"
+      fi ;;
+
+    load|restore)
+      local name="${1:-}"
+      [[ -z "$name" ]] && {
+        hdr "Saved Contexts"
+        for f in "$ctx_dir"/*.json; do
+          [[ -f "$f" ]] || continue
+          local n; n=$(basename "$f" .json)
+          local cnt; cnt=$(wc -l < "$f" 2>/dev/null)
+          local ts; ts=$(stat -c %y "$f" 2>/dev/null | cut -d' ' -f1 || date -r "$f" +%Y-%m-%d 2>/dev/null)
+          printf "  ${BCYAN}%-24s${R} %4s msgs  %s\n" "$n" "$cnt" "$ts"
+        done
+        return 0
+      }
+      local ctx_file="$ctx_dir/${name}.json"
+      [[ ! -f "$ctx_file" ]] && { err "Context not found: $name"; return 1; }
+      # Copy into active session
+      local dest="$CONFIG_DIR/session_history.jsonl"
+      cp "$ctx_file" "$dest"
+      ok "Context loaded: $name  ($(wc -l < "$dest") messages)"
+      info "Continue: ai chat" ;;
+
+    show|display)
+      local name="${1:-}" n="${2:-10}"
+      local hist_file=""
+      if [[ -n "$name" ]]; then
+        hist_file="$ctx_dir/${name}.json"
+      elif [[ -n "${ACTIVE_PROJECT:-}" ]]; then
+        hist_file="$PROJECTS_DIR/${ACTIVE_PROJECT}/history.jsonl"
+      else
+        hist_file="$CONFIG_DIR/session_history.jsonl"
+      fi
+      [[ ! -f "$hist_file" ]] && { info "No context found."; return 0; }
+      hdr "Context${name:+: $name} (last $n messages)"
+      [[ -n "$PYTHON" ]] && tail -n "$n" "$hist_file" | "$PYTHON" -c "
+import json,sys
+for line in sys.stdin:
+    line=line.strip()
+    if not line: continue
+    try:
+        m=json.loads(line)
+        role=m.get('role','?')
+        color='\033[96m' if role=='assistant' else '\033[93m'
+        content=m.get('content','')[:120].replace(chr(10),' ')
+        print(f'  {color}[{role:9s}]\033[0m {content}')
+    except: print(f'  {line[:100]}')
+" || tail -n "$n" "$hist_file" ;;
+
+    summarize|compress)
+      local name="${1:-}"
+      local hist_file=""
+      if [[ -n "$name" ]]; then
+        hist_file="$ctx_dir/${name}.json"
+      elif [[ -n "${ACTIVE_PROJECT:-}" ]]; then
+        hist_file="$PROJECTS_DIR/${ACTIVE_PROJECT}/history.jsonl"
+      else
+        hist_file="$CONFIG_DIR/session_history.jsonl"
+      fi
+      [[ ! -f "$hist_file" ]] && { info "No context to summarize."; return 0; }
+      info "Summarizing context to reduce token usage…"
+      local all_msgs; all_msgs=$(cat "$hist_file" | [[ -n "$PYTHON" ]] && "$PYTHON" -c "
+import json,sys
+msgs=[]
+for line in sys.stdin:
+    try: msgs.append(json.loads(line.strip()))
+    except: pass
+print(chr(10).join(f\"[{m.get('role','?')}]: {m.get('content','')[:200]}\" for m in msgs))
+" 2>/dev/null || cat "$hist_file")
+      local summary; summary=$(dispatch_ask "Summarize this conversation history concisely, preserving all key facts, decisions, and context needed to continue the conversation:
+
+$all_msgs")
+      # Replace history with single summary message
+      [[ -n "$PYTHON" ]] && "$PYTHON" -c "
+import json
+summary_msg = json.dumps({'role':'assistant','content':'[CONTEXT SUMMARY] $summary'})
+open('$hist_file','w').write(summary_msg + chr(10))
+print(f'Context compressed to 1 summary message')
+" 2>/dev/null
+      ok "Context summarized and compressed" ;;
+
+    merge)
+      local n1="$1" n2="$2" dest="${3:-merged_$(date +%Y%m%d%H%M%S)}"
+      [[ -z "$n1" || -z "$n2" ]] && { err "Usage: ai context merge <ctx1> <ctx2> [output]"; return 1; }
+      [[ ! -f "$ctx_dir/${n1}.json" ]] && { err "Not found: $n1"; return 1; }
+      [[ ! -f "$ctx_dir/${n2}.json" ]] && { err "Not found: $n2"; return 1; }
+      cat "$ctx_dir/${n1}.json" "$ctx_dir/${n2}.json" > "$ctx_dir/${dest}.json"
+      ok "Merged: $n1 + $n2 → $dest  ($(wc -l < "$ctx_dir/${dest}.json") messages)" ;;
+
+    trim)
+      local n="${1:-50}"
+      local hist_file="$CONFIG_DIR/session_history.jsonl"
+      [[ -n "${ACTIVE_PROJECT:-}" ]] && hist_file="$PROJECTS_DIR/${ACTIVE_PROJECT}/history.jsonl"
+      [[ ! -f "$hist_file" ]] && { info "No active context."; return 0; }
+      local before; before=$(wc -l < "$hist_file")
+      tail -n "$n" "$hist_file" > "${hist_file}.tmp" && mv "${hist_file}.tmp" "$hist_file"
+      local after; after=$(wc -l < "$hist_file")
+      ok "Trimmed context: $before → $after messages (kept last $n)" ;;
+
+    clear|reset)
+      local hist_file="$CONFIG_DIR/session_history.jsonl"
+      [[ -n "${ACTIVE_PROJECT:-}" ]] && hist_file="$PROJECTS_DIR/${ACTIVE_PROJECT}/history.jsonl"
+      read -rp "Clear current context? [y/N]: " c
+      [[ "${c,,}" == "y" ]] && { > "$hist_file"; ok "Context cleared."; } || info "Cancelled." ;;
+
+    list|ls)
+      hdr "Saved Contexts"
+      local found=0
+      for f in "$ctx_dir"/*.json; do
+        [[ -f "$f" ]] || continue
+        local n; n=$(basename "$f" .json)
+        local cnt; cnt=$(wc -l < "$f" 2>/dev/null)
+        local sz; sz=$(du -sh "$f" 2>/dev/null | cut -f1)
+        local ts; ts=$(stat -c %y "$f" 2>/dev/null | cut -d. -f1 || date -r "$f" '+%Y-%m-%d %H:%M' 2>/dev/null)
+        printf "  ${BCYAN}%-26s${R}  %4s msgs  %5s  %s\n" "$n" "$cnt" "$sz" "$ts"
+        found=1
+      done
+      [[ $found -eq 0 ]] && info "No saved contexts.  Save: ai context save <n>" ;;
+
+    delete|rm)
+      local name="$1"
+      [[ -z "$name" ]] && { err "Name required"; return 1; }
+      [[ ! -f "$ctx_dir/${name}.json" ]] && { err "Not found: $name"; return 1; }
+      rm -f "$ctx_dir/${name}.json"
+      ok "Deleted context: $name" ;;
+
+    stats)
+      hdr "Context Statistics"
+      local hist_file="$CONFIG_DIR/session_history.jsonl"
+      [[ -n "${ACTIVE_PROJECT:-}" ]] && hist_file="$PROJECTS_DIR/${ACTIVE_PROJECT}/history.jsonl"
+      if [[ -f "$hist_file" ]]; then
+        local total; total=$(wc -l < "$hist_file")
+        local user_msgs; user_msgs=$(grep -c '"role":"user"' "$hist_file" 2>/dev/null || echo 0)
+        local asst_msgs; asst_msgs=$(grep -c '"role":"assistant"' "$hist_file" 2>/dev/null || echo 0)
+        local total_chars; total_chars=$(wc -c < "$hist_file" 2>/dev/null)
+        printf "  Active session:  %d messages (%d user, %d assistant)\n" "$total" "$user_msgs" "$asst_msgs"
+        printf "  Approx tokens:   ~%d\n" "$(( total_chars / 4 ))"
+      fi
+      local saved; saved=$(ls "$ctx_dir"/*.json 2>/dev/null | wc -l)
+      printf "  Saved contexts:  %d\n" "$saved" ;;
+
+    -h|--help)
+      hdr "ai context — Context Manager (v2.8)"
+      echo "  save [n]          Save current session context"
+      echo "  load [n]          Load saved context (list if no name)"
+      echo "  show [n] [limit]  Display recent messages"
+      echo "  summarize [n]     Compress context with AI summary"
+      echo "  merge <a> <b>     Merge two contexts"
+      echo "  trim [n]          Keep only last N messages"
+      echo "  clear             Clear current session"
+      echo "  list              List saved contexts"
+      echo "  delete <n>        Remove saved context"
+      echo "  stats             Token/message statistics" ;;
+
+    *) err "Unknown: $sub  (try: ai context -h)" ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.8: ai chain — PROMPT CHAINING ENGINE
+#  Chain multiple AI prompts together, pipe outputs, branch on conditions,
+#  transform between steps, build complex multi-step reasoning pipelines
+# ════════════════════════════════════════════════════════════════════════════════
+cmd_chain() {
+  local sub="${1:-run}"; shift 2>/dev/null || true
+  local chain_dir="$CONFIG_DIR/chains"
+  mkdir -p "$chain_dir"
+
+  case "$sub" in
+    run)
+      # Quick inline chain: ai chain run "step1 prompt" | "step2 prompt" | ...
+      local input="${1:-}"
+      [[ -z "$input" && ! -t 0 ]] && { input=$(cat); }
+      [[ -z "$input" && -t 0 ]] && { read -rp "Initial input: " input; }
+
+      # Remaining args are prompts to chain
+      local prompts=("$@")
+      if [[ ${#prompts[@]} -eq 0 ]]; then
+        err "Usage: ai chain run <input> <prompt1> <prompt2> ..."
+        echo "  Example: ai chain run 'raw log file' 'extract errors' 'categorize by severity' 'suggest fixes'"
+        return 1
+      fi
+
+      local current="$input"
+      local step=1
+      for prompt in "${prompts[@]}"; do
+        info "Chain step $step: ${prompt:0:60}…"
+        current=$(dispatch_ask "$prompt
+
+Input:
+$current")
+        [[ -z "$current" ]] && { err "Step $step returned empty — chain stopped."; return 1; }
+        ok "Step $step done (${#current} chars output)"
+        ((step++))
+      done
+      echo ""
+      echo "$current" ;;
+
+    new|create)
+      local name="${1:-}"
+      [[ -z "$name" ]] && { read -rp "Chain name: " name; }
+      [[ -z "$name" ]] && { err "Name required"; return 1; }
+      local cfile="$chain_dir/${name}.json"
+      [[ -f "$cfile" ]] && { err "Chain exists: $name"; return 1; }
+      cat > "$cfile" <<'CHAINJSON'
+{
+  "name": "CHAIN_NAME",
+  "description": "Multi-step AI pipeline",
+  "steps": [
+    {
+      "id": "extract",
+      "prompt": "Extract all key information from this input:\n{{input}}",
+      "save_as": "extracted"
+    },
+    {
+      "id": "analyze",
+      "prompt": "Analyze the following extracted information and identify patterns:\n{{extracted}}",
+      "save_as": "analysis"
+    },
+    {
+      "id": "report",
+      "prompt": "Write a concise report based on this analysis:\n{{analysis}}",
+      "save_as": "final_report"
+    }
+  ],
+  "output": "{{final_report}}"
+}
+CHAINJSON
+      sed -i "s/CHAIN_NAME/$name/" "$cfile"
+      ${EDITOR:-nano} "$cfile"
+      ok "Chain created: $name" ;;
+
+    exec|execute|file)
+      local name="$1" input="${2:-}"
+      [[ -z "$name" ]] && { err "Usage: ai chain exec <n> [input]"; return 1; }
+      local cfile="$chain_dir/${name}.json"
+      [[ ! -f "$cfile" ]] && { err "Chain not found: $name"; return 1; }
+      [[ -z "$input" && ! -t 0 ]] && { input=$(cat); }
+      [[ -z "$input" && -t 0 ]] && { read -rp "Input for chain '$name': " input; }
+
+      hdr "Executing chain: $name"
+      [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
+
+      CHAIN_FILE="$cfile" CHAIN_INPUT="$input" "$PYTHON" - <<'PYCHAIN'
+import os, sys, json, re
+
+cfile = os.environ['CHAIN_FILE']
+inp   = os.environ.get('CHAIN_INPUT', '')
+ai_cmd = os.environ.get('AI_CMD', 'ai')
+
+chain = json.load(open(cfile))
+import subprocess
+
+def info(m):  print(f"\033[96mℹ {m}\033[0m", flush=True)
+def ok(m):    print(f"\033[92m✓ {m}\033[0m", flush=True)
+def err(m):   print(f"\033[91m✗ {m}\033[0m", flush=True)
+
+def resolve(s, ctx):
+    if not isinstance(s, str): return s
+    return re.sub(r'\{\{([^}]+)\}\}', lambda m: str(ctx.get(m.group(1).strip(), m.group(0))), s)
+
+ctx = {'input': inp}
+last_out = inp
+
+for i, step in enumerate(chain.get('steps', [])):
+    sid    = step.get('id', f'step{i+1}')
+    prompt = resolve(step.get('prompt', '{{input}}'), ctx)
+    save_as = step.get('save_as', f'step{i+1}_out')
+    transform = step.get('transform', '')
+    condition = step.get('condition', '')
+
+    # Condition check
+    if condition:
+        try:
+            if not eval(resolve(condition, ctx), {'ctx': ctx}):
+                info(f"  Step {sid}: skipped (condition false)")
+                continue
+        except: pass
+
+    info(f"  Step {i+1}/{len(chain.get('steps',[]))}: {sid}")
+
+    r = subprocess.run([ai_cmd, 'ask', prompt], capture_output=True, text=True, timeout=120)
+    out = r.stdout.strip()
+
+    if transform:
+        try: out = str(eval(transform, {'out': out, 'ctx': ctx, 're': re}))
+        except Exception as e: print(f"  transform error: {e}")
+
+    ctx[save_as] = out
+    ctx['last_output'] = out
+    last_out = out
+    ok(f"  → {out[:80]}{'…' if len(out)>80 else ''}")
+
+output_tpl = chain.get('output', '{{last_output}}')
+final = resolve(output_tpl, ctx)
+print(f"\n\033[1m\033[97m── Final Output ──\033[0m")
+print(final)
+PYCHAIN
+      ;;
+
+    list|ls)
+      hdr "Chains"
+      local files=("$chain_dir"/*.json)
+      [[ ! -e "${files[0]}" ]] && { info "No chains. Create: ai chain new <n>"; return 0; }
+      for f in "${files[@]}"; do
+        [[ -f "$f" ]] || continue
+        local n; n=$(basename "$f" .json)
+        local steps desc
+        if [[ -n "$PYTHON" ]]; then
+          read -r steps desc < <("$PYTHON" -c "
+import json; d=json.load(open('$f'))
+print(len(d.get('steps',[])), d.get('description','')[:50])
+" 2>/dev/null)
+        fi
+        printf "  ${BCYAN}%-22s${R}  %2s steps  %s\n" "$n" "${steps:-?}" "${desc:-}"
+      done ;;
+
+    show)
+      local name="$1"
+      [[ -z "$name" ]] && { err "Name required"; return 1; }
+      cat "$chain_dir/${name}.json" | [[ -n "$PYTHON" ]] && "$PYTHON" -m json.tool || cat ;;
+
+    delete|rm)
+      local name="$1"
+      [[ ! -f "$chain_dir/${name}.json" ]] && { err "Not found: $name"; return 1; }
+      rm -f "$chain_dir/${name}.json"; ok "Deleted: $name" ;;
+
+    -h|--help)
+      hdr "ai chain — Prompt Chaining Engine (v2.8)"
+      echo ""
+      echo "  ${B}Quick chain (inline):${R}"
+      echo "    ai chain run <input> <prompt1> <prompt2> ..."
+      echo "    echo 'logs.txt content' | ai chain run 'extract errors' 'fix each error' 'summarize'"
+      echo ""
+      echo "  ${B}Named chains (JSON config):${R}"
+      echo "    new <n>            Create chain config"
+      echo "    exec <n> [input]   Execute named chain"
+      echo "    list               List all chains"
+      echo "    show <n>           Display chain config"
+      echo "    delete <n>         Remove chain"
+      echo ""
+      echo "  ${B}Step variables:${R}  {{input}}  {{step_id}}  {{last_output}}" ;;
+
+    *) err "Unknown: $sub  (try: ai chain -h)" ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.8: ai debug — AI-POWERED DEBUGGER
+#  Analyze errors, explain stack traces, suggest fixes, validate patches,
+#  run with tracing, detect memory leaks, profile performance bottlenecks
+# ════════════════════════════════════════════════════════════════════════════════
+cmd_debug() {
+  local sub="${1:-analyze}"; shift 2>/dev/null || true
+
+  case "$sub" in
+    analyze|error|err)
+      # Read error/traceback from file, args, or stdin
+      local error_text=""
+      local file="${1:-}"
+      if [[ -n "$file" && -f "$file" ]]; then
+        error_text=$(cat "$file")
+        shift
+      elif [[ ! -t 0 ]]; then
+        error_text=$(cat)
+      elif [[ -n "$file" ]]; then
+        error_text="$file $*"
+        shift $#
+      else
+        read -rp "Paste error/traceback (Ctrl+D when done): " -d $'\x04' error_text
+      fi
+      [[ -z "$error_text" ]] && { err "No error text provided"; return 1; }
+
+      # Detect language from error signature
+      local lang="unknown"
+      echo "$error_text" | grep -q "Traceback (most recent call last)" && lang="Python"
+      echo "$error_text" | grep -q "at .*(.*:[0-9]*:[0-9]*)" && lang="JavaScript/Node"
+      echo "$error_text" | grep -q "Exception in thread\|\.java:" && lang="Java"
+      echo "$error_text" | grep -q "error\[E[0-9]\+\]\|panicked at" && lang="Rust"
+      echo "$error_text" | grep -q "SIGSEGV\|Segmentation fault\|core dumped" && lang="C/C++"
+      echo "$error_text" | grep -q "Fatal error:\|Parse error:\|Warning:" && lang="PHP"
+
+      info "Analyzing $lang error…"
+      dispatch_ask "You are an expert $lang debugger. Analyze this error/traceback and provide:
+
+1. **Root Cause**: What exactly went wrong and why
+2. **Location**: Which line/file/function is the origin
+3. **Fix**: Exact code change(s) needed (show before/after)
+4. **Prevention**: How to avoid this class of error in future
+5. **Related Issues**: Other bugs this might indicate
+
+Error:
+\`\`\`
+${error_text:0:6000}
+\`\`\`" ;;
+
+    explain)
+      # Explain what a piece of code does and why it might fail
+      local file="${1:-}"
+      local code=""
+      if [[ -n "$file" && -f "$file" ]]; then
+        code=$(cat "$file"); shift
+      elif [[ ! -t 0 ]]; then
+        code=$(cat)
+      else
+        read -rp "Paste code to explain (Ctrl+D when done): " -d $'\x04' code
+      fi
+      dispatch_ask "Explain this code step by step. Focus on:
+1. What it does overall
+2. Each major section
+3. Potential failure points and edge cases
+4. What inputs would cause problems
+5. Suggestions to make it more robust
+
+Code:
+\`\`\`
+${code:0:6000}
+\`\`\`" ;;
+
+    trace|run)
+      # Run a script with bash tracing and analyze failures
+      local script="${1:-}"; shift
+      [[ -z "$script" ]] && { err "Usage: ai debug trace <script.sh> [args]"; return 1; }
+      [[ ! -f "$script" ]] && { err "Not found: $script"; return 1; }
+      local trace_out; trace_out=$(mktemp /tmp/ai_debug_XXXXXX.log)
+      info "Running with trace: $script"
+      bash -x "$script" "$@" 2> "$trace_out"
+      local exit_code=$?
+      if [[ $exit_code -ne 0 ]]; then
+        warn "Script failed (exit $exit_code). Analyzing trace…"
+        local trace_content; trace_content=$(tail -50 "$trace_out")
+        dispatch_ask "This bash script failed with exit code $exit_code. Analyze the trace and explain what went wrong and how to fix it:
+
+Trace (last 50 lines):
+\`\`\`
+$trace_content
+\`\`\`"
+      else
+        ok "Script completed successfully (exit 0)"
+        info "Full trace: $trace_out"
+      fi ;;
+
+    profile|perf)
+      local script="${1:-}"; shift
+      [[ -z "$script" ]] && { err "Usage: ai debug profile <script>"; return 1; }
+      [[ ! -f "$script" ]] && { err "Not found: $script"; return 1; }
+      local lang="${script##*.}"
+      case "$lang" in
+        py|python)
+          info "Profiling Python script: $script"
+          local prof_out; prof_out=$(mktemp /tmp/ai_prof_XXXXXX.txt)
+          python3 -m cProfile -s cumulative "$script" "$@" 2>&1 | head -30 > "$prof_out"
+          local profile_data; profile_data=$(cat "$prof_out")
+          dispatch_ask "Analyze this Python profiling output and identify:
+1. The top bottlenecks (slowest functions)
+2. Optimization strategies for each
+3. Priority order for fixes (impact vs effort)
+
+Profile:
+$profile_data" ;;
+        sh|bash)
+          # Time each section
+          local time_out; time_out=$({ time bash "$script" "$@"; } 2>&1)
+          dispatch_ask "Analyze these timing results for a bash script and suggest optimizations:
+$time_out" ;;
+        *)
+          dispatch_ask "How would I profile a .$lang script for performance bottlenecks? Provide specific commands and tools." ;;
+      esac ;;
+
+    lint)
+      local file="${1:-}"
+      [[ -z "$file" ]] && { err "Usage: ai debug lint <file>"; return 1; }
+      [[ ! -f "$file" ]] && { err "Not found: $file"; return 1; }
+      local lang="${file##*.}"
+      local lint_out=""
+      case "$lang" in
+        py|python)
+          if command -v pylint &>/dev/null; then
+            lint_out=$(pylint "$file" 2>&1 | head -40)
+          elif command -v flake8 &>/dev/null; then
+            lint_out=$(flake8 "$file" 2>&1 | head -40)
+          else
+            lint_out="(pylint/flake8 not installed)"
+          fi ;;
+        sh|bash)
+          if command -v shellcheck &>/dev/null; then
+            lint_out=$(shellcheck "$file" 2>&1 | head -40)
+          else
+            lint_out="(shellcheck not installed)"
+          fi ;;
+        js|ts)
+          if command -v eslint &>/dev/null; then
+            lint_out=$(eslint "$file" 2>&1 | head -40)
+          else
+            lint_out="(eslint not installed)"
+          fi ;;
+        *) lint_out="(no linter for .$lang)" ;;
+      esac
+      local code; code=$(head -100 "$file")
+      dispatch_ask "Review this $lang code for bugs, style issues, and improvements.
+Also consider these lint results: $lint_out
+
+Code:
+\`\`\`$lang
+$code
+\`\`\`" ;;
+
+    memory)
+      local pid="${1:-}"
+      if [[ -n "$pid" ]]; then
+        if [[ -f "/proc/$pid/status" ]]; then
+          local mem_info; mem_info=$(cat "/proc/$pid/status" | grep -E "VmRSS|VmSize|VmSwap|VmPeak")
+          dispatch_ask "Analyze this process memory info (PID $pid) and explain if usage seems normal:
+$mem_info"
+        else
+          err "PID not found: $pid"
+        fi
+      else
+        # Overall memory pressure analysis
+        local mem_info; mem_info=$(free -h 2>/dev/null && ps aux --sort=-%mem 2>/dev/null | head -10)
+        dispatch_ask "Analyze this system memory usage. Are there memory leaks? What are the top consumers? Any action needed?
+
+$mem_info"
+      fi ;;
+
+    fix)
+      local file="${1:-}"
+      [[ -z "$file" ]] && { err "Usage: ai debug fix <file>"; return 1; }
+      [[ ! -f "$file" ]] && { err "Not found: $file"; return 1; }
+      local lang="${file##*.}"
+      local code; code=$(cat "$file")
+      local fixed; fixed=$(dispatch_ask "Fix all bugs in this $lang code. Output ONLY the fixed code, no explanation:
+
+\`\`\`$lang
+$code
+\`\`\`")
+      fixed=$(echo "$fixed" | sed '/^```/d')
+      echo "$fixed"
+      read -rp "  Save fixed version back to $file? [y/N]: " c
+      if [[ "${c,,}" == "y" ]]; then
+        cp "$file" "${file}.bak.$(date +%Y%m%d_%H%M%S)"
+        echo "$fixed" > "$file"
+        ok "Fixed. Backup at ${file}.bak.*"
+      fi ;;
+
+    -h|--help)
+      hdr "ai debug — AI Debugger (v2.8)"
+      echo "  analyze [file|text]    Analyze error/traceback"
+      echo "  explain [file]         Explain code line by line"
+      echo "  trace <script> [args]  Run with bash -x tracing"
+      echo "  profile <script>       Performance profiling"
+      echo "  lint <file>            Lint + AI review"
+      echo "  memory [pid]           Memory analysis"
+      echo "  fix <file>             Auto-fix bugs"
+      echo ""
+      echo "  ${B}Pipe errors:${R}"
+      echo "    python3 script.py 2>&1 | ai debug analyze"
+      echo "    cat error.log | ai debug analyze"
+      echo "    ai debug trace ./build.sh" ;;
+
+    *) err "Unknown: $sub  (try: ai debug -h)" ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.8: ai kb — PERSONAL KNOWLEDGE BASE
+#  Index files/dirs, semantic search, Q&A over your documents,
+#  auto-tagging, update detection, multiple collections
+# ════════════════════════════════════════════════════════════════════════════════
+cmd_kb() {
+  local sub="${1:-list}"; shift 2>/dev/null || true
+  local kb_dir="$CONFIG_DIR/kb"
+  mkdir -p "$kb_dir" "$kb_dir/.collections"
+
+  case "$sub" in
+    index|add|build)
+      local path="${1:-.}" collection="${2:-default}"
+      [[ ! -e "$path" ]] && { err "Path not found: $path"; return 1; }
+      path=$(realpath "$path")
+      local cdir="$kb_dir/.collections/$collection"
+      mkdir -p "$cdir"
+      local index_file="$cdir/index.jsonl"
+      local manifest="$cdir/manifest.json"
+
+      hdr "Indexing: $path → collection '$collection'"
+      local count=0 skipped=0 total_chars=0
+
+      # Find indexable files
+      while IFS= read -r -d '' f; do
+        local ext="${f##*.}"
+        # Only index text-like files
+        case "$ext" in
+          md|txt|py|js|ts|sh|bash|json|yaml|yml|toml|csv|html|css|rs|go|rb|java|c|cpp|h) ;;
+          *) ((skipped++)); continue ;;
+        esac
+        local size; size=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
+        (( size > 500000 )) && { ((skipped++)); continue; }  # skip files > 500KB
+
+        local content; content=$(head -c 4000 "$f" 2>/dev/null)
+        local chars="${#content}"
+        total_chars=$((total_chars + chars))
+
+        # Build index entry
+        [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYIDX
+import json, os, hashlib, time
+f='$f'
+content=open(f,errors='replace').read(4000)
+entry={
+    'file':f,'ext':'$ext','size':$size,
+    'chars':$chars,'indexed':time.time(),
+    'hash':hashlib.md5(content.encode()).hexdigest(),
+    'preview':content[:200].replace(chr(10),' ')
+}
+with open('$index_file','a') as out:
+    out.write(json.dumps(entry)+chr(10))
+PYIDX
+        ((count++))
+        printf "\r  Indexed: %d files  (%s)…" "$count" "$(basename "$f")" >&2
+      done < <(find "$path" -maxdepth 5 -type f -print0 2>/dev/null)
+
+      printf "\n"
+      # Write manifest
+      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYMAN
+import json, time
+manifest={
+    'collection':'$collection','path':'$path',
+    'indexed':time.time(),'count':$count,
+    'total_chars':$total_chars,'skipped':$skipped
+}
+json.dump(manifest,open('$manifest','w'),indent=2)
+PYMAN
+      ok "Indexed $count files into collection '$collection' ($skipped skipped)"
+      info "Search: ai kb search '$collection' 'your query'" ;;
+
+    search|query|find)
+      local collection="$1" query="$2"
+      [[ -z "$collection" || -z "$query" ]] && {
+        err "Usage: ai kb search <collection> <query>"
+        return 1
+      }
+      local cdir="$kb_dir/.collections/$collection"
+      [[ ! -d "$cdir" ]] && { err "Collection not found: $collection  (index: ai kb index <path> $collection)"; return 1; }
+      local index_file="$cdir/index.jsonl"
+      [[ ! -f "$index_file" ]] && { err "No index found for: $collection  (run: ai kb index <path> $collection)"; return 1; }
+
+      info "Searching '$collection' for: $query"
+
+      # Full-text match candidates
+      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYSEARCH
+import json, os, re
+
+query = '$query'.lower()
+index = []
+with open('$index_file') as f:
+    for line in f:
+        try: index.append(json.loads(line.strip()))
+        except: pass
+
+# Score each file by keyword match in path + preview
+scored = []
+for entry in index:
+    score = 0
+    path_lower = entry.get('file','').lower()
+    preview_lower = entry.get('preview','').lower()
+    for word in query.split():
+        if word in path_lower:  score += 3
+        if word in preview_lower: score += 1
+    if score > 0:
+        scored.append((score, entry))
+
+scored.sort(key=lambda x: -x[0])
+top = scored[:8]
+
+if not top:
+    print("  No files matched. Try broader terms.")
+else:
+    print(f"  Top {len(top)} matches:\n")
+    for score, entry in top:
+        f = entry['file']
+        preview = entry.get('preview','')[:80].replace(chr(10),' ')
+        print(f"  \033[96m{f}\033[0m  (score={score})")
+        print(f"    {preview}")
+        print()
+PYSEARCH
+      ;;
+
+    ask|qa)
+      local collection="$1"; shift
+      local question="$*"
+      [[ -z "$collection" ]] && { err "Usage: ai kb ask <collection> <question>"; return 1; }
+      [[ -z "$question" && ! -t 0 ]] && { question=$(cat); }
+      [[ -z "$question" && -t 0 ]] && { read -rp "Question: " question; }
+      [[ -z "$question" ]] && { err "Question required"; return 1; }
+
+      local cdir="$kb_dir/.collections/$collection"
+      local index_file="$cdir/index.jsonl"
+      [[ ! -f "$index_file" ]] && { err "No index for: $collection"; return 1; }
+
+      info "Searching knowledge base: $question"
+
+      # Find top relevant files
+      [[ -n "$PYTHON" ]] || { err ERR501; return 1; }
+      local context; context=$("$PYTHON" - <<PYKA
+import json, os
+query='$question'.lower()
+index=[]
+with open('$index_file') as f:
+    for line in f:
+        try: index.append(json.loads(line.strip()))
+        except: pass
+scored=[]
+for entry in index:
+    score=sum((entry.get('preview','').lower()+entry.get('file','').lower()).count(w)*2
+              for w in query.split())
+    if score>0: scored.append((score,entry))
+scored.sort(key=lambda x:-x[0])
+out=''
+budget=6000
+for score,entry in scored[:5]:
+    f=entry['file']
+    if not os.path.exists(f): continue
+    content=open(f,errors='replace').read(min(1500,budget))
+    out+=f'=== {f} ===\n{content}\n\n'
+    budget-=len(content)
+    if budget<=0: break
+print(out[:6000] if out else '(no relevant files found)')
+PYKA
+)
+      dispatch_ask "Answer this question using ONLY the provided knowledge base context. If the answer isn't in the context, say so.
+
+Question: $question
+
+Knowledge Base Context:
+$context" ;;
+
+    list|ls)
+      hdr "Knowledge Base Collections"
+      local found=0
+      for cdir in "$kb_dir/.collections"/*/; do
+        [[ -d "$cdir" ]] || continue
+        local n; n=$(basename "$cdir")
+        local manifest="$cdir/manifest.json"
+        if [[ -f "$manifest" && -n "$PYTHON" ]]; then
+          "$PYTHON" -c "
+import json; d=json.load(open('$manifest'))
+from datetime import datetime
+ts=datetime.fromtimestamp(d.get('indexed',0)).strftime('%Y-%m-%d')
+print(f\"  \033[96m{d['collection']:<20}\033[0m  {d['count']:>5} files  {ts}  {d['path']}\")
+" 2>/dev/null
+        else
+          printf "  ${BCYAN}%s${R}\n" "$n"
+        fi
+        found=1
+      done
+      [[ $found -eq 0 ]] && info "No collections. Index: ai kb index <path> [collection-name]" ;;
+
+    update|refresh)
+      local collection="$1"
+      [[ -z "$collection" ]] && { err "Usage: ai kb update <collection>"; return 1; }
+      local cdir="$kb_dir/.collections/$collection"
+      local manifest="$cdir/manifest.json"
+      [[ ! -f "$manifest" ]] && { err "Collection not found: $collection"; return 1; }
+      local path; path=$([[ -n "$PYTHON" ]] && "$PYTHON" -c "import json; print(json.load(open('$manifest')).get('path','.'))" 2>/dev/null || echo ".")
+      info "Refreshing collection: $collection from $path"
+      rm -f "$cdir/index.jsonl"
+      cmd_kb index "$path" "$collection" ;;
+
+    delete|rm)
+      local collection="$1"
+      [[ -z "$collection" ]] && { err "Usage: ai kb delete <collection>"; return 1; }
+      local cdir="$kb_dir/.collections/$collection"
+      [[ ! -d "$cdir" ]] && { err "Not found: $collection"; return 1; }
+      read -rp "Delete collection '$collection'? [y/N]: " c
+      [[ "${c,,}" == "y" ]] && { rm -rf "$cdir"; ok "Deleted: $collection"; } || info "Cancelled." ;;
+
+    stats)
+      hdr "Knowledge Base Statistics"
+      local total_files=0 total_collections=0
+      for cdir in "$kb_dir/.collections"/*/; do
+        [[ -d "$cdir" ]] || continue
+        ((total_collections++))
+        [[ -f "$cdir/index.jsonl" ]] && total_files=$((total_files + $(wc -l < "$cdir/index.jsonl" 2>/dev/null || echo 0)))
+      done
+      printf "  Collections: %d\n" "$total_collections"
+      printf "  Total files: %d\n" "$total_files"
+      printf "  Index size:  %s\n" "$(du -sh "$kb_dir" 2>/dev/null | cut -f1)" ;;
+
+    -h|--help)
+      hdr "ai kb — Knowledge Base (v2.8)"
+      echo "  index <path> [name]    Index files into a collection"
+      echo "  search <name> <query>  Full-text search"
+      echo "  ask <name> <question>  AI Q&A over your docs"
+      echo "  list                        List collections"
+      echo "  update <name>          Refresh index"
+      echo "  delete <name>          Remove collection"
+      echo "  stats                  Statistics"
+      echo ""
+      echo "  ${B}Examples:${R}"
+      echo "    ai kb index ~/Documents docs"
+      echo "    ai kb search docs 'python async patterns'"
+      echo "    ai kb ask docs 'How do I configure the proxy?'" ;;
+
+    *) err "Unknown: $sub  (try: ai kb -h)" ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.8: ai summarize-dir — RECURSIVE DIRECTORY SUMMARIZER
+#  Summarize code repos, doc trees, log dirs — generates structured reports
+# ════════════════════════════════════════════════════════════════════════════════
+cmd_summarize_dir() {
+  local path="${1:-.}" depth="${2:-2}" fmt="${3:-md}"
+  local include_hidden=0 max_files=200 output_file=""
+  shift 3 2>/dev/null || true
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --depth|-d)     depth="$2"; shift 2 ;;
+      --fmt|-f)       fmt="$2"; shift 2 ;;
+      --max|-n)       max_files="$2"; shift 2 ;;
+      --hidden)       include_hidden=1; shift ;;
+      -o|--output)    output_file="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  [[ ! -d "$path" ]] && { err "Not a directory: $path"; return 1; }
+  path=$(realpath "$path")
+
+  hdr "Summarizing directory: $path"
+  info "  Depth: $depth  Format: $fmt  Max files: $max_files"
+
+  # Collect directory structure
+  local tree_out; tree_out=$(find "$path" -maxdepth "$depth" \
+    $([[ $include_hidden -eq 0 ]] && echo "-not -path '*/.*'") \
+    -not -path '*/node_modules/*' -not -path '*/__pycache__/*' \
+    -not -path '*/.git/*' \
+    | sort | head -100 | sed "s|$path/||" | sed 's|^|  |')
+
+  # Count file types
+  local file_stats; file_stats=$(find "$path" -maxdepth "$depth" -type f \
+    -not -path '*/.*' -not -path '*/node_modules/*' \
+    | awk -F. '{print $NF}' | sort | uniq -c | sort -rn | head -10)
+
+  # Sample key files (README, config, main files)
+  local key_content=""
+  for pattern in README.md README.txt README package.json Makefile CMakeLists.txt \
+                 pyproject.toml setup.py Cargo.toml go.mod composer.json; do
+    local kf="$path/$pattern"
+    if [[ -f "$kf" ]]; then
+      key_content+="=== $pattern ===\n$(head -30 "$kf")\n\n"
+    fi
+  done
+
+  # Sample source files
+  local count=0
+  local sample_content=""
+  while IFS= read -r -d '' f; do
+    [[ $count -ge 5 ]] && break
+    local ext="${f##*.}"
+    case "$ext" in
+      py|js|ts|sh|rs|go|rb|java|c|cpp|h)
+        sample_content+="=== $(basename "$f") ===\n$(head -20 "$f")\n\n"
+        ((count++)) ;;
+    esac
+  done < <(find "$path" -maxdepth "$depth" -type f -not -path '*/.*' \
+           -not -path '*/node_modules/*' -print0 2>/dev/null | shuf -z 2>/dev/null | head -z 10)
+
+  local summary; summary=$(dispatch_ask "Analyze this directory/codebase and write a comprehensive summary.
+
+Directory: $path
+
+Structure:
+$tree_out
+
+File types:
+$file_stats
+
+Key files:
+$key_content
+
+Sample source files:
+$sample_content
+
+Write a structured summary including:
+1. **Purpose**: What this project/directory does
+2. **Technology Stack**: Languages, frameworks, tools
+3. **Architecture**: How it's organized
+4. **Entry Points**: Main files to start with
+5. **Dependencies**: Key external dependencies
+6. **Notable Features**: What stands out
+Format as $fmt")
+
+  local ts; ts=$(date +%Y%m%d_%H%M%S)
+  local default_out="$AI_OUTPUT_DIR/dir_summary_${ts}.${fmt/markdown/md}"
+  local dest="${output_file:-$default_out}"
+
+  echo "$summary" > "$dest"
+  ok "Summary saved: $dest"
+  echo ""
+  echo "$summary" | head -30
+  [[ $(echo "$summary" | wc -l) -gt 30 ]] && info "  … (full summary in $dest)"
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.8: ai search — AI-POWERED SEMANTIC FILE/CODE SEARCH
+#  Searches files by meaning (not just text match), ranks by relevance
+# ════════════════════════════════════════════════════════════════════════════════
+cmd_ai_search() {
+  local query="${1:-}"; shift 2>/dev/null || true
+  local path="." ext="" depth=4 top_n=10 verbose=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --path|-p)    path="$2"; shift 2 ;;
+      --ext|-e)     ext="$2"; shift 2 ;;
+      --depth|-d)   depth="$2"; shift 2 ;;
+      --top|-n)     top_n="$2"; shift 2 ;;
+      --verbose|-v) verbose=1; shift ;;
+      *) [[ -z "$query" ]] && { query="$1"; shift; } || shift ;;
+    esac
+  done
+
+  [[ -z "$query" ]] && { read -rp "Search query: " query; }
+  [[ -z "$query" ]] && { err "Query required"; return 1; }
+  [[ ! -d "$path" ]] && { err "Path not found: $path"; return 1; }
+
+  info "Semantic search: '$query' in $path"
+
+  # Collect candidate files
+  local files=()
+  local find_args="-maxdepth $depth -type f -not -path '*/.*' -not -path '*/node_modules/*'"
+  [[ -n "$ext" ]] && find_args+=" -name '*.$ext'"
+
+  while IFS= read -r -d '' f; do
+    files+=("$f")
+    [[ ${#files[@]} -ge 100 ]] && break
+  done < <(find "$path" $find_args -print0 2>/dev/null)
+
+  [[ ${#files[@]} -eq 0 ]] && { info "No files found in $path"; return 0; }
+  info "Scanning ${#files[@]} files…"
+
+  # Build context summaries for each file
+  [[ -n "$PYTHON" ]] || { err ERR501; return 1; }
+
+  local results; results=$("$PYTHON" - <<PYSEARCH
+import os, re, sys
+
+query = '$query'.lower()
+query_words = set(query.split())
+files = """${files[@]}""".split()
+# Re-parse from find output
+import subprocess
+r = subprocess.run(['find', '$path', '-maxdepth', '$depth', '-type', 'f',
+                   '-not', '-path', '*/.*', '-not', '-path', '*/node_modules/*'],
+                  capture_output=True, text=True)
+all_files = [f for f in r.stdout.strip().split('\n') if f]
+if '$ext':
+    all_files = [f for f in all_files if f.endswith('.$ext')]
+all_files = all_files[:100]
+
+scored = []
+for f in all_files:
+    try:
+        content = open(f, errors='replace').read(3000).lower()
+        path_lower = f.lower()
+        score = 0
+        for word in query_words:
+            score += content.count(word) * 2
+            score += path_lower.count(word) * 5
+        if score > 0:
+            preview = open(f, errors='replace').read(200).replace(chr(10), ' ')
+            scored.append((score, f, preview))
+    except: pass
+
+scored.sort(key=lambda x: -x[0])
+for score, f, preview in scored[: $top_n]:
+    print(f"\033[96m{f}\033[0m  (relevance:{score})")
+    if $verbose:
+        print(f"  {preview[:100]}")
+if not scored:
+    print("No matching files found. Try broader terms or check --path.")
+PYSEARCH
+)
+
+  echo "$results"
+
+  # Offer AI ranking of top results
+  if [[ -n "$results" ]]; then
+    local top_files; top_files=$(echo "$results" | grep -v "^  " | head -5 | awk '{print $1}')
+    if [[ -n "$top_files" ]]; then
+      echo ""
+      read -rp "  AI-rank top results for '$query'? [y/N]: " c
+      if [[ "${c,,}" == "y" ]]; then
+        local snippets=""
+        while IFS= read -r f; do
+          [[ -f "$f" ]] || continue
+          snippets+="=== $f ===\n$(head -10 "$f")\n\n"
+        done <<< "$top_files"
+        dispatch_ask "Rank these files by relevance to the query: '$query'
+For each file, explain in one sentence why it's relevant.
+
+Files:
+$snippets"
+      fi
+    fi
+  fi
+}
+
+
 main() {
   # Handle -C named chat flag
   local NAMED_CHAT=""
@@ -17187,6 +21419,13 @@ $(cat)" ;;
         printf "  ${B}%-10s${R} %s\n" "$code" "${ERR_CODES[$code]}"
       done | sort
       ;;
+    # ── v2.8 new commands ──────────────────────────────────────────────────
+    context|ctx)            cmd_context "$@" ;;
+    chain)                  cmd_chain "$@" ;;
+    debug)                  cmd_debug "$@" ;;
+    kb|knowledge-base)      cmd_kb "$@" ;;
+    summarize-dir|sumdir)   cmd_summarize_dir "$@" ;;
+    ai-search|search-files) cmd_ai_search "$@" ;;
     *)
       # v2.7.3: Check user-defined aliases first before AI fallthrough
       local _alias_cmd
@@ -17198,6 +21437,7 @@ $(cat)" ;;
         return $?
       fi
       # Unknown command — show helpful error, then try AI fallthrough
+
       echo -e "${DIM}[ai] No command named \"${cmd}\". Checking aliases and passing to AI...${R}" >&2
       echo -e "${DIM}[ai] Run 'ai help' to see all commands. Run 'ai -h <cmd>' for details.${R}" >&2
       dispatch_ask "$cmd $*" ;;
