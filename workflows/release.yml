@@ -1,0 +1,75 @@
+name: Release — Build & Publish All
+
+# Master workflow: build .deb, push AUR, push Pacstall — all on tag push
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 2.8.5.5)'
+        required: true
+      dry_run:
+        description: 'Dry run — build but do not publish'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+
+  # ── Job 1: Build .deb ────────────────────────────────────────────────────────
+  build-deb:
+    name: Build .deb
+    uses: ./.github/workflows/build-deb.yml
+    secrets: inherit
+
+  # ── Job 2: Publish to AUR ────────────────────────────────────────────────────
+  publish-aur:
+    name: Publish AUR
+    needs: build-deb
+    uses: ./.github/workflows/publish-aur.yml
+    secrets: inherit
+    with:
+      version: ${{ github.event.inputs.version || '' }}
+
+  # ── Job 3: Publish to Pacstall ───────────────────────────────────────────────
+  publish-pacstall:
+    name: Publish Pacstall
+    needs: build-deb
+    uses: ./.github/workflows/publish-pacstall.yml
+    secrets: inherit
+    with:
+      version: ${{ github.event.inputs.version || '' }}
+
+  # ── Job 4: Summary ───────────────────────────────────────────────────────────
+  summary:
+    name: Release Summary
+    needs: [build-deb, publish-aur, publish-pacstall]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Print summary
+        run: |
+          echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Target | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| .deb (GitHub Release) | ${{ needs.build-deb.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| AUR | ${{ needs.publish-aur.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Pacstall | ${{ needs.publish-pacstall.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Install Instructions" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo '# Debian/Ubuntu' >> $GITHUB_STEP_SUMMARY
+          echo 'wget https://github.com/${{ github.repository }}/releases/latest/download/ai-cli_all.deb' >> $GITHUB_STEP_SUMMARY
+          echo 'sudo dpkg -i ai-cli_all.deb' >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo '# Arch Linux' >> $GITHUB_STEP_SUMMARY
+          echo 'yay -S ai-cli' >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo '# Pacstall' >> $GITHUB_STEP_SUMMARY
+          echo 'pacstall -I ai-cli' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

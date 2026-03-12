@@ -1,0 +1,205 @@
+name: Publish to Pacstall
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 2.8.5.5)'
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  publish-pacstall:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Resolve version ───────────────────────────────────────────────────
+      - name: Resolve version
+        id: ver
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            VER="${{ github.event.inputs.version }}"
+          else
+            VER="${{ github.event.release.tag_name }}"
+            VER="${VER#v}"
+          fi
+          echo "version=$VER" >> $GITHUB_OUTPUT
+
+      # ── 3. Compute hash ──────────────────────────────────────────────────────
+      - name: Compute SHA256
+        id: sha
+        run: |
+          VER="${{ steps.ver.outputs.version }}"
+          URL="https://github.com/${{ github.repository }}/archive/refs/tags/v${VER}.tar.gz"
+          SHA=$(curl -sL "$URL" | sha256sum | awk '{print $1}')
+          echo "sha256=$SHA" >> $GITHUB_OUTPUT
+          echo "SHA256: $SHA"
+
+      # ── 4. Generate .pacscript ───────────────────────────────────────────────
+      - name: Generate .pacscript
+        run: |
+          VER="${{ steps.ver.outputs.version }}"
+          SHA="${{ steps.sha.outputs.sha256 }}"
+          REPO="${{ github.repository }}"
+
+          cat > ai-cli.pacscript << PACEOF
+          #!/bin/bash
+          # Pacstall package for ai-cli
+          # https://pacstall.dev/packages/ai-cli
+
+          pkgname="ai-cli"
+          pkgver="${VER}"
+          pkgdesc="AI CLI — local + cloud LLM terminal toolkit with 195 models, RLHF, Canvas TUI"
+          url="https://github.com/${REPO}"
+          gives="ai"
+
+          source=("https://github.com/${REPO}/archive/refs/tags/v\${pkgver}.tar.gz")
+          sha256sums=("${SHA}")
+
+          depends=(
+              "bash"
+              "python3"
+              "curl"
+              "git"
+          )
+
+          optdepends=(
+              "ffmpeg: audio/video processing support"
+              "jq: JSON query tool used by some commands"
+              "gh: GitHub CLI for Canvas Gist upload"
+              "python3-pip: install Python ML libraries"
+          )
+
+          incompatible=("ai-cli-git")
+
+          prepare() {
+              cd "\$srcdir/ai-cli-\$pkgver"
+              bash -n main.sh  # verify bash syntax
+          }
+
+          build() {
+              :  # pure bash, nothing to compile
+          }
+
+          package() {
+              cd "\$srcdir/ai-cli-\$pkgver"
+
+              # Main binary
+              install -Dm755 main.sh "\$pkgdir/usr/bin/ai"
+
+              # Shared data
+              install -Dm755 install_v3.1.py "\$pkgdir/usr/share/ai-cli/install.py" 2>/dev/null || true
+              install -Dm644 requirements.txt "\$pkgdir/usr/share/ai-cli/requirements.txt" 2>/dev/null || true
+              install -Dm644 package.json     "\$pkgdir/usr/share/ai-cli/package.json"     2>/dev/null || true
+
+              # License + docs
+              install -Dm644 LICENSE   "\$pkgdir/usr/share/licenses/ai-cli/LICENSE"  2>/dev/null || true
+              install -Dm644 README.md "\$pkgdir/usr/share/doc/ai-cli/README.md"     2>/dev/null || true
+          }
+
+          post_install() {
+              echo ""
+              echo "  ✅ ai-cli \${pkgver} installed!"
+              echo ""
+              echo "  Quick start:"
+              echo "    ai recommended              # browse 195 models"
+              echo "    ai keys set OPENAI_API_KEY sk-..."
+              echo "    ai keys set GROQ_API_KEY gsk_...  (free & fast)"
+              echo "    ai ask \"hello\"             # first prompt"
+              echo "    ai aui                     # terminal dashboard"
+              echo "    ai canvas new myproject    # Canvas v3 workspace"
+              echo ""
+              echo "  Docs: https://github.com/${REPO}"
+              echo ""
+          }
+          PACEOF
+
+          echo "Generated ai-cli.pacscript:"
+          cat ai-cli.pacscript
+
+      # ── 5. Upload .pacscript as artifact ─────────────────────────────────────
+      - name: Upload .pacscript artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-cli-pacscript-${{ steps.ver.outputs.version }}
+          path: ai-cli.pacscript
+          retention-days: 30
+
+      # ── 6. Submit PR to pacstall-programs (optional) ─────────────────────────
+      # This step forks the pacstall-programs repo and opens a PR
+      # Requires: PAC_GITHUB_TOKEN secret (fine-grained PAT with fork+PR permissions)
+      - name: Submit PR to pacstall-programs
+        env:
+          PAC_GITHUB_TOKEN: ${{ secrets.PAC_GITHUB_TOKEN }}
+        run: |
+          if [[ -z "$PAC_GITHUB_TOKEN" ]]; then
+            echo "⚠️  PAC_GITHUB_TOKEN secret not set"
+            echo "To auto-submit PRs to pacstall-programs, add a fine-grained PAT"
+            echo "with 'Contents: Read/Write' and 'Pull requests: Read/Write' on"
+            echo "your fork of https://github.com/pacstall/pacstall-programs"
+            echo ""
+            echo "The generated .pacscript is attached as an artifact — you can"
+            echo "submit it manually: https://github.com/pacstall/pacstall-programs"
+            exit 0
+          fi
+
+          VER="${{ steps.ver.outputs.version }}"
+          BRANCH="ai-cli-v${VER}"
+
+          # Configure git
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Fork + clone pacstall-programs
+          gh repo fork pacstall/pacstall-programs \
+            --org "${{ github.repository_owner }}" \
+            --clone --remote 2>/dev/null || \
+          git clone "https://x-access-token:${PAC_GITHUB_TOKEN}@github.com/${{ github.repository_owner }}/pacstall-programs.git"
+
+          cd pacstall-programs 2>/dev/null || cd */pacstall-programs
+
+          # Sync with upstream
+          git remote add upstream https://github.com/pacstall/pacstall-programs.git 2>/dev/null || true
+          git fetch upstream master
+          git checkout -b "$BRANCH" upstream/master
+
+          # Add the package
+          mkdir -p "packages/ai-cli"
+          cp "$GITHUB_WORKSPACE/ai-cli.pacscript" "packages/ai-cli/ai-cli.pacscript"
+
+          git add "packages/ai-cli/ai-cli.pacscript"
+          git commit -m "feat(ai-cli): add version ${VER}"
+          git push "https://x-access-token:${PAC_GITHUB_TOKEN}@github.com/${{ github.repository_owner }}/pacstall-programs.git" \
+            HEAD:"$BRANCH"
+
+          # Open PR
+          gh pr create \
+            --repo pacstall/pacstall-programs \
+            --head "${{ github.repository_owner }}:$BRANCH" \
+            --base master \
+            --title "feat(ai-cli): add ai-cli v${VER}" \
+            --body "## ai-cli v${VER}
+
+          AI CLI — local + cloud LLM terminal toolkit
+
+          - **195 curated models** (GGUF, HuggingFace, OpenAI, Claude, Gemini, Groq, Mistral, Together)
+          - **Canvas v3** — multi-file TUI workspace with syntax highlight, AI-assist, git integration
+          - **AUI** — terminal dashboard with Chat, Models, History, Status, Files, Tools tabs
+          - **TTM/MTM** — tiny model pretraining + fine-tuning pipeline
+          - **RLHF** — interactive rating + DPO/PPO/GRPO training
+          - Zero mandatory dependencies beyond bash, python3, curl, git
+
+          Source: https://github.com/${{ github.repository }}
+          " 2>/dev/null || echo "PR already exists or couldn't create — check manually"
+        env:
+          GH_TOKEN: ${{ secrets.PAC_GITHUB_TOKEN }}
