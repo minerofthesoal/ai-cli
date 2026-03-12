@@ -1,0 +1,249 @@
+name: Build & Release .deb
+
+on:
+  push:
+    tags:
+      - 'v*'           # triggers on v2.8.5.5, v2.9.0, etc.
+  workflow_dispatch:    # manual trigger from Actions tab
+    inputs:
+      version:
+        description: 'Version override (e.g. 2.8.5.5)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write       # needed to create GitHub releases
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── 2. Resolve version ───────────────────────────────────────────────────
+      - name: Resolve version
+        id: ver
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            VER="${{ github.event.inputs.version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VER="${GITHUB_REF#refs/tags/v}"
+          else
+            VER=$(grep '^VERSION=' main.sh 2>/dev/null | head -1 | cut -d'"' -f2 || echo "0.0.0")
+          fi
+          echo "version=$VER" >> $GITHUB_OUTPUT
+          echo "Resolved version: $VER"
+
+      # ── 3. Install build tools ───────────────────────────────────────────────
+      - name: Install build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            dpkg-dev debhelper dh-make fakeroot lintian \
+            build-essential devscripts
+
+      # ── 4. Build Debian package ──────────────────────────────────────────────
+      - name: Build .deb
+        id: build
+        run: |
+          VER="${{ steps.ver.outputs.version }}"
+          PKG="ai-cli"
+          ARCH="all"
+          BUILD_DIR="build/${PKG}_${VER}"
+
+          # ── Filesystem layout inside the package ──────────────────────────
+          mkdir -p \
+            "${BUILD_DIR}/usr/bin" \
+            "${BUILD_DIR}/usr/share/doc/${PKG}" \
+            "${BUILD_DIR}/usr/share/man/man1" \
+            "${BUILD_DIR}/usr/share/${PKG}" \
+            "${BUILD_DIR}/etc/ai-cli" \
+            "${BUILD_DIR}/DEBIAN"
+
+          # ── Install the main script ───────────────────────────────────────
+          install -m 0755 main.sh "${BUILD_DIR}/usr/bin/ai"
+
+          # ── Installer helper ──────────────────────────────────────────────
+          [[ -f install_v3.1.py ]] && \
+            install -m 0755 install_v3.1.py "${BUILD_DIR}/usr/share/${PKG}/install.py"
+
+          # ── requirements.txt ─────────────────────────────────────────────
+          [[ -f requirements.txt ]] && \
+            install -m 0644 requirements.txt "${BUILD_DIR}/usr/share/${PKG}/requirements.txt"
+
+          # ── README / changelog ────────────────────────────────────────────
+          [[ -f README.md ]] && \
+            install -m 0644 README.md "${BUILD_DIR}/usr/share/doc/${PKG}/README.md"
+          [[ -f CHANGELOG.md ]] && \
+            install -m 0644 CHANGELOG.md "${BUILD_DIR}/usr/share/doc/${PKG}/changelog"
+          gzip -9 -n -c "${BUILD_DIR}/usr/share/doc/${PKG}/changelog" \
+            > "${BUILD_DIR}/usr/share/doc/${PKG}/changelog.gz" 2>/dev/null || true
+
+          # ── Man page (generate minimal one) ──────────────────────────────
+          cat > "${BUILD_DIR}/usr/share/man/man1/ai.1" << 'MANEOF'
+          .TH AI 1 "$(date '+%Y-%m-%d')" "ai-cli $VER" "User Commands"
+          .SH NAME
+          ai \- AI CLI toolkit: local + cloud LLM terminal interface
+          .SH SYNOPSIS
+          .B ai
+          [\fICOMMAND\fR] [\fIOPTIONS\fR] [\fIPROMPT\fR]
+          .SH DESCRIPTION
+          AI CLI is a 22000+ line Bash script providing a unified interface to
+          local GGUF models, cloud APIs (OpenAI, Claude, Gemini, Groq, Mistral),
+          model training (TTM/MTM), RLHF, Canvas v3 workspace TUI, and 195 curated models.
+          .SH COMMANDS
+          .TP
+          .B ai ask "\fIPROMPT\fR"
+          Send a one-shot question to the active model.
+          .TP
+          .B ai chat
+          Start an interactive chat session.
+          .TP
+          .B ai aui
+          Open the AI Terminal UI dashboard.
+          .TP
+          .B ai canvas new \fIWORKSPACE\fR
+          Create a Canvas v3 multi-file workspace.
+          .TP
+          .B ai recommended
+          Browse and download from 195 curated models.
+          .TP
+          .B ai ttm pretrain
+          Pre-train the Tiny Training Model from scratch.
+          .TP
+          .B ai rlhf rate
+          Interactively rate AI responses for RLHF training.
+          .TP
+          .B ai keys set \fIKEY\fR \fIVALUE\fR
+          Set an API key (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.).
+          .SH FILES
+          .TP
+          .I ~/.config/ai-cli/
+          Configuration directory.
+          .TP
+          .I ~/.config/ai-cli/keys.env
+          API keys (sourced at startup).
+          .SH AUTHOR
+          minerofthesoal <https://github.com/minerofthesoal/ai-cli>
+          .SH SEE ALSO
+          Full documentation: https://github.com/minerofthesoal/ai-cli
+          MANEOF
+          gzip -9 -n "${BUILD_DIR}/usr/share/man/man1/ai.1" 2>/dev/null || true
+
+          # ── DEBIAN/control ────────────────────────────────────────────────
+          cat > "${BUILD_DIR}/DEBIAN/control" << EOF
+          Package: ${PKG}
+          Version: ${VER}
+          Architecture: ${ARCH}
+          Maintainer: minerofthesoal <https://github.com/minerofthesoal/ai-cli>
+          Section: utils
+          Priority: optional
+          Depends: bash (>= 5.0), python3 (>= 3.10), curl, git
+          Recommends: python3-pip, ffmpeg, jq
+          Suggests: gh
+          Homepage: https://github.com/minerofthesoal/ai-cli
+          Description: AI CLI — local + cloud LLM terminal toolkit
+           Unified terminal interface for local and cloud AI models.
+           Supports GGUF (llama.cpp), OpenAI, Claude, Gemini, Groq,
+           Together, and Mistral APIs. Includes TTM/MTM model training,
+           RLHF with DPO/PPO/GRPO, Canvas v3 TUI workspace, 195 curated
+           model recommendations, and a full terminal dashboard (AUI).
+          EOF
+
+          # ── DEBIAN/postinst ───────────────────────────────────────────────
+          cat > "${BUILD_DIR}/DEBIAN/postinst" << 'POSTEOF'
+          #!/bin/bash
+          set -e
+          mkdir -p "$HOME/.config/ai-cli" 2>/dev/null || true
+          if [[ ! -f "$HOME/.config/ai-cli/keys.env" ]]; then
+            cat > "$HOME/.config/ai-cli/keys.env" << 'KEYSEOF'
+          # AI CLI — API Keys
+          # ai keys set OPENAI_API_KEY sk-...
+          # ai keys set ANTHROPIC_API_KEY sk-ant-...
+          # ai keys set GEMINI_API_KEY AIza...
+          # ai keys set GROQ_API_KEY gsk_...
+          # ai keys set MISTRAL_API_KEY ...
+          KEYSEOF
+          fi
+          echo ""
+          echo "  ai-cli $VER installed!"
+          echo "  Run: ai --help     to get started"
+          echo "  Run: ai recommended  to browse 195 models"
+          echo "  Run: ai keys set OPENAI_API_KEY sk-...  to add an API key"
+          echo ""
+          POSTEOF
+          chmod 0755 "${BUILD_DIR}/DEBIAN/postinst"
+
+          # ── DEBIAN/prerm ──────────────────────────────────────────────────
+          cat > "${BUILD_DIR}/DEBIAN/prerm" << 'PRERMEOF'
+          #!/bin/bash
+          set -e
+          echo "Removing ai-cli..."
+          PRERMEOF
+          chmod 0755 "${BUILD_DIR}/DEBIAN/prerm"
+
+          # ── DEBIAN/conffiles ──────────────────────────────────────────────
+          echo "/etc/ai-cli" > "${BUILD_DIR}/DEBIAN/conffiles"
+
+          # ── Build the .deb ────────────────────────────────────────────────
+          fakeroot dpkg-deb --build --root-owner-group "${BUILD_DIR}"
+          DEB_FILE="build/${PKG}_${VER}_${ARCH}.deb"
+          echo "deb_file=${DEB_FILE}" >> $GITHUB_OUTPUT
+          echo "Built: ${DEB_FILE}"
+          ls -lh "${DEB_FILE}"
+
+      # ── 5. Run lintian (non-fatal) ───────────────────────────────────────────
+      - name: Lint .deb
+        run: |
+          lintian "${{ steps.build.outputs.deb_file }}" \
+            --suppress-tags dir-or-file-in-etc \
+            || true   # lint warnings are informational only
+
+      # ── 6. Upload artifact (always) ──────────────────────────────────────────
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-cli-deb-${{ steps.ver.outputs.version }}
+          path: ${{ steps.build.outputs.deb_file }}
+          retention-days: 30
+
+      # ── 7. Create GitHub Release (only on tags) ──────────────────────────────
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ai-cli v${{ steps.ver.outputs.version }}
+          draft: false
+          prerelease: ${{ contains(steps.ver.outputs.version, '-') }}
+          body: |
+            ## ai-cli v${{ steps.ver.outputs.version }}
+
+            ### Install on Debian/Ubuntu/Mint
+            ```bash
+            wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ai-cli_${{ steps.ver.outputs.version }}_all.deb
+            sudo dpkg -i ai-cli_${{ steps.ver.outputs.version }}_all.deb
+            sudo apt-get install -f   # install missing deps if any
+            ai --help
+            ```
+
+            ### Install on Arch Linux (AUR)
+            ```bash
+            yay -S ai-cli
+            # or: paru -S ai-cli
+            ```
+
+            ### Install via Pacstall
+            ```bash
+            pacstall -I ai-cli
+            ```
+
+            ### What's New
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+          files: ${{ steps.build.outputs.deb_file }}
