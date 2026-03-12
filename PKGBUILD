@@ -1,145 +1,108 @@
-# Maintainer: minerofthesoal <minerofthesoal@users.noreply.github.com>
-# AUR package: ai-cli
-# Install:  yay -S ai-cli
-# Manual:   makepkg -si
+# Maintainer: minerofthesoal <https://github.com/minerofthesoal>
+# AUR: https://aur.archlinux.org/packages/ai-cli
+# Source: https://github.com/minerofthesoal/ai-cli
+#
+# Manual install (without AUR helper):
+#   git clone https://aur.archlinux.org/ai-cli.git
+#   cd ai-cli && makepkg -si
 
 pkgname=ai-cli
-pkgver=2.6.0.1
+pkgver=2.8.5.5
 pkgrel=1
-pkgdesc="Universal AI shell - chat, vision, RLHF, LoRA fine-tune, TTM, GPU/CPU, rclick, GUI"
-arch=('x86_64' 'aarch64' 'armv7h')
+pkgdesc="AI CLI — local + cloud LLM terminal toolkit with 195 models, RLHF, Canvas v3 TUI, AUI"
+arch=('any')
 url="https://github.com/minerofthesoal/ai-cli"
 license=('MIT')
-install=ai-cli.install
+
 depends=(
-    'bash'
-    'python'
-    'python-pip'
-    'git'
+    'bash>=5.0'
+    'python>=3.10'
     'curl'
+    'git'
 )
+
 optdepends=(
-    'python-torch: PyTorch inference and training'
-    'python-transformers: HuggingFace model support'
-    'python-peft: LoRA fine-tuning (AUR)'
-    'python-trl: SFT/DPO/PPO training (AUR)'
-    'python-datasets: HuggingFace datasets (AUR)'
-    'ffmpeg: audio and video support'
-    'xclip: X11 clipboard for rclick text selection'
-    'wl-clipboard: Wayland clipboard for rclick text selection'
-    'zenity: GUI dialogs for rclick action menu'
-    'kdialog: KDE dialogs for rclick action menu'
-    'yad: alternative dialog tool'
-    'tk: Python Tkinter dialog fallback'
-    'xdotool: X11 key simulation'
-    'libnotify: desktop notifications'
-    'cuda: NVIDIA GPU acceleration'
+    'python-pip: install AI/ML Python libraries (torch, transformers, etc.)'
+    'ffmpeg: audio transcription and video processing'
+    'jq: JSON utilities used by some commands'
+    'github-cli: Canvas Gist upload and repo management'
+    'python-torch: local model inference (gguf/pytorch backends)'
+    'python-transformers: HuggingFace model download and use'
+    'llama-cpp-python: fast CPU/GPU inference for GGUF models'
+    'python-openai: OpenAI API client'
+    'python-anthropic: Anthropic Claude API client'
 )
-provides=('ai-cli')
+
+provides=('ai')
 conflicts=('ai-cli-git')
-source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/heads/claude/cpu-windows-llm-api-uiTei.tar.gz")
+
+source=("${pkgname}-${pkgver}.tar.gz::https://github.com/minerofthesoal/ai-cli/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('SKIP')  # Updated automatically by CI — set manually for offline use
 b2sums=('SKIP')
 
-# v2.6.0.1 changelog:
-#   - Fixed CUDA sm_61 (GTX 1080 / Pascal) detection — cache re-runs after 5 min if GPU was not found
-#   - Fixed PyTorch install for sm_61: now installs cu118 (CUDA 11.8) instead of CPU-only
-#   - GUI v4: full mouse click support (left-click to select, click again to activate)
-#   - GUI v4: scroll wheel support in menu, chat, and output pager
-#   - GUI v4: clickable scrollbar in output pager
-#   - rclick: fixed 'not authorized to execute this file' — gio set now uses -t string + "yes"
-#   - rclick: added setfattr fallback for non-gio systems
-#   - rclick: KDE .desktop files get X-KDE-SubstituteUID=false to prevent auth prompts
-#   - rclick: new 'ai rclick fix-auth' command to re-apply trust flags without full reinstall
-
 prepare() {
-    # Verify the expected directory exists after extraction
-    local src="${srcdir}/ai-cli-claude-cpu-windows-llm-api-uiTei"
-    if [[ ! -d "${src}" ]]; then
-        # GitHub renames the directory; find whatever was extracted
-        local extracted
-        extracted=$(find "${srcdir}" -maxdepth 1 -type d -name 'ai-cli*' | head -1)
-        [[ -z "${extracted}" ]] && { error "Source directory not found after extraction"; return 1; }
-        mv "${extracted}" "${src}"
-    fi
+    cd "${srcdir}/${pkgname}-${pkgver}"
+    bash -n main.sh  # fail fast if script has syntax errors
 }
 
 build() {
-    # Pure shell script — nothing to compile
-    :
+    : # Pure bash — nothing to compile
 }
 
-_pick_script() {
-    local src="${srcdir}/ai-cli-claude-cpu-windows-llm-api-uiTei"
-
-    local best=""
-    local best_ver=(0 0 0)
-
-    case "${CARCH}" in
-        aarch64)
-            # Prefer arm64-specific builds on aarch64
-            for f in "${src}"/main-v*-arm64; do
-                [[ -f "${f}" ]] || continue
-                # Extract version numbers from filename
-                local ver_str
-                ver_str=$(basename "${f}" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?')
-                IFS='.' read -r -a ver <<< "${ver_str}"
-                if (( ${ver[0]:-0} > ${best_ver[0]:-0} )) || \
-                   (( ${ver[0]:-0} == ${best_ver[0]:-0} && ${ver[1]:-0} > ${best_ver[1]:-0} )) || \
-                   (( ${ver[0]:-0} == ${best_ver[0]:-0} && ${ver[1]:-0} == ${best_ver[1]:-0} && ${ver[2]:-0} >= ${best_ver[2]:-0} )); then
-                    best="${f}"
-                    best_ver=("${ver[@]}")
-                fi
-            done
-            [[ -n "${best}" ]] && { echo "${best}"; return 0; }
-            ;;
-    esac
-
-    # x86_64 / armv7h / aarch64 fallback: pick highest-versioned generic script
-    best=""
-    best_ver=(0 0 0)
-    for f in "${src}"/main-v*; do
-        [[ -f "${f}" ]] || continue
-        # Skip arm64-specific builds for non-arm64 targets
-        [[ "${f}" == *-arm64 ]] && [[ "${CARCH}" != "aarch64" ]] && continue
-        local ver_str
-        ver_str=$(basename "${f}" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?')
-        IFS='.' read -r -a ver <<< "${ver_str}"
-        if (( ${ver[0]:-0} > ${best_ver[0]:-0} )) || \
-           (( ${ver[0]:-0} == ${best_ver[0]:-0} && ${ver[1]:-0} > ${best_ver[1]:-0} )) || \
-           (( ${ver[0]:-0} == ${best_ver[0]:-0} && ${ver[1]:-0} == ${best_ver[1]:-0} && ${ver[2]:-0} >= ${best_ver[2]:-0} )); then
-            best="${f}"
-            best_ver=("${ver[@]}")
-        fi
-    done
-
-    echo "${best}"
+check() {
+    cd "${srcdir}/${pkgname}-${pkgver}"
+    # Verify script can report its version
+    bash main.sh --version 2>/dev/null || \
+    grep -qE '^VERSION="[0-9]' main.sh
 }
 
 package() {
-    local src="${srcdir}/ai-cli-claude-cpu-windows-llm-api-uiTei"
+    cd "${srcdir}/${pkgname}-${pkgver}"
 
-    local script
-    script=$(_pick_script)
-    if [[ -z "${script}" || ! -f "${script}" ]]; then
-        error "No main-v* script found in source directory: ${src}"
-        return 1
-    fi
+    # ── Main binary ───────────────────────────────────────────────────────────
+    install -Dm755 main.sh "${pkgdir}/usr/bin/ai"
 
-    msg2 "Selected script: $(basename "${script}")"
+    # ── Shared data ───────────────────────────────────────────────────────────
+    local sharedir="${pkgdir}/usr/share/${pkgname}"
+    [[ -f install_v3.1.py ]] && install -Dm755 install_v3.1.py "${sharedir}/install.py"
+    [[ -f requirements.txt ]] && install -Dm644 requirements.txt "${sharedir}/requirements.txt"
+    [[ -f package.json ]]     && install -Dm644 package.json     "${sharedir}/package.json"
 
-    # Main binary
-    install -Dm755 "${script}" "${pkgdir}/usr/bin/ai"
+    # ── License ───────────────────────────────────────────────────────────────
+    install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE" 2>/dev/null || \
+    install -Dm644 /dev/stdin "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE" << 'LICEOF'
+MIT License — Copyright (c) minerofthesoal
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies, subject to the conditions at https://opensource.org/licenses/MIT
+LICEOF
 
-    # Python installer
-    [[ -f "${src}/install.py" ]] && \
-        install -Dm755 "${src}/install.py" "${pkgdir}/usr/share/ai-cli/install.py"
+    # ── Documentation ─────────────────────────────────────────────────────────
+    local docdir="${pkgdir}/usr/share/doc/${pkgname}"
+    [[ -f README.md ]]    && install -Dm644 README.md    "${docdir}/README.md"
+    [[ -f CHANGELOG.md ]] && install -Dm644 CHANGELOG.md "${docdir}/CHANGELOG.md"
+}
 
-    # README
-    [[ -f "${src}/README.md" ]] && \
-        install -Dm644 "${src}/README.md" "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+post_install() {
+    cat << 'MSG'
 
-    # License placeholder (add LICENSE file to repo to satisfy AUR checkers)
-    install -dm755 "${pkgdir}/usr/share/licenses/${pkgname}"
-    printf 'MIT License\nCopyright (c) 2024 minerofthesoal\n' \
-        > "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  ╔══════════════════════════════════════════════════════════════╗
+  ║  ai-cli installed!  Run: ai --help                          ║
+  ║                                                              ║
+  ║  Quick setup:                                                ║
+  ║    ai recommended              # browse 195 models           ║
+  ║    ai keys set GROQ_API_KEY gsk_...   # free & fast          ║
+  ║    ai keys set OPENAI_API_KEY sk-...                         ║
+  ║    ai keys set ANTHROPIC_API_KEY sk-ant-...                  ║
+  ║    ai ask "hello"              # first prompt                ║
+  ║    ai aui                      # terminal dashboard          ║
+  ║    ai canvas new myproject     # Canvas v3 workspace         ║
+  ╚══════════════════════════════════════════════════════════════╝
+
+MSG
+}
+
+post_upgrade() {
+    echo "  ai-cli upgraded to $(bash /usr/bin/ai --version 2>/dev/null || echo 'new version')"
+    echo "  Run: ai --version  to confirm"
 }
