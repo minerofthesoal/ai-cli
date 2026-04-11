@@ -4,7 +4,7 @@
 # Manual:   makepkg -si
 
 pkgname=ai-cli
-pkgver=2.6.0.1
+pkgver=2.7.3
 pkgrel=1
 pkgdesc="Universal AI shell - chat, vision, RLHF, LoRA fine-tune, TTM, GPU/CPU, rclick, GUI"
 arch=('x86_64' 'aarch64' 'armv7h')
@@ -64,68 +64,49 @@ prepare() {
 }
 
 build() {
-    # Pure shell script — nothing to compile
-    :
-}
-
-_pick_script() {
     local src="${srcdir}/ai-cli-claude-cpu-windows-llm-api-uiTei"
 
-    local best=""
-    local best_ver=(0 0 0)
-
-    case "${CARCH}" in
-        aarch64)
-            # Prefer arm64-specific builds on aarch64
-            for f in "${src}"/main-v*-arm64; do
-                [[ -f "${f}" ]] || continue
-                # Extract version numbers from filename
-                local ver_str
-                ver_str=$(basename "${f}" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?')
-                IFS='.' read -r -a ver <<< "${ver_str}"
-                if (( ${ver[0]:-0} > ${best_ver[0]:-0} )) || \
-                   (( ${ver[0]:-0} == ${best_ver[0]:-0} && ${ver[1]:-0} > ${best_ver[1]:-0} )) || \
-                   (( ${ver[0]:-0} == ${best_ver[0]:-0} && ${ver[1]:-0} == ${best_ver[1]:-0} && ${ver[2]:-0} >= ${best_ver[2]:-0} )); then
-                    best="${f}"
-                    best_ver=("${ver[@]}")
-                fi
-            done
-            [[ -n "${best}" ]] && { echo "${best}"; return 0; }
-            ;;
-    esac
-
-    # x86_64 / armv7h / aarch64 fallback: pick highest-versioned generic script
-    best=""
-    best_ver=(0 0 0)
-    for f in "${src}"/main-v*; do
-        [[ -f "${f}" ]] || continue
-        # Skip arm64-specific builds for non-arm64 targets
-        [[ "${f}" == *-arm64 ]] && [[ "${CARCH}" != "aarch64" ]] && continue
-        local ver_str
-        ver_str=$(basename "${f}" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?')
-        IFS='.' read -r -a ver <<< "${ver_str}"
-        if (( ${ver[0]:-0} > ${best_ver[0]:-0} )) || \
-           (( ${ver[0]:-0} == ${best_ver[0]:-0} && ${ver[1]:-0} > ${best_ver[1]:-0} )) || \
-           (( ${ver[0]:-0} == ${best_ver[0]:-0} && ${ver[1]:-0} == ${best_ver[1]:-0} && ${ver[2]:-0} >= ${best_ver[2]:-0} )); then
-            best="${f}"
-            best_ver=("${ver[@]}")
-        fi
-    done
-
-    echo "${best}"
+    # New multi-file source layout: assemble dist/ai from src/lib/*.sh
+    if [[ -d "${src}/src/lib" && -f "${src}/build/build.sh" ]]; then
+        msg2 "Building from multi-file source layout…"
+        bash "${src}/build/build.sh" --output "${src}/dist/ai"
+    elif [[ -f "${src}/dist/ai" ]]; then
+        msg2 "Using pre-assembled dist/ai binary"
+    else
+        msg2 "Legacy source layout — no build step needed"
+    fi
 }
 
 package() {
     local src="${srcdir}/ai-cli-claude-cpu-windows-llm-api-uiTei"
 
-    local script
-    script=$(_pick_script)
-    if [[ -z "${script}" || ! -f "${script}" ]]; then
-        error "No main-v* script found in source directory: ${src}"
-        return 1
+    # Prefer assembled binary; fall back to legacy main-v* scripts
+    local script=""
+    if [[ -f "${src}/dist/ai" ]]; then
+        script="${src}/dist/ai"
+        msg2 "Installing: dist/ai"
+    else
+        # Legacy fallback: find highest-versioned main-v* script
+        local best="" best_ver=(0 0 0)
+        for f in "${src}"/main-v*; do
+            [[ -f "${f}" ]] || continue
+            [[ "${f}" == *-arm64 ]] && [[ "${CARCH}" != "aarch64" ]] && continue
+            local ver_str; ver_str=$(basename "${f}" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?')
+            IFS='.' read -r -a ver <<< "${ver_str}"
+            if (( ${ver[0]:-0} > ${best_ver[0]:-0} )) || \
+               (( ${ver[0]:-0} == ${best_ver[0]:-0} && ${ver[1]:-0} > ${best_ver[1]:-0} )) || \
+               (( ${ver[0]:-0} == ${best_ver[0]:-0} && ${ver[1]:-0} == ${best_ver[1]:-0} && \
+                  ${ver[2]:-0} >= ${best_ver[2]:-0} )); then
+                best="${f}"; best_ver=("${ver[@]}")
+            fi
+        done
+        script="${best}"
     fi
 
-    msg2 "Selected script: $(basename "${script}")"
+    if [[ -z "${script}" || ! -f "${script}" ]]; then
+        error "No installable binary found in source directory: ${src}"
+        return 1
+    fi
 
     # Main binary
     install -Dm755 "${script}" "${pkgdir}/usr/bin/ai"
@@ -134,12 +115,26 @@ package() {
     [[ -f "${src}/install.py" ]] && \
         install -Dm755 "${src}/install.py" "${pkgdir}/usr/share/ai-cli/install.py"
 
+    # Source modules (for development / inspection)
+    if [[ -d "${src}/src/lib" ]]; then
+        install -dm755 "${pkgdir}/usr/share/ai-cli/src/lib"
+        install -m644 "${src}/src/lib"/*.sh "${pkgdir}/usr/share/ai-cli/src/lib/"
+    fi
+
+    # Build script
+    [[ -f "${src}/build/build.sh" ]] && \
+        install -Dm755 "${src}/build/build.sh" "${pkgdir}/usr/share/ai-cli/build/build.sh"
+
     # README
     [[ -f "${src}/README.md" ]] && \
         install -Dm644 "${src}/README.md" "${pkgdir}/usr/share/doc/${pkgname}/README.md"
 
-    # License placeholder (add LICENSE file to repo to satisfy AUR checkers)
+    # License
     install -dm755 "${pkgdir}/usr/share/licenses/${pkgname}"
-    printf 'MIT License\nCopyright (c) 2024 minerofthesoal\n' \
-        > "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+    if [[ -f "${src}/LICENSE" ]]; then
+        install -m644 "${src}/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+    else
+        printf 'MIT License\nCopyright (c) 2024 minerofthesoal\n' \
+            > "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+    fi
 }

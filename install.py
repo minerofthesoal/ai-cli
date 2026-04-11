@@ -234,17 +234,44 @@ def version_str(tup: tuple) -> str:
 
 def find_script_for_arch(repo_dir: Path, arch: str) -> Path:
     """
-    Selects the highest-versioned script matching the target arch:
-      - ARM64  → prefer main-v*-arm64; fall back to generic main-v*
-      - x86_64 / armv7l → use generic main-v* only
+    Locate the binary to install.  Priority order:
+      1. dist/ai  (pre-assembled by build/build.sh — preferred for new layout)
+      2. Build from source if src/lib/ exists (runs build/build.sh)
+      3. Highest-versioned main-v* script (legacy fallback)
     """
+    # 1. Pre-assembled binary
+    dist_bin = repo_dir / "dist" / "ai"
+    if dist_bin.is_file():
+        info(f"Using pre-assembled binary: dist/ai")
+        return dist_bin
+
+    # 2. Build from source if src/lib/ layout is present
+    src_lib = repo_dir / "src" / "lib"
+    build_sh = repo_dir / "build" / "build.sh"
+    if src_lib.is_dir() and build_sh.is_file():
+        info("Multi-file source layout detected — building from source…")
+        try:
+            result = subprocess.run(
+                ["bash", str(build_sh), "--output", str(dist_bin)],
+                cwd=str(repo_dir),
+                check=True,
+            )
+            if dist_bin.is_file():
+                ok(f"Built: {dist_bin}")
+                return dist_bin
+        except subprocess.CalledProcessError as exc:
+            warn(f"Build failed ({exc}). Falling back to legacy script.")
+
+    # 3. Legacy: pick highest-versioned main-v* script
     all_scripts = [
         p for p in repo_dir.iterdir()
         if p.name.startswith(VERSION_GLOB) and p.is_file()
     ]
     if not all_scripts:
         raise FileNotFoundError(
-            f"No 'main-v*' script found in {repo_dir}. Check the repo branch."
+            f"No installable binary found in {repo_dir}.\n"
+            "Expected: dist/ai, src/lib/ + build/build.sh, or main-v* scripts.\n"
+            "Check the repo branch."
         )
     arm64_scripts   = [p for p in all_scripts if re.search(r"-(arm64|aarch64)$", p.name)]
     generic_scripts = [p for p in all_scripts
@@ -259,7 +286,7 @@ def find_script_for_arch(repo_dir: Path, arch: str) -> Path:
         candidates = generic_scripts or all_scripts
 
     best = sorted(candidates, key=lambda p: parse_version(p.name), reverse=True)[0]
-    info(f"Selected build: {best.name}")
+    info(f"Selected build (legacy): {best.name}")
     return best
 
 # ── Installed version detection ───────────────────────────────────────────────

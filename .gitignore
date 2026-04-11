@@ -1,0 +1,26 @@
+# Build output — individual files are tracked, archives are not
+dist/*.tar.gz
+dist/*.zip
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets (never commit these)
+*.env
+keys.env
+
+# Test artifacts
+/tmp/
