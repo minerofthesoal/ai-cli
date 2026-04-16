@@ -342,7 +342,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: macos-12
+          - runner: macos-13
             arch: x86_64
             label: Intel
           - runner: macos-14
