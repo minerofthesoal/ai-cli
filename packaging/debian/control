@@ -1,0 +1,16 @@
+Package: ai-cli
+Version: 2.8.5.5
+Architecture: all
+Maintainer: minerofthesoal <https://github.com/minerofthesoal/ai-cli>
+Section: utils
+Priority: optional
+Depends: bash (>= 5.0), python3 (>= 3.10), curl, git
+Recommends: python3-pip, ffmpeg, jq
+Suggests: gh, nodejs, npm
+Homepage: https://github.com/minerofthesoal/ai-cli
+Description: AI CLI — local + cloud LLM terminal toolkit
+ Unified terminal interface for local and cloud AI models.
+ Supports GGUF (llama.cpp), OpenAI, Claude, Gemini, Groq,
+ Together, and Mistral APIs. Includes TTM/MTM model training,
+ RLHF with DPO/PPO/GRPO, Canvas v3 TUI workspace, and 195
+ curated model recommendations.

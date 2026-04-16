@@ -1,0 +1,16 @@
+#!/bin/bash
+set -e
+mkdir -p "$HOME/.config/ai-cli" 2>/dev/null || true
+if [[ ! -f "$HOME/.config/ai-cli/keys.env" ]]; then
+    cat > "$HOME/.config/ai-cli/keys.env" << 'EOF'
+# AI CLI — API Keys
+# ai keys set OPENAI_API_KEY sk-...
+# ai keys set ANTHROPIC_API_KEY sk-ant-...
+# ai keys set GEMINI_API_KEY AIza...
+EOF
+fi
+echo ""
+echo "  ai-cli installed!"
+echo "  Run: ai --help     to get started"
+echo "  Run: ai recommended  to browse 195 models"
+echo ""

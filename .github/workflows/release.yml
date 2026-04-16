@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["Build"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-22.04
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'refs/tags/v'))
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VER="${GITHUB_REF#refs/tags/v}"
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            VER=$(grep '^VERSION=' main.sh | head -1 | cut -d'"' -f2)
+            TAG="v${VER}"
+          fi
+          echo "version=$VER" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Release: $TAG (v$VER)"
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          merge-multiple: true
+          path: artifacts/
+        continue-on-error: true
+
+      - name: List artifacts
+        run: ls -lhR artifacts/ 2>/dev/null || echo "No artifacts"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ai-cli v${{ steps.ver.outputs.version }}
+          draft: false
+          prerelease: ${{ contains(steps.ver.outputs.version, '-') }}
+          generate_release_notes: true
+          body: |
+            ## ai-cli v${{ steps.ver.outputs.version }}
+
+            ### Install
+
+            **Universal (any Linux/macOS):**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/installers/install.sh | sh
+            ```
+
+            **Debian / Ubuntu / Mint:**
+            ```bash
+            wget https://github.com/${{ github.repository }}/releases/download/${{ steps.ver.outputs.tag }}/ai-cli_${{ steps.ver.outputs.version }}.deb
+            sudo dpkg -i ai-cli_${{ steps.ver.outputs.version }}.deb
+            sudo apt-get install -f
+            ```
+
+            **Arch Linux (AUR):**
+            ```bash
+            yay -S ai-cli
+            ```
+
+            **Fedora / RHEL:**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/installers/install-rpm.sh | sh
+            ```
+
+            **macOS:**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/installers/install-mac.sh | sh
+            ```
+
+            **Python installer:**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/installers/install.py | python3
+            ```
+          files: |
+            artifacts/*

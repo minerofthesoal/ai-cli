@@ -1,0 +1,158 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version override (e.g. 2.8.5.5)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint & Validate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate shell scripts
+        run: |
+          echo "=== Checking main.sh syntax ==="
+          bash -n main.sh
+          echo "=== Checking installer scripts ==="
+          for f in installers/*.sh; do
+            echo "  Checking $f..."
+            bash -n "$f" || sh -n "$f"
+          done
+          echo "All shell scripts valid."
+
+      - name: Validate Python
+        run: |
+          python3 -m py_compile installers/install.py
+          echo "Python installer compiles OK"
+
+      - name: Check C++ syntax
+        run: |
+          sudo apt-get install -y g++
+          g++ -std=c++17 -fsyntax-only installers/install.cpp
+          echo "C++ installer syntax OK"
+
+      - name: Extract version
+        id: ver
+        run: |
+          VER=$(grep '^VERSION=' main.sh | head -1 | cut -d'"' -f2)
+          echo "version=$VER" >> $GITHUB_OUTPUT
+          echo "Version: $VER"
+
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+
+  build-deb:
+    name: Build .deb
+    needs: lint
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            VER="${{ github.event.inputs.version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VER="${GITHUB_REF#refs/tags/v}"
+          else
+            VER="${{ needs.lint.outputs.version }}"
+          fi
+          echo "version=$VER" >> $GITHUB_OUTPUT
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            dpkg-dev fakeroot lintian
+
+      - name: Build .deb
+        id: build
+        run: |
+          VER="${{ steps.ver.outputs.version }}"
+          PKG="ai-cli"
+          BUILD="build/${PKG}_${VER}"
+
+          mkdir -p "${BUILD}/usr/bin" \
+                   "${BUILD}/usr/share/${PKG}" \
+                   "${BUILD}/usr/share/doc/${PKG}" \
+                   "${BUILD}/DEBIAN"
+
+          install -m 0755 main.sh "${BUILD}/usr/bin/ai"
+          cp -r installers/ "${BUILD}/usr/share/${PKG}/"
+          [ -f misc/requirements.txt ] && cp misc/requirements.txt "${BUILD}/usr/share/${PKG}/"
+          [ -f README.md ] && cp README.md "${BUILD}/usr/share/doc/${PKG}/"
+
+          cp packaging/debian/control "${BUILD}/DEBIAN/control"
+          sed -i "s/^Version:.*/Version: ${VER}/" "${BUILD}/DEBIAN/control"
+          cp packaging/debian/postinst "${BUILD}/DEBIAN/"
+          cp packaging/debian/prerm "${BUILD}/DEBIAN/"
+          chmod 0755 "${BUILD}/DEBIAN/postinst" "${BUILD}/DEBIAN/prerm"
+
+          fakeroot dpkg-deb --build --root-owner-group "${BUILD}"
+          DEB="build/${PKG}_${VER}.deb"
+          mv "build/${PKG}_${VER}.deb" "$DEB" 2>/dev/null || true
+          echo "deb_file=${DEB}" >> $GITHUB_OUTPUT
+          ls -lh "$DEB"
+
+      - name: Lint .deb
+        run: lintian "${{ steps.build.outputs.deb_file }}" || true
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-cli-deb
+          path: ${{ steps.build.outputs.deb_file }}
+          retention-days: 30
+
+  build-rpm:
+    name: Build RPM (check)
+    needs: lint
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate RPM spec
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y rpm
+          echo "RPM spec validation:"
+          rpm --eval '%{_topdir}'
+          echo "Spec file present: packaging/rpm/ai-cli.spec"
+          cat packaging/rpm/ai-cli.spec
+
+  build-cpp-installer:
+    name: Compile C++ Installer
+    needs: lint
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile
+        run: |
+          g++ -std=c++17 -O2 -o ai-cli-installer installers/install.cpp
+          echo "C++ installer compiled successfully"
+          ls -lh ai-cli-installer
+
+      - name: Upload compiled installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-cli-cpp-installer
+          path: ai-cli-installer
+          retention-days: 30

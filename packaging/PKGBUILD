@@ -1,0 +1,68 @@
+# Maintainer: minerofthesoal <https://github.com/minerofthesoal>
+pkgname=ai-cli
+pkgver=2.8.5.5
+pkgrel=1
+pkgdesc="AI CLI — local + cloud LLM terminal toolkit with 195 curated models"
+arch=('any')
+url="https://github.com/minerofthesoal/ai-cli"
+license=('MIT')
+depends=('bash>=5.0' 'python>=3.10' 'curl' 'git')
+optdepends=(
+    'python-pip: Python package management for ML deps'
+    'ffmpeg: Audio/video processing'
+    'jq: JSON processing'
+    'nodejs: GUI components'
+    'npm: GUI package management'
+    'github-cli: GitHub integration'
+)
+conflicts=('ai-cli-git')
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+    cd "${srcdir}/${pkgname}-${pkgver}"
+    # Verify script syntax
+    bash -n main.sh
+}
+
+check() {
+    cd "${srcdir}/${pkgname}-${pkgver}"
+    local ver
+    ver=$(grep '^VERSION=' main.sh | head -1 | cut -d'"' -f2)
+    if [[ "$ver" != "$pkgver" ]]; then
+        echo "WARNING: Script version ($ver) != package version ($pkgver)"
+    fi
+}
+
+package() {
+    cd "${srcdir}/${pkgname}-${pkgver}"
+
+    # Main binary
+    install -Dm755 main.sh "${pkgdir}/usr/bin/ai"
+
+    # Support files
+    install -Dm644 misc/requirements.txt "${pkgdir}/usr/share/${pkgname}/requirements.txt"
+    install -Dm644 misc/package.json "${pkgdir}/usr/share/${pkgname}/package.json"
+
+    # Installers
+    install -Dm755 installers/install.sh "${pkgdir}/usr/share/${pkgname}/installers/install.sh"
+    install -Dm755 installers/install.py "${pkgdir}/usr/share/${pkgname}/installers/install.py"
+
+    # Docs
+    install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+    install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}
+
+post_install() {
+    echo ""
+    echo "  ai-cli ${pkgver} installed!"
+    echo "  Run: ai --help             to get started"
+    echo "  Run: ai recommended        to browse 195 models"
+    echo "  Run: ai install-deps       to install Python ML dependencies"
+    echo "  Run: ai keys set KEY VAL   to set an API key"
+    echo ""
+}
+
+post_upgrade() {
+    echo "  ai-cli upgraded to ${pkgver}"
+}
