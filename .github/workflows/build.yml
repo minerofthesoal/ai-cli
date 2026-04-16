@@ -342,7 +342,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: macos-13
+          - runner: macos-12
             arch: x86_64
             label: Intel
           - runner: macos-14
@@ -438,10 +438,174 @@ jobs:
           path: build/*.dmg
           retention-days: 30
 
-  # ── 8. Release (runs after all builds, only on tags) ───────────────
+  # ── 8. Build Windows Installer (.exe) ───────────────────────────────
+  build-windows:
+    name: Build Windows Installer
+    needs: lint
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup environment
+        shell: bash
+        run: |
+          VER="${{ needs.lint.outputs.version }}"
+          echo "VERSION=$VER" >> $GITHUB_ENV
+
+      - name: Create installer with Inno Setup
+        shell: bash
+        run: |
+          VER="${VERSION}"
+          PKG="ai-cli"
+          BDIR="build/win"
+          mkdir -p "${BDIR}/bin" "${BDIR}/share" "${BDIR}/installers"
+
+          cp main.sh "${BDIR}/bin/ai.sh"
+          cp -r installers/* "${BDIR}/installers/" 2>/dev/null || true
+          cp misc/requirements.txt "${BDIR}/share/" 2>/dev/null || true
+          cp README.md "${BDIR}/share/" 2>/dev/null || true
+          cp LICENSE "${BDIR}/share/" 2>/dev/null || true
+
+          # Create ai.cmd wrapper
+          cat > "${BDIR}/bin/ai.cmd" << 'CMDEOF'
+          @echo off
+          setlocal
+          where bash >nul 2>&1 && (
+            bash "%~dp0ai.sh" %*
+          ) || (
+            echo ai-cli requires bash. Install Git for Windows or WSL.
+            echo https://git-scm.com/download/win
+            exit /b 1
+          )
+          CMDEOF
+          sed -i 's/^          //' "${BDIR}/bin/ai.cmd"
+
+          # Create PowerShell installer
+          cat > "${BDIR}/install.ps1" << 'PSEOF'
+          # AI CLI Installer for Windows
+          $ErrorActionPreference = "Stop"
+          Write-Host "`nAI CLI Installer" -ForegroundColor Cyan
+          Write-Host "================`n"
+
+          # Check for bash
+          $bash = Get-Command bash -ErrorAction SilentlyContinue
+          if (-not $bash) {
+              Write-Host "bash not found. Install one of:" -ForegroundColor Yellow
+              Write-Host "  1. Git for Windows: https://git-scm.com/download/win"
+              Write-Host "  2. WSL: wsl --install (in PowerShell as Admin)"
+              Write-Host ""
+              $choice = Read-Host "Install Git for Windows now? (Y/n)"
+              if ($choice -ne 'n') {
+                  Write-Host "Downloading Git for Windows..."
+                  $url = "https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe"
+                  $out = "$env:TEMP\git-installer.exe"
+                  Invoke-WebRequest -Uri $url -OutFile $out
+                  Start-Process -Wait $out
+              }
+          }
+
+          # Install to Program Files
+          $dest = "$env:ProgramFiles\ai-cli"
+          Write-Host "Installing to: $dest"
+          New-Item -ItemType Directory -Force -Path "$dest\bin" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$dest\share" | Out-Null
+
+          Copy-Item "bin\ai.sh" "$dest\bin\" -Force
+          Copy-Item "bin\ai.cmd" "$dest\bin\" -Force
+          Copy-Item "share\*" "$dest\share\" -Force -ErrorAction SilentlyContinue
+          Copy-Item "installers\*" "$dest\share\" -Force -ErrorAction SilentlyContinue
+
+          # Add to PATH
+          $path = [Environment]::GetEnvironmentVariable("Path", "Machine")
+          if ($path -notlike "*ai-cli*") {
+              [Environment]::SetEnvironmentVariable("Path", "$path;$dest\bin", "Machine")
+              Write-Host "Added to system PATH" -ForegroundColor Green
+          }
+
+          Write-Host "`nai-cli installed!" -ForegroundColor Green
+          Write-Host "  Restart your terminal, then run: ai --help`n"
+          PSEOF
+          sed -i 's/^          //' "${BDIR}/install.ps1"
+
+          # Create Inno Setup script
+          cat > "build/setup.iss" << ISSEOF
+          [Setup]
+          AppName=AI CLI
+          AppVersion=${VER}
+          AppPublisher=minerofthesoal
+          AppPublisherURL=https://github.com/minerofthesoal/ai-cli
+          DefaultDirName={autopf}\ai-cli
+          DefaultGroupName=AI CLI
+          OutputDir=.
+          OutputBaseFilename=ai-cli-${VER}-windows-setup
+          Compression=lzma2
+          SolidCompression=yes
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+          MinVersion=10.0.19044
+          LicenseFile=win\share\LICENSE
+          ChangesEnvironment=yes
+
+          [Files]
+          Source: "win\bin\ai.sh"; DestDir: "{app}\bin"; Flags: ignoreversion
+          Source: "win\bin\ai.cmd"; DestDir: "{app}\bin"; Flags: ignoreversion
+          Source: "win\share\*"; DestDir: "{app}\share"; Flags: ignoreversion recursesubdirs
+          Source: "win\installers\*"; DestDir: "{app}\installers"; Flags: ignoreversion recursesubdirs
+
+          [Icons]
+          Name: "{group}\AI CLI (Git Bash)"; Filename: "{cmd}"; Parameters: "/k ""{app}\bin\ai.cmd"" --help"
+          Name: "{group}\Uninstall AI CLI"; Filename: "{uninstallexe}"
+
+          [Registry]
+          Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; \
+            ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}\bin"; \
+            Check: NeedsAddPath('{app}\bin')
+
+          [Code]
+          function NeedsAddPath(Param: string): boolean;
+          var
+            OrigPath: string;
+          begin
+            if not RegQueryStringValue(HKEY_LOCAL_MACHINE,
+              'SYSTEM\CurrentControlSet\Control\Session Manager\Environment',
+              'Path', OrigPath) then
+            begin
+              Result := True;
+              exit;
+            end;
+            Result := Pos(';' + Param + ';', ';' + OrigPath + ';') = 0;
+          end;
+
+          [Run]
+          Filename: "{cmd}"; Parameters: "/k echo AI CLI v${VER} installed! Run: ai --help"; \
+            Description: "Open terminal"; Flags: postinstall nowait
+          ISSEOF
+          sed -i 's/^          //' "build/setup.iss"
+
+      - name: Compile installer with Inno Setup
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.4
+        with:
+          path: build/setup.iss
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-cli-windows-installer
+          path: build/ai-cli-*-windows-setup.exe
+          retention-days: 30
+
+      - name: Upload PowerShell installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-cli-windows-ps1
+          path: build/win/install.ps1
+          retention-days: 30
+
+  # ── 9. Release (runs after all builds, only on tags) ───────────────
   release:
     name: Create GitHub Release
-    needs: [lint, build-deb, build-pacman, build-pacstall, build-cpp-installer, build-rpm, build-dmg]
+    needs: [lint, build-deb, build-pacman, build-pacstall, build-cpp-installer, build-rpm, build-dmg, build-windows]
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
     timeout-minutes: 10
@@ -533,7 +697,14 @@ jobs:
             python3 <(curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/installers/install.py)
             ```
 
-            **C++ installer (precompiled):**
+            **macOS (.dmg — Intel & Apple Silicon):**
+            Download the `.dmg` for your Mac, open it, then run `sh install.sh`
+
+            **Windows 10 21H2+ (.exe installer):**
+            Download `ai-cli-${{ steps.ver.outputs.version }}-windows-setup.exe` and run it.
+            Requires Git for Windows (Git Bash) or WSL.
+
+            **C++ installer (precompiled Linux):**
             ```bash
             chmod +x ai-cli-installer && ./ai-cli-installer
             ```
