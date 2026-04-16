@@ -339,7 +339,7 @@ jobs:
   release:
     name: Create GitHub Release
     needs: [lint, build-deb, build-pacman, build-pacstall, build-cpp-installer, build-rpm]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
