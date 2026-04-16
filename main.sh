@@ -5311,7 +5311,7 @@ class Sidebar:
 class ContentPanel:
     """Right-side content pane: output pager + edit mode."""
     def __init__(self):
-        self.lines   = ["Welcome to AI CLI v2.7.3 — GUI v5.2",
+        self.lines   = ["Welcome to AI CLI v2.9.0 — GUI v7",
                         "─" * 40,
                         "Use the sidebar to navigate.",
                         "Enter or click an item to activate it.",
@@ -5327,7 +5327,7 @@ class ContentPanel:
                         "  /           Quick search",
                         ]
         self.scroll = 0
-        self.title  = "AI CLI v2.7.3 GUI v5.2"
+        self.title  = "AI CLI v2.7.3 GUI v7"
         # For edit in place
         self.edit_mode   = False
         self.edit_key    = ""
@@ -5543,7 +5543,7 @@ class App:
     def dims(self): return self.stdscr.getmaxyx()
 
     def _draw_header(self, h, w):
-        ver_str = "AI CLI v2.7.3  GUI v5.2"
+        ver_str = "AI CLI v2.7.3  GUI v7"
         mode_str = f"[{THEME_NAME.upper()}]  {self.mode.upper()}"
         bar = f"  {ver_str}  │  {mode_str}  │  focus:{self.focus}  "
         safe_add(self.stdscr, 0, 0, bar.ljust(w), curses.color_pair(CP_HDR) | curses.A_BOLD)
@@ -5866,7 +5866,7 @@ class App:
     ]
 
     def _open_settings_editor(self):
-        """GUI v5.2: structured settings editor — only editable keys shown."""
+        """GUI v7: structured settings editor — only editable keys shown."""
         h, w = self.dims()
         # Load current config values
         cfg_raw = run_ai("config")
@@ -6034,7 +6034,7 @@ class App:
                 break
             elif ch in (curses.KEY_F1, ord('?')):
                 self.content.show(
-                    "AI CLI v2.7.3 — GUI v5.2  Keyboard & Mouse Guide\n"
+                    "AI CLI v2.9.0 — GUI v7  Keyboard & Mouse Guide\n"
                     "═" * 46 + "\n"
                     "\nGlobal:\n"
                     "  Ctrl+Q          Quit\n"
@@ -6077,7 +6077,7 @@ class App:
                     "  Load            Install from .aipack file\n"
                     "  Locate          List all + file paths\n"
                     "  Firefox Ext     Install LLM sidebar in Firefox\n",
-                    "Help — GUI v5.2"
+                    "Help — GUI v7"
                 )
                 self.focus = "content"
                 continue
@@ -6208,7 +6208,7 @@ _gui_fallback() {
 }
 
 # ════════════════════════════════════════════════════════════════════════════════
-#  GUI+ v2 — Advanced tkinter GUI (2.1× size, tabbed, modern)
+#  GUI+ v3 — Advanced tkinter GUI (2.1× size, tabbed, modern)
 # ════════════════════════════════════════════════════════════════════════════════
 #  Requires: python3-tk  (sudo apt install python3-tk / pacman -S tk)
 #  Falls back to enhanced curses GUI+ if tkinter unavailable
@@ -6329,7 +6329,7 @@ class ChatTab(tk.Frame):
         StyledButton(right, text="/agent", command=lambda: self._quick("/agent ")).pack(fill="x",pady=2)
         tk.Label(self, text="Enter=send  Shift+Enter=newline  /web /agent /model /clear /help /quit",
             bg=P["bg"], fg=P["dim"], font=("Segoe UI",8)).pack(pady=(0,4))
-        self._add("sys","Welcome to AI CLI v2.7.4 — GUI+ v2  (type /help for commands)")
+        self._add("sys","Welcome to AI CLI v2.9.0 — GUI+ v3  (type /help for commands)")
         threading.Thread(target=self._load_model, daemon=True).start()
     def _add(self, role, text):
         self.chat.config(state="normal")
@@ -6519,7 +6519,7 @@ class NodeTab(tk.Frame):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("AI CLI v2.7.4 — GUI+ v2")
+        self.title("AI CLI v2.9.0 — GUI+ v3")
         self.configure(bg=P["bg"])
         self.geometry("1280x820"); self.minsize(900,600)
         self._setup_style(); self._build_menu(); self._build_tabs(); self._build_statusbar()
@@ -6557,22 +6557,22 @@ class App(tk.Tk):
                           ("🧩 Nodes",NodeTab),("🔌 Extensions",ExtensionsTab),("📊 Status",StatusTab)]:
             frame=Cls(nb); nb.add(frame,text=f"  {label}  ")
     def _build_statusbar(self):
-        self.status_var=tk.StringVar(value="AI CLI v2.7.4 — GUI+ v2 ready")
+        self.status_var=tk.StringVar(value="AI CLI v2.9.0 — GUI+ v3 ready")
         tk.Label(self,textvariable=self.status_var,bg=P["panel"],fg=P["dim"],
             font=("Segoe UI",8),anchor="w",padx=8,pady=3).pack(fill="x",side="bottom")
     def _bg_status(self):
         out=run_ai("status",timeout=10); short=(out.splitlines()[0][:80] if out else "")
         self.status_var.set(f"AI CLI v2.7.4 — {short}")
     def _about(self):
-        messagebox.showinfo("About GUI+ v2",
-            "AI CLI v2.7.4 — GUI+ v2\n\n2.1× advanced tkinter GUI\n"
+        messagebox.showinfo("About GUI+ v3",
+            "AI CLI v2.9.0 — GUI+ v3\n\n2.1× advanced tkinter GUI\n"
             "Tabs: Chat · Models · Settings · Nodes · Extensions · Status\n\n"
-            "New in v2.7.4:\n  • GUI+ v2 (tkinter)\n  • AI Node Editor (125+ nodes)\n"
+            "New in v2.7.4:\n  • GUI+ v3 (tkinter)\n  • AI Node Editor (125+ nodes)\n"
             "  • Detailed help: ai -h <command>\n\nRun 'ai help' for full reference.")
 
 App().mainloop()
 GUIPLUSEOF
-  info "Launching GUI+ v2 (tkinter, 2.1× size)…"
+  info "Launching GUI+ v3 (tkinter, 2.1× size)…"
   "$PYTHON" "$script" "$cli_bin" "$theme" "$cfg_dir"
   local rc=$?
   rm -f "$script"
@@ -6612,7 +6612,7 @@ class App:
         self.s.erase(); H,W=self.s.getmaxyx(); sw=max(26,W//4); cw=W-sw-2
         try:
             self.s.addstr(0,0,"─"*W,curses.color_pair(1)|curses.A_BOLD)
-            hdr=" AI CLI v2.7.4 — GUI+ v2 "; self.s.addstr(0,max(0,(W-len(hdr))//2),hdr,curses.color_pair(3)|curses.A_BOLD)
+            hdr=" AI CLI v2.9.0 — GUI+ v3 "; self.s.addstr(0,max(0,(W-len(hdr))//2),hdr,curses.color_pair(3)|curses.A_BOLD)
             for i,(label,_) in enumerate(MENU):
                 r=1+i
                 if r>=H-1: break
@@ -7389,7 +7389,7 @@ dispatch_ask() {
     echo "  ai keys set ANTHROPIC_API_KEY sk-ant-... (Claude)"
     echo "  ai keys set GEMINI_API_KEY AIza...       (Gemini)"
     echo "  ai download 1                             (tiny local model, any CPU)"
-    echo "  ai recommended                            (browse 28 curated models)"
+    echo "  ai recommended                            (browse 195 curated models)"
     return 1
   fi
 
@@ -8121,7 +8121,7 @@ dispatch_ask() {
     echo "  ai keys set ANTHROPIC_API_KEY sk-ant-... (Claude)"
     echo "  ai keys set GEMINI_API_KEY AIza...       (Gemini)"
     echo "  ai download 1                             (tiny local model, any CPU)"
-    echo "  ai recommended                            (browse 28 curated models)"
+    echo "  ai recommended                            (browse 195 curated models)"
     return 1
   fi
 
@@ -8722,7 +8722,7 @@ cmd_chat_interactive() {
   done
 }
 cmd_list_models() {
-  hdr "Downloaded Models (v2.7.3)"
+  hdr "Downloaded Models"
   local found=0
 
   # Helper: find recommended entry number for a model file/dir
@@ -13262,7 +13262,7 @@ show_help() {
   echo -e "${C1}┌─ QUICK START ────────────────────────────────────────────────────┐${R_}"
   echo -e "${C2}│${R_}  ai ask \"<question>\"            Ask anything"
   echo -e "${C2}│${R_}  ai -gui                         Launch TUI (mouse + keyboard)"
-  echo -e "${C2}│${R_}  ai gui+                         Launch GUI+ v2 (2.1x tkinter)"
+  echo -e "${C2}│${R_}  ai gui+                         Launch GUI+ v3 (2.1x tkinter)"
   echo -e "${C2}│${R_}  ai node new                     Open AI Node Editor (125+ nodes)"
   echo -e "${C2}│${R_}  ai -h <command>                 Detailed help for any command"
   echo -e "${C2}│${R_}  ai -aup                         Update to latest version"
@@ -13423,7 +13423,7 @@ show_help() {
 
   echo -e "${C1}┌─ GUI / GUI+ / NODE EDITOR ───────────────────────────────────────┐${R_}"
   echo -e "${C2}│${R_}  ai gui  / ai -gui                  Launch GUI v6 (TUI, terminal)"
-  echo -e "${C2}│${R_}  ai gui+ / ai -gui+                 Launch GUI+ v2 (2.1x tkinter, real window)"
+  echo -e "${C2}│${R_}  ai gui+ / ai -gui+                 Launch GUI+ v3 (2.1x tkinter, real window)"
   echo -e "${C2}│${R_}    Requires: sudo apt install python3-tk"
   echo -e "${C2}│${R_}    Tabs: Chat · Models · Settings · Nodes · Extensions · Status"
   echo -e "${C2}│${R_}  ai node new                        Open AI Node Editor (125+ nodes)"
@@ -13433,7 +13433,7 @@ show_help() {
   echo -e "${C2}│${R_}  ai node config                     View/edit node editor config"
   echo -e "${C2}│${R_}  Themes: dark  light  hacker  dracula  nord"
   echo -e "${C2}│${R_}  ai config gui_theme <theme>        Set default theme"
-  echo -e "${C2}│${R_}  ${B}v2.7.4 new:${R_}  GUI+ v2 · Node Editor · 125+ nodes · -h <cmd>"
+  echo -e "${C2}│${R_}  ${B}v2.7.4 new:${R_}  GUI+ v3 · Node Editor · 125+ nodes · -h <cmd>"
   echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
   echo ""
 
@@ -15537,7 +15537,7 @@ HELPEOF
     ;;
     gui+|guiplus)
 cat << 'HELPEOF'
-  ai gui+                     Launch GUI+ v2: advanced tkinter GUI (2.1x size)
+  ai gui+                     Launch GUI+ v3: advanced tkinter GUI (2.1x size)
   ai -gui+                    Same as 'ai gui+'
 
   Requires: python3-tk  (sudo apt install python3-tk)
