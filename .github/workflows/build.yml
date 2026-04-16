@@ -342,13 +342,11 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: macos-12
-            arch: x86_64
+          - arch: x86_64
             label: Intel
-          - runner: macos-14
-            arch: arm64
+          - arch: arm64
             label: AppleSilicon
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
