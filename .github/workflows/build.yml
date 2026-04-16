@@ -309,15 +309,35 @@ jobs:
       - uses: actions/checkout@v4
       - name: Compile
         run: |
-          g++ -std=c++17 -O2 -o ai-cli-installer installers/install.cpp
-          echo "C++ installer compiled successfully"
-          ls -lh ai-cli-installer
+          g++ -std=c++17 -O2 -o ai-cli-installer-linux-x86_64 installers/install.cpp
+          chmod +x ai-cli-installer-linux-x86_64
+          ls -lh ai-cli-installer-linux-x86_64
 
       - name: Upload compiled installer
         uses: actions/upload-artifact@v4
         with:
           name: ai-cli-cpp-installer
-          path: ai-cli-installer
+          path: ai-cli-installer-linux-x86_64
+          retention-days: 30
+
+  build-sh-installer:
+    name: Package sh Installer
+    needs: lint
+    runs-on: ubuntu-22.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package
+        run: |
+          VER="${{ needs.lint.outputs.version }}"
+          cp installers/install.sh "ai-cli-${VER}-install.sh"
+          chmod +x "ai-cli-${VER}-install.sh"
+
+      - name: Upload sh installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-cli-sh-installer
+          path: ai-cli-*-install.sh
           retention-days: 30
 
   # ── 6. Validate RPM spec ───────────────────────────────────────────
@@ -603,7 +623,7 @@ jobs:
   # ── 9. Release (runs after all builds, only on tags) ───────────────
   release:
     name: Create GitHub Release
-    needs: [lint, build-deb, build-pacman, build-pacstall, build-cpp-installer, build-rpm, build-dmg, build-windows]
+    needs: [lint, build-deb, build-pacman, build-pacstall, build-cpp-installer, build-sh-installer, build-rpm, build-dmg, build-windows]
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
     timeout-minutes: 10
