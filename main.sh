@@ -7051,6 +7051,81 @@ elif isinstance(d,dict): print(d.get('generated_text',str(d)),end='')
 " 2>/dev/null
 }
 
+ask_groq() {
+  local prompt="$1"
+  [[ -z "${GROQ_API_KEY:-}" ]] && { err "GROQ_API_KEY not set. Run: ai keys set GROQ_API_KEY gsk_..."; return 1; }
+  local model="${ACTIVE_MODEL:-llama-3.3-70b-versatile}"
+  local sys_prompt; sys_prompt=$(_get_effective_system)
+  ASKAPI_PROMPT="$prompt" ASKAPI_SYS="$sys_prompt" ASKAPI_MODEL="$model" \
+  ASKAPI_MAX="$MAX_TOKENS" ASKAPI_TEMP="$TEMPERATURE" \
+  ASKAPI_URL="https://api.groq.com/openai/v1/chat/completions" \
+  ASKAPI_KEY="$GROQ_API_KEY" "$PYTHON" -c '
+import os,json,sys,urllib.request
+body=json.dumps({"model":os.environ["ASKAPI_MODEL"],"max_tokens":int(os.environ["ASKAPI_MAX"]),
+  "temperature":float(os.environ["ASKAPI_TEMP"]),
+  "messages":[{"role":"system","content":os.environ["ASKAPI_SYS"]},
+              {"role":"user","content":os.environ["ASKAPI_PROMPT"]}]})
+req=urllib.request.Request(os.environ["ASKAPI_URL"],data=body.encode(),
+  headers={"Authorization":"Bearer "+os.environ["ASKAPI_KEY"],"Content-Type":"application/json"})
+try:
+  with urllib.request.urlopen(req,timeout=60) as r:
+    d=json.loads(r.read())
+    print(d["choices"][0]["message"]["content"],end="",flush=True)
+except Exception as e:
+  print(f"Groq error: {e}",file=sys.stderr)
+' 2>/dev/null
+}
+
+
+ask_mistral() {
+  local prompt="$1"
+  [[ -z "${MISTRAL_API_KEY:-}" ]] && { err "MISTRAL_API_KEY not set"; return 1; }
+  local model="${ACTIVE_MODEL:-mistral-small-latest}"
+  local sys_prompt; sys_prompt=$(_get_effective_system)
+  ASKAPI_PROMPT="$prompt" ASKAPI_SYS="$sys_prompt" ASKAPI_MODEL="$model" \
+  ASKAPI_MAX="$MAX_TOKENS" ASKAPI_TEMP="$TEMPERATURE" \
+  ASKAPI_URL="https://api.mistral.ai/v1/chat/completions" \
+  ASKAPI_KEY="$MISTRAL_API_KEY" "$PYTHON" -c '
+import os,json,sys,urllib.request
+body=json.dumps({"model":os.environ["ASKAPI_MODEL"],"max_tokens":int(os.environ["ASKAPI_MAX"]),
+  "temperature":float(os.environ["ASKAPI_TEMP"]),
+  "messages":[{"role":"system","content":os.environ["ASKAPI_SYS"]},
+              {"role":"user","content":os.environ["ASKAPI_PROMPT"]}]})
+req=urllib.request.Request(os.environ["ASKAPI_URL"],data=body.encode(),
+  headers={"Authorization":"Bearer "+os.environ["ASKAPI_KEY"],"Content-Type":"application/json"})
+try:
+  with urllib.request.urlopen(req,timeout=60) as r:
+    d=json.loads(r.read())
+    print(d["choices"][0]["message"]["content"],end="",flush=True)
+except Exception as e:
+  print(f"Mistral error: {e}",file=sys.stderr)
+' 2>/dev/null
+}
+
+ask_together() {
+  local prompt="$1"
+  [[ -z "${TOGETHER_API_KEY:-}" ]] && { err "TOGETHER_API_KEY not set"; return 1; }
+  local model="${ACTIVE_MODEL:-meta-llama/Llama-3.3-70B-Instruct-Turbo}"
+  local sys_prompt; sys_prompt=$(_get_effective_system)
+  ASKAPI_PROMPT="$prompt" ASKAPI_SYS="$sys_prompt" ASKAPI_MODEL="$model" \
+  ASKAPI_MAX="$MAX_TOKENS" ASKAPI_TEMP="$TEMPERATURE" \
+  ASKAPI_URL="https://api.together.xyz/v1/chat/completions" \
+  ASKAPI_KEY="$TOGETHER_API_KEY" "$PYTHON" -c '
+import os,json,sys,urllib.request
+body=json.dumps({"model":os.environ["ASKAPI_MODEL"],"max_tokens":int(os.environ["ASKAPI_MAX"]),
+  "temperature":float(os.environ["ASKAPI_TEMP"]),
+  "messages":[{"role":"system","content":os.environ["ASKAPI_SYS"]},
+              {"role":"user","content":os.environ["ASKAPI_PROMPT"]}]})
+req=urllib.request.Request(os.environ["ASKAPI_URL"],data=body.encode(),
+  headers={"Authorization":"Bearer "+os.environ["ASKAPI_KEY"],"Content-Type":"application/json"})
+try:
+  with urllib.request.urlopen(req,timeout=60) as r:
+    d=json.loads(r.read())
+    print(d["choices"][0]["message"]["content"],end="",flush=True)
+except Exception as e:
+  print(f"Together error: {e}",file=sys.stderr)
+' 2>/dev/null
+}
 _auto_detect_backend() {
   local model="${ACTIVE_MODEL:-}"
   [[ -z "$model" ]] && {
@@ -7059,24 +7134,25 @@ _auto_detect_backend() {
     [[ -n "${GEMINI_API_KEY:-}" ]] && { echo "gemini"; return; }
     echo ""; return
   }
-  [[ "$model" == gpt-* || "$model" == o1* || "$model" == o3* ]] && { echo "openai"; return; }
+  [[ "$model" == gpt-* || "$model" == o1* || "$model" == o3* || "$model" == chatgpt-* ]] && { echo "openai"; return; }
   [[ "$model" == claude-* ]] && { echo "claude"; return; }
   [[ "$model" == gemini-* ]] && { echo "gemini"; return; }
-  # gguf detection — all conditions in a single bracket to avoid || short-circuit bug
+  [[ "$model" == llama-* || "$model" == mixtral-* ]] && [[ -n "${GROQ_API_KEY:-}" ]] && { echo "groq"; return; }
+  [[ "$model" == mistral-* || "$model" == codestral-* || "$model" == pixtral-* ]] && { echo "mistral"; return; }
+  [[ "$model" == meta-llama/* || "$model" == *Turbo ]] && [[ -n "${TOGETHER_API_KEY:-}" ]] && { echo "together"; return; }
   if [[ "$model" == *.gguf || "$model" == *Q4_K* || "$model" == *Q5_K* || \
         "$model" == *Q8_0* || "$model" == *Q4_0* || "$model" == *IQ4* ]]; then
     echo "gguf"; return
   fi
-  [[ -f "$model" ]] && { echo "gguf"; return; }          # any local file → gguf
+  [[ -f "$model" ]] && { echo "gguf"; return; }
   [[ -d "$model" && -f "$model/config.json" ]] && { echo "pytorch"; return; }
-  # HuggingFace repo id (org/name format, no local path)
-  if [[ "$model" == */* && ! -d "$model" ]]; then
-    echo "hf"; return
-  fi
-  # Fallback: if API key available use it
+  if [[ "$model" == */* && ! -d "$model" ]]; then echo "hf"; return; fi
   [[ -n "${OPENAI_API_KEY:-}" ]] && { echo "openai"; return; }
   [[ -n "${ANTHROPIC_API_KEY:-}" ]] && { echo "claude"; return; }
   [[ -n "${GEMINI_API_KEY:-}" ]] && { echo "gemini"; return; }
+  [[ -n "${GROQ_API_KEY:-}" ]] && { echo "groq"; return; }
+  [[ -n "${MISTRAL_API_KEY:-}" ]] && { echo "mistral"; return; }
+  [[ -n "${TOGETHER_API_KEY:-}" ]] && { echo "together"; return; }
   echo "gguf"
 }
 
@@ -7126,11 +7202,14 @@ dispatch_ask() {
 
   local response="" rc=0
   case "$backend" in
-    gguf)      response=$(ask_gguf "$enriched_prompt");   rc=$? ;;
+    gguf)      response=$(ask_gguf "$enriched_prompt");     rc=$? ;;
     pytorch)   response=$(ask_pytorch "$enriched_prompt"); rc=$? ;;
     openai)    response=$(ask_openai "$enriched_prompt");  rc=$? ;;
     claude)    response=$(ask_claude "$enriched_prompt");  rc=$? ;;
     gemini)    response=$(ask_gemini "$enriched_prompt");  rc=$? ;;
+    groq)      response=$(ask_groq "$enriched_prompt");    rc=$? ;;
+    mistral)   response=$(ask_mistral "$enriched_prompt"); rc=$? ;;
+    together)  response=$(ask_together "$enriched_prompt"); rc=$? ;;
     hf)        response=$(ask_hf "$enriched_prompt");      rc=$? ;;
     diffusers)
       cmd_imagine "$enriched_prompt"
@@ -7787,24 +7866,25 @@ _auto_detect_backend() {
     [[ -n "${GEMINI_API_KEY:-}" ]] && { echo "gemini"; return; }
     echo ""; return
   }
-  [[ "$model" == gpt-* || "$model" == o1* || "$model" == o3* ]] && { echo "openai"; return; }
+  [[ "$model" == gpt-* || "$model" == o1* || "$model" == o3* || "$model" == chatgpt-* ]] && { echo "openai"; return; }
   [[ "$model" == claude-* ]] && { echo "claude"; return; }
   [[ "$model" == gemini-* ]] && { echo "gemini"; return; }
-  # gguf detection — all conditions in a single bracket to avoid || short-circuit bug
+  [[ "$model" == llama-* || "$model" == mixtral-* ]] && [[ -n "${GROQ_API_KEY:-}" ]] && { echo "groq"; return; }
+  [[ "$model" == mistral-* || "$model" == codestral-* || "$model" == pixtral-* ]] && { echo "mistral"; return; }
+  [[ "$model" == meta-llama/* || "$model" == *Turbo ]] && [[ -n "${TOGETHER_API_KEY:-}" ]] && { echo "together"; return; }
   if [[ "$model" == *.gguf || "$model" == *Q4_K* || "$model" == *Q5_K* || \
         "$model" == *Q8_0* || "$model" == *Q4_0* || "$model" == *IQ4* ]]; then
     echo "gguf"; return
   fi
-  [[ -f "$model" ]] && { echo "gguf"; return; }          # any local file → gguf
+  [[ -f "$model" ]] && { echo "gguf"; return; }
   [[ -d "$model" && -f "$model/config.json" ]] && { echo "pytorch"; return; }
-  # HuggingFace repo id (org/name format, no local path)
-  if [[ "$model" == */* && ! -d "$model" ]]; then
-    echo "hf"; return
-  fi
-  # Fallback: if API key available use it
+  if [[ "$model" == */* && ! -d "$model" ]]; then echo "hf"; return; fi
   [[ -n "${OPENAI_API_KEY:-}" ]] && { echo "openai"; return; }
   [[ -n "${ANTHROPIC_API_KEY:-}" ]] && { echo "claude"; return; }
   [[ -n "${GEMINI_API_KEY:-}" ]] && { echo "gemini"; return; }
+  [[ -n "${GROQ_API_KEY:-}" ]] && { echo "groq"; return; }
+  [[ -n "${MISTRAL_API_KEY:-}" ]] && { echo "mistral"; return; }
+  [[ -n "${TOGETHER_API_KEY:-}" ]] && { echo "together"; return; }
   echo "gguf"
 }
 
@@ -7854,11 +7934,14 @@ dispatch_ask() {
 
   local response="" rc=0
   case "$backend" in
-    gguf)      response=$(ask_gguf "$enriched_prompt");   rc=$? ;;
+    gguf)      response=$(ask_gguf "$enriched_prompt");     rc=$? ;;
     pytorch)   response=$(ask_pytorch "$enriched_prompt"); rc=$? ;;
     openai)    response=$(ask_openai "$enriched_prompt");  rc=$? ;;
     claude)    response=$(ask_claude "$enriched_prompt");  rc=$? ;;
     gemini)    response=$(ask_gemini "$enriched_prompt");  rc=$? ;;
+    groq)      response=$(ask_groq "$enriched_prompt");    rc=$? ;;
+    mistral)   response=$(ask_mistral "$enriched_prompt"); rc=$? ;;
+    together)  response=$(ask_together "$enriched_prompt"); rc=$? ;;
     hf)        response=$(ask_hf "$enriched_prompt");      rc=$? ;;
     diffusers)
       cmd_imagine "$enriched_prompt"
