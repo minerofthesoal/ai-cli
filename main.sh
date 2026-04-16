@@ -8561,39 +8561,143 @@ cmd_imagine() {
 
 cmd_chat_interactive() {
   local chat_name="${CURRENT_CHAT_NAME:-}"
-  hdr "AI Chat — Session: $ACTIVE_SESSION"
+  hdr "AI Chat v2.9 — Session: $ACTIVE_SESSION"
+  info "Backend: ${ACTIVE_BACKEND:-auto} | Model: ${ACTIVE_MODEL:-auto-detect}"
   [[ -n "$chat_name" ]] && info "Chat log: $CURRENT_CHAT_FILE"
-  echo "  Commands: /quit /clear /session <n> /persona <n> /model <m>"
+  echo ""
+  echo -e "  ${DIM}Commands: /quit /clear /undo /retry /model <m> /persona <n>${R}"
+  echo -e "  ${DIM}          /session <n> /save /export /system <prompt>${R}"
+  echo -e "  ${DIM}          /tokens /cost /context /multiline /help${R}"
   echo ""
 
+  local last_prompt="" last_response="" multiline=0
+  local msg_count=0
+
   while true; do
-    printf "${BCYAN}${B}You: ${R}"
-    local input; read -r input || break
-    [[ -z "$input" ]] && continue
+    local input=""
+    if [[ $multiline -eq 1 ]]; then
+      printf "${BCYAN}${B}You (multi): ${R}${DIM}(empty line to send)${R}\n"
+      local lines=""
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && break
+        lines+="$line"$'\n'
+      done
+      input="${lines%$'\n'}"
+      [[ -z "$input" ]] && continue
+    else
+      printf "${BCYAN}${B}You: ${R}"
+      read -r input || break
+      [[ -z "$input" ]] && continue
+    fi
 
     case "$input" in
-      /quit|/exit|/q) break ;;
+      /quit|/exit|/q) echo ""; info "Chat ended ($msg_count messages)"; break ;;
       /clear)
         echo "[]" > "$SESSIONS_DIR/${ACTIVE_SESSION}.json"
-        info "History cleared"
-        ;;
-      /session*)
-        local n="${input#/session }"; ACTIVE_SESSION="$n"; save_config; info "Session: $n"
-        ;;
-      /persona*)
-        local n="${input#/persona }"; ACTIVE_PERSONA="$n"; save_config; info "Persona: $n"
-        ;;
+        msg_count=0; info "History cleared" ;;
+      /undo)
+        if [[ -n "$last_prompt" ]]; then
+          info "Removed last exchange"
+          last_prompt="" ; last_response=""
+        else
+          warn "Nothing to undo"
+        fi ;;
+      /retry)
+        if [[ -n "$last_prompt" ]]; then
+          info "Retrying: ${last_prompt:0:60}..."
+          printf "${BGREEN}${B}AI: ${R}"
+          last_response=$(dispatch_ask "$last_prompt")
+          echo "$last_response"; echo ""
+        else
+          warn "No previous prompt to retry"
+        fi ;;
       /model*)
-        local m="${input#/model }"; ACTIVE_MODEL="$m"; save_config; info "Model: $m"
-        ;;
+        local m="${input#/model }"; m="${m# }"
+        if [[ -n "$m" && "$m" != "/model" ]]; then
+          ACTIVE_MODEL="$m"; save_config; ok "Model: $m"
+        else
+          info "Current model: ${ACTIVE_MODEL:-auto-detect}"
+        fi ;;
+      /persona*)
+        local n="${input#/persona }"; n="${n# }"
+        if [[ -n "$n" && "$n" != "/persona" ]]; then
+          ACTIVE_PERSONA="$n"; save_config; ok "Persona: $n"
+        else
+          info "Current persona: ${ACTIVE_PERSONA:-default}"
+          info "Available: ${!BUILTIN_PERSONAS[*]}"
+        fi ;;
+      /session*)
+        local n="${input#/session }"; n="${n# }"
+        if [[ -n "$n" && "$n" != "/session" ]]; then
+          ACTIVE_SESSION="$n"; save_config; ok "Session: $n"
+        else
+          info "Current session: $ACTIVE_SESSION"
+        fi ;;
       /save)
-        info "Chat saved: $CURRENT_CHAT_FILE"
+        info "Session: $SESSIONS_DIR/${ACTIVE_SESSION}.json"
+        [[ -n "$CURRENT_CHAT_FILE" ]] && info "Chat: $CURRENT_CHAT_FILE" ;;
+      /export)
+        local out="$EXPORTS_DIR/chat_$(date +%Y%m%d_%H%M%S).md"
+        mkdir -p "$EXPORTS_DIR"
+        {
+          echo "# Chat Export — $(date -Iseconds)"
+          echo "Session: $ACTIVE_SESSION"
+          echo ""
+        } > "$out"
+        [[ -f "$SESSIONS_DIR/${ACTIVE_SESSION}.json" ]] && cat "$SESSIONS_DIR/${ACTIVE_SESSION}.json" >> "$out"
+        ok "Exported: $out" ;;
+      /system*)
+        local sp="${input#/system }"; sp="${sp# }"
+        if [[ -n "$sp" && "$sp" != "/system" ]]; then
+          CUSTOM_SYSTEM_PROMPT="$sp"; save_config
+          ok "System prompt set"
+        else
+          info "Current: $(_get_effective_system | head -c 80)..."
+        fi ;;
+      /tokens)
+        cmd_count_tokens "$last_prompt" 2>/dev/null || info "No previous message" ;;
+      /cost)
+        cmd_cost 500 "${MAX_TOKENS}" 2>/dev/null ;;
+      /context)
+        cmd_context status 2>/dev/null ;;
+      /multiline)
+        multiline=$(( 1 - multiline ))
+        if [[ $multiline -eq 1 ]]; then ok "Multiline ON (empty line sends)"
+        else ok "Multiline OFF"; fi ;;
+      /temp*)
+        local t="${input#/temp }"; t="${t# }"
+        if [[ -n "$t" && "$t" != "/temp" ]]; then
+          TEMPERATURE="$t"; save_config; ok "Temperature: $t"
+        else
+          info "Current temperature: $TEMPERATURE"
+        fi ;;
+      /help|/h)
+        echo "  /quit          Exit chat"
+        echo "  /clear         Clear history"
+        echo "  /undo          Remove last exchange"
+        echo "  /retry         Retry last prompt"
+        echo "  /model <m>     Switch model"
+        echo "  /persona <n>   Switch persona"
+        echo "  /session <n>   Switch session"
+        echo "  /system <p>    Set system prompt"
+        echo "  /save          Show save locations"
+        echo "  /export        Export chat to markdown"
+        echo "  /tokens        Count tokens in last message"
+        echo "  /cost          Show API cost estimate"
+        echo "  /context       Show context window usage"
+        echo "  /multiline     Toggle multi-line input"
+        echo "  /temp <n>      Set temperature"
         ;;
+      /*)
+        warn "Unknown command: $input (try /help)" ;;
       *)
         [[ -n "$CURRENT_CHAT_FILE" ]] && _chat_append "user" "$input"
         printf "${BGREEN}${B}AI: ${R}"
-        dispatch_ask "$input"
+        last_prompt="$input"
+        last_response=$(dispatch_ask "$input")
+        echo "$last_response"
         echo ""
+        (( msg_count++ ))
         ;;
     esac
   done
