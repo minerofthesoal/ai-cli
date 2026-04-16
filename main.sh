@@ -501,6 +501,183 @@ RECOMMENDED_MODELS=(
   [54]="gemini-2.0-flash-lite|gemini|API|Gemini 2.0 Flash Lite — cheapest Gemini"
   [55]="gemini-1.5-pro|gemini|API|Gemini 1.5 Pro — long context 2M"
   [56]="o1-mini|openai|API|OpenAI o1-mini — fast reasoning model"
+  # ── Large LLMs (13B–70B+) ─────────────────────────────────────────
+  [57]="bartowski/Qwen2.5-14B-Instruct-GGUF|gguf|14B|Qwen2.5 14B — strong mid-size"
+  [58]="bartowski/Qwen2.5-32B-Instruct-GGUF|gguf|32B|Qwen2.5 32B — top open model"
+  [59]="bartowski/Qwen2.5-72B-Instruct-GGUF|gguf|72B|Qwen2.5 72B — flagship Qwen"
+  [60]="bartowski/Mixtral-8x7B-Instruct-v0.1-GGUF|gguf|46B|Mixtral 8x7B MoE — fast 46B"
+  [61]="bartowski/Yi-1.5-34B-Chat-GGUF|gguf|34B|Yi 1.5 34B — bilingual EN/ZH"
+  [62]="bartowski/c4ai-command-r-plus-GGUF|gguf|104B|Command R+ — enterprise RAG"
+  [63]="bartowski/Llama-3.3-70B-Instruct-GGUF|gguf|70B|Llama 3.3 70B — latest Meta"
+  [64]="bartowski/gemma-2-27b-it-GGUF|gguf|27B|Gemma 2 27B — Google large"
+  [65]="bartowski/Phi-4-GGUF|gguf|14B|Phi-4 14B — Microsoft best small"
+  [66]="bartowski/Mistral-Small-24B-Instruct-2501-GGUF|gguf|24B|Mistral Small 24B"
+  # ── More Coding Models ────────────────────────────────────────────
+  [67]="bartowski/Qwen2.5-Coder-14B-Instruct-GGUF|gguf|14B|Qwen2.5 Coder 14B"
+  [68]="bartowski/Qwen2.5-Coder-32B-Instruct-GGUF|gguf|32B|Qwen2.5 Coder 32B — top coder"
+  [69]="bartowski/DeepSeek-Coder-V2-Instruct-GGUF|gguf|236B|DeepSeek Coder V2 MoE"
+  [70]="bartowski/CodeLlama-34b-Instruct-GGUF|gguf|34B|Code Llama 34B"
+  [71]="bartowski/starcoder2-15b-GGUF|gguf|15B|StarCoder2 15B — multi-lang code"
+  [72]="bartowski/stable-code-instruct-3b-GGUF|gguf|3B|Stable Code 3B — tiny coder"
+  [73]="bartowski/codegemma-7b-it-GGUF|gguf|7B|CodeGemma 7B — Google code"
+  [74]="bartowski/WizardCoder-33B-V1.1-GGUF|gguf|33B|WizardCoder 33B"
+  # ── More Reasoning / Math ─────────────────────────────────────────
+  [75]="bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF|gguf|14B|DeepSeek-R1 14B reasoning"
+  [76]="bartowski/DeepSeek-R1-Distill-Qwen-32B-GGUF|gguf|32B|DeepSeek-R1 32B reasoning"
+  [77]="bartowski/Qwen2.5-Math-72B-Instruct-GGUF|gguf|72B|Qwen2.5 Math 72B — flagship math"
+  [78]="bartowski/Qwen2.5-Math-1.5B-Instruct-GGUF|gguf|1.5B|Qwen2.5 Math 1.5B — tiny math"
+  [79]="bartowski/WizardMath-7B-V1.1-GGUF|gguf|7B|WizardMath 7B"
+  [80]="bartowski/Abel-7B-002-GGUF|gguf|7B|Abel 7B — math reasoning"
+  # ── Roleplay / Creative ──────────────────────────────────────────
+  [81]="bartowski/Nous-Hermes-2-Mixtral-8x7B-DPO-GGUF|gguf|46B|Nous Hermes 2 Mixtral"
+  [82]="bartowski/OpenHermes-2.5-Mistral-7B-GGUF|gguf|7B|OpenHermes 2.5 7B"
+  [83]="bartowski/Mythomax-L2-13B-GGUF|gguf|13B|MythoMax 13B — creative writing"
+  [84]="bartowski/dolphin-2.9.3-mistral-7B-32k-GGUF|gguf|7B|Dolphin Mistral — uncensored"
+  [85]="bartowski/Samantha-1.11-70b-GGUF|gguf|70B|Samantha 70B — empathetic AI"
+  # ── Multilingual Models ──────────────────────────────────────────
+  [86]="bartowski/aya-23-8B-GGUF|gguf|8B|Aya 23 8B — 23 languages"
+  [87]="bartowski/aya-23-35B-GGUF|gguf|35B|Aya 23 35B — 23 languages large"
+  [88]="bartowski/Llama-3.1-8B-Instruct-GGUF|gguf|8B|Llama 3.1 8B multilingual"
+  [89]="bartowski/Qwen2.5-3B-Instruct-GGUF|gguf|3B|Qwen2.5 3B — multilingual tiny"
+  [90]="bartowski/Vikhr-Nemo-12B-Instruct-R-GGUF|gguf|12B|Vikhr 12B — Russian specialist"
+  # ── Long Context Models ──────────────────────────────────────────
+  [91]="bartowski/Llama-3.1-8B-Instruct-GGUF|gguf|8B|Llama 3.1 8B — 128k context"
+  [92]="bartowski/Qwen2.5-7B-Instruct-GGUF|gguf|7B|Qwen2.5 7B — 128k context"
+  [93]="bartowski/Yi-1.5-9B-Chat-GGUF|gguf|9B|Yi 1.5 9B — 200k context"
+  [94]="bartowski/Phi-3.1-mini-128k-instruct-GGUF|gguf|3.8B|Phi 3.1 128k context"
+  # ── More Vision / VL Models ──────────────────────────────────────
+  [95]="Qwen/Qwen2.5-VL-7B-Instruct|hf|7B|Qwen2.5-VL 7B — latest vision"
+  [96]="Qwen/Qwen2.5-VL-3B-Instruct|hf|3B|Qwen2.5-VL 3B — tiny vision"
+  [97]="microsoft/Florence-2-large|hf|0.7B|Florence 2 — image understanding"
+  [98]="llava-hf/llava-onevision-qwen2-7b-ov-hf|hf|7B|LLaVA OneVision 7B"
+  [99]="vikhyatk/moondream2|hf|1.8B|Moondream2 — tiny vision model"
+  [100]="THUDM/cogvlm2-llama3-chat-19B|hf|19B|CogVLM2 19B — powerful VL"
+  # ── More Image Generation ────────────────────────────────────────
+  [101]="stabilityai/stable-diffusion-3.5-large|diffusers|SD3.5|SD 3.5 Large — newest SD"
+  [102]="playgroundai/playground-v2.5-1024px-aesthetic|diffusers|PG2.5|Playground v2.5"
+  [103]="dataautogpt3/FLUX-anime2|diffusers|FLUX-A|FLUX Anime — anime style"
+  [104]="Shakker-Labs/FLUX.1-dev-LoRA-Logo-Design|diffusers|FLUX-L|FLUX Logo Design"
+  # ── More Audio ────────────────────────────────────────────────────
+  [105]="openai/whisper-small|hf|244M|Whisper small — balanced speed/quality"
+  [106]="openai/whisper-tiny|hf|39M|Whisper tiny — fastest transcription"
+  [107]="facebook/musicgen-medium|hf|1.5B|MusicGen medium — better music"
+  [108]="facebook/musicgen-large|hf|3.3B|MusicGen large — best music"
+  [109]="parler-tts/parler-tts-mini-v1|hf|0.8B|Parler TTS mini — natural speech"
+  # ── Embedding / Reranker ─────────────────────────────────────────
+  [110]="BAAI/bge-m3|hf|568M|BGE M3 — multilingual embeddings"
+  [111]="jinaai/jina-embeddings-v3|hf|570M|Jina v3 — task-specific embeddings"
+  [112]="BAAI/bge-reranker-v2-m3|hf|568M|BGE Reranker M3 — cross-encoder"
+  [113]="Xenova/all-MiniLM-L6-v2|hf|22M|MiniLM ONNX — fastest embeddings"
+  # ── Specialized / Niche ──────────────────────────────────────────
+  [114]="bartowski/BioMistral-7B-GGUF|gguf|7B|BioMistral — medical/bio AI"
+  [115]="bartowski/Meditron-7B-GGUF|gguf|7B|Meditron — clinical medicine"
+  [116]="bartowski/LegalBert-GGUF|gguf|0.3B|LegalBERT — legal text"
+  [117]="bartowski/finance-LLM-GGUF|gguf|7B|FinanceLLM — financial analysis"
+  # ── Tiny / Edge Models ───────────────────────────────────────────
+  [118]="bartowski/TinyLlama-1.1B-Chat-v1.0-GGUF|gguf|1.1B|TinyLlama 1.1B — ultra light"
+  [119]="bartowski/Qwen2.5-0.5B-Instruct-GGUF|gguf|0.5B|Qwen2.5 0.5B — smallest chat"
+  [120]="bartowski/SmolLM2-360M-Instruct-GGUF|gguf|0.36B|SmolLM2 360M — edge device"
+  [121]="bartowski/SmolLM2-135M-Instruct-GGUF|gguf|0.13B|SmolLM2 135M — IOT/embedded"
+  # ── Instruction Tuned ────────────────────────────────────────────
+  [122]="bartowski/neural-chat-7b-v3-3-GGUF|gguf|7B|Neural Chat — Intel tuned"
+  [123]="bartowski/zephyr-7b-beta-GGUF|gguf|7B|Zephyr 7B — HuggingFace tuned"
+  [124]="bartowski/openchat-3.5-0106-GGUF|gguf|7B|OpenChat 3.5 — competitive 7B"
+  [125]="bartowski/Starling-LM-7B-alpha-GGUF|gguf|7B|Starling 7B — RLHF champion"
+  # ── More Cloud APIs ──────────────────────────────────────────────
+  [126]="o3-mini|openai|API|OpenAI o3-mini — advanced reasoning"
+  [127]="gpt-4-turbo|openai|API|GPT-4 Turbo — fast GPT-4"
+  [128]="gpt-3.5-turbo|openai|API|GPT-3.5 Turbo — cheapest OpenAI"
+  [129]="claude-sonnet-4-6|claude|API|Claude Sonnet 4.6 — latest Sonnet"
+  [130]="claude-opus-4-7|claude|API|Claude Opus 4.7 — most capable"
+  [131]="gemini-2.5-pro|gemini|API|Gemini 2.5 Pro — latest Gemini"
+  [132]="gemini-2.5-flash|gemini|API|Gemini 2.5 Flash — fast Gemini"
+  [133]="llama-3.3-70b-versatile|groq|API|Groq Llama 70B — ultra fast"
+  [134]="llama-3.1-8b-instant|groq|API|Groq Llama 8B — instant replies"
+  [135]="mixtral-8x7b-32768|groq|API|Groq Mixtral — fast MoE"
+  [136]="mistral-large-latest|mistral|API|Mistral Large — flagship"
+  [137]="mistral-small-latest|mistral|API|Mistral Small — affordable"
+  [138]="codestral-latest|mistral|API|Codestral — Mistral code"
+  [139]="meta-llama/Llama-3.3-70B-Instruct-Turbo|together|API|Together Llama 70B"
+  [140]="meta-llama/Llama-3.1-8B-Instruct-Turbo|together|API|Together Llama 8B"
+  # ── Function Calling / Tool Use ──────────────────────────────────
+  [141]="bartowski/Hermes-3-Llama-3.1-70B-GGUF|gguf|70B|Hermes 3 70B — tool calling"
+  [142]="bartowski/functionary-small-v3.2-GGUF|gguf|8B|Functionary 8B — function calling"
+  [143]="bartowski/NexusRaven-V2-13B-GGUF|gguf|13B|NexusRaven — function calling"
+  # ── Agent / Planning ─────────────────────────────────────────────
+  [144]="bartowski/Qwen2.5-7B-Instruct-GGUF|gguf|7B|Qwen2.5 7B — agentic"
+  [145]="bartowski/Llama-3.1-Storm-8B-GGUF|gguf|8B|Storm 8B — planning agent"
+  # ── RLHF / DPO Tuned ────────────────────────────────────────────
+  [146]="bartowski/tulu-2-dpo-70b-GGUF|gguf|70B|Tulu 2 DPO 70B — RLHF aligned"
+  [147]="bartowski/Nous-Hermes-2-SOLAR-10.7B-GGUF|gguf|10.7B|Hermes SOLAR — DPO tuned"
+  # ── Uncensored / Unfiltered ──────────────────────────────────────
+  [148]="bartowski/dolphin-2.9.3-llama-3.1-8B-GGUF|gguf|8B|Dolphin Llama 8B"
+  [149]="bartowski/Midnight-Miqu-70B-v1.5-GGUF|gguf|70B|Midnight Miqu 70B"
+  # ── Japanese / CJK ──────────────────────────────────────────────
+  [150]="bartowski/Llama-3-ELYZA-JP-8B-GGUF|gguf|8B|ELYZA 8B — Japanese"
+  [151]="bartowski/Japanese-Starling-ChatV-7B-GGUF|gguf|7B|Starling JP — Japanese chat"
+  # ── Science / Research ───────────────────────────────────────────
+  [152]="bartowski/SciGLM-6B-GGUF|gguf|6B|SciGLM — science QA"
+  [153]="bartowski/ChemLLM-7B-Chat-GGUF|gguf|7B|ChemLLM — chemistry"
+  # ── Text Classification / NLU ────────────────────────────────────
+  [154]="MoritzLaurer/deberta-v3-large-zeroshot-v2.0|hf|0.4B|DeBERTa — zero-shot classify"
+  [155]="facebook/bart-large-mnli|hf|0.4B|BART MNLI — NLI classifier"
+  # ── Summarization ────────────────────────────────────────────────
+  [156]="facebook/bart-large-cnn|hf|0.4B|BART CNN — summarization"
+  [157]="google/pegasus-xsum|hf|0.5B|Pegasus — abstractive summary"
+  # ── Translation ──────────────────────────────────────────────────
+  [158]="facebook/nllb-200-distilled-600M|hf|0.6B|NLLB-200 — 200 languages"
+  [159]="Helsinki-NLP/opus-mt-en-fr|hf|0.3B|OPUS EN→FR translation"
+  [160]="Helsinki-NLP/opus-mt-en-de|hf|0.3B|OPUS EN→DE translation"
+  [161]="Helsinki-NLP/opus-mt-en-es|hf|0.3B|OPUS EN→ES translation"
+  [162]="Helsinki-NLP/opus-mt-en-zh|hf|0.3B|OPUS EN→ZH translation"
+  # ── Sentiment / Emotion ──────────────────────────────────────────
+  [163]="cardiffnlp/twitter-roberta-base-sentiment-latest|hf|0.1B|Twitter Sentiment"
+  [164]="SamLowe/roberta-base-go_emotions|hf|0.1B|GoEmotions — 28 emotions"
+  # ── Named Entity Recognition ─────────────────────────────────────
+  [165]="dslim/bert-base-NER|hf|0.1B|BERT NER — entity extraction"
+  [166]="Jean-Baptiste/camembert-ner|hf|0.1B|CamemBERT NER — French NER"
+  # ── Q&A / Reading Comprehension ──────────────────────────────────
+  [167]="deepset/roberta-base-squad2|hf|0.1B|RoBERTa SQuAD2 — extractive QA"
+  [168]="Intel/dynamic_tinybert|hf|0.06B|TinyBERT — fast QA"
+  # ── OCR / Document ───────────────────────────────────────────────
+  [169]="microsoft/trocr-base-printed|hf|0.3B|TrOCR — printed text OCR"
+  [170]="microsoft/trocr-base-handwritten|hf|0.3B|TrOCR — handwriting OCR"
+  [171]="microsoft/layoutlmv3-base|hf|0.1B|LayoutLMv3 — document AI"
+  # ── Object Detection / Segmentation ──────────────────────────────
+  [172]="facebook/detr-resnet-50|hf|41M|DETR — object detection"
+  [173]="facebook/sam-vit-base|hf|0.3B|SAM — segment anything"
+  [174]="google/owlvit-base-patch32|hf|0.15B|OWL-ViT — open vocab detection"
+  # ── Image Classification ─────────────────────────────────────────
+  [175]="google/vit-base-patch16-224|hf|86M|ViT — image classification"
+  [176]="microsoft/resnet-50|hf|25M|ResNet-50 — classic image classifier"
+  # ── Depth Estimation ─────────────────────────────────────────────
+  [177]="Intel/dpt-large|hf|0.3B|DPT — monocular depth estimation"
+  [178]="LiheYoung/depth-anything-base-hf|hf|97M|Depth Anything — relative depth"
+  # ── Video Models ─────────────────────────────────────────────────
+  [179]="MCG-NJU/videomae-base|hf|86M|VideoMAE — video understanding"
+  # ── Text-to-Speech Extended ──────────────────────────────────────
+  [180]="microsoft/speecht5_tts|hf|0.3B|SpeechT5 — fast TTS"
+  [181]="facebook/mms-tts-eng|hf|0.3B|MMS TTS English — Meta speech"
+  # ── More GGUF Small Models ───────────────────────────────────────
+  [182]="bartowski/Llama-3.2-1B-Instruct-GGUF|gguf|1B|Llama 3.2 1B — Meta tiny"
+  [183]="bartowski/internlm2_5-1_8b-chat-GGUF|gguf|1.8B|InternLM2.5 1.8B"
+  [184]="bartowski/stablelm-zephyr-3b-GGUF|gguf|3B|StableLM Zephyr 3B"
+  [185]="bartowski/rocket-3B-GGUF|gguf|3B|Rocket 3B — ultra fast"
+  [186]="bartowski/H2O-Danube3-500M-Chat-GGUF|gguf|0.5B|H2O Danube 500M — edge"
+  # ── Mixture of Experts ───────────────────────────────────────────
+  [187]="bartowski/Mixtral-8x22B-Instruct-v0.1-GGUF|gguf|141B|Mixtral 8x22B — massive MoE"
+  [188]="bartowski/DeepSeek-V2-Lite-Chat-GGUF|gguf|16B|DeepSeek V2 Lite MoE"
+  [189]="bartowski/DBRX-Instruct-GGUF|gguf|132B|DBRX — Databricks MoE"
+  # ── Safety / Moderation ──────────────────────────────────────────
+  [190]="meta-llama/Llama-Guard-3-8B|hf|8B|Llama Guard 3 — content safety"
+  [191]="meta-llama/Prompt-Guard-86M|hf|86M|Prompt Guard — injection detection"
+  # ── Reward Models ────────────────────────────────────────────────
+  [192]="OpenAssistant/reward-model-deberta-v3-large-v2|hf|0.4B|OA Reward Model"
+  # ── Code Completion ──────────────────────────────────────────────
+  [193]="bigcode/starcoder2-3b|hf|3B|StarCoder2 3B — code completion"
+  [194]="Qwen/CodeQwen1.5-7B|hf|7B|CodeQwen 1.5 — code gen"
+  # ── Newest 2025 Models ───────────────────────────────────────────
+  [195]="bartowski/Qwen3-8B-GGUF|gguf|8B|Qwen3 8B — latest Qwen generation"
 )
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -4776,7 +4953,7 @@ cmd_gui() {
 
   cat > "$gui_script" << 'GUIEOF'
 #!/usr/bin/env python3
-"""AI CLI v2.7.3 — GUI v5.2: split-pane, structured settings editor, extensions, aliases"""
+"""AI CLI v2.9.0 — GUI v7: split-pane, structured settings editor, extensions, aliases, v2.9 features"""
 import sys, os, curses, subprocess, threading, time, textwrap, json, glob, shutil
 
 CLI      = sys.argv[1] if len(sys.argv) > 1 else "ai"
@@ -5134,7 +5311,7 @@ class Sidebar:
 class ContentPanel:
     """Right-side content pane: output pager + edit mode."""
     def __init__(self):
-        self.lines   = ["Welcome to AI CLI v2.7.3 — GUI v5.2",
+        self.lines   = ["Welcome to AI CLI v2.9.0 — GUI v7",
                         "─" * 40,
                         "Use the sidebar to navigate.",
                         "Enter or click an item to activate it.",
@@ -5150,7 +5327,7 @@ class ContentPanel:
                         "  /           Quick search",
                         ]
         self.scroll = 0
-        self.title  = "AI CLI v2.7.3 GUI v5.2"
+        self.title  = "AI CLI v2.7.3 GUI v7"
         # For edit in place
         self.edit_mode   = False
         self.edit_key    = ""
@@ -5366,7 +5543,7 @@ class App:
     def dims(self): return self.stdscr.getmaxyx()
 
     def _draw_header(self, h, w):
-        ver_str = "AI CLI v2.7.3  GUI v5.2"
+        ver_str = "AI CLI v2.7.3  GUI v7"
         mode_str = f"[{THEME_NAME.upper()}]  {self.mode.upper()}"
         bar = f"  {ver_str}  │  {mode_str}  │  focus:{self.focus}  "
         safe_add(self.stdscr, 0, 0, bar.ljust(w), curses.color_pair(CP_HDR) | curses.A_BOLD)
@@ -5689,7 +5866,7 @@ class App:
     ]
 
     def _open_settings_editor(self):
-        """GUI v5.2: structured settings editor — only editable keys shown."""
+        """GUI v7: structured settings editor — only editable keys shown."""
         h, w = self.dims()
         # Load current config values
         cfg_raw = run_ai("config")
@@ -5857,7 +6034,7 @@ class App:
                 break
             elif ch in (curses.KEY_F1, ord('?')):
                 self.content.show(
-                    "AI CLI v2.7.3 — GUI v5.2  Keyboard & Mouse Guide\n"
+                    "AI CLI v2.9.0 — GUI v7  Keyboard & Mouse Guide\n"
                     "═" * 46 + "\n"
                     "\nGlobal:\n"
                     "  Ctrl+Q          Quit\n"
@@ -5900,7 +6077,7 @@ class App:
                     "  Load            Install from .aipack file\n"
                     "  Locate          List all + file paths\n"
                     "  Firefox Ext     Install LLM sidebar in Firefox\n",
-                    "Help — GUI v5.2"
+                    "Help — GUI v7"
                 )
                 self.focus = "content"
                 continue
@@ -5953,7 +6130,7 @@ def main(stdscr):
 curses.wrapper(main)
 GUIEOF
 
-  info "Launching GUI v5.2 (split-pane, structured settings, edit-on-select, aliases panel)..."
+  info "Launching GUI v7 (split-pane, structured settings, v2.9 features)..."
   "$PYTHON" "$gui_script" "$cli_bin" "$theme" "$ext_dir"
   local rc=$?
   rm -f "$gui_script"
@@ -5964,55 +6141,74 @@ _gui_fallback() {
   # Text-mode fallback when Python/curses unavailable
   while true; do
     echo ""
-    hdr "═══ AI CLI v${VERSION} — Main Menu (GUI v6 text mode) ═══"
-    local items=(
-      "Chat (interactive)"       "Ask a question"
-      "Imagine (image gen)"      "Vision (image→text)"
-      "Audio"                    "Video"
-      "Canvas v2"                "Models / Download"
-      "TTM (Tiny ~179M)"         "MTM (Mini ~0.61B)"
-      "Mtm (Medium ~1.075B)"     "Datasets"
-      "RLHF"                     "Multi-AI Arena"
-      "Web Search"               "GitHub"
-      "Research Papers"          "Settings / Config"
-      "Status"                   "Extensions"
-      "Install Firefox Ext"      "Quit"
-    )
-    for i in "${!items[@]}"; do
-      printf "  ${B}%2d.${R} %s\n" "$(( i+1 ))" "${items[$i]}"
-    done
+    hdr "═══ AI CLI v${VERSION} — Main Menu (GUI v7 text mode) ═══"
     echo ""
-    read -rp "Choose [1-${#items[@]}]: " choice
+    echo -e "  ${B}${BCYAN}── Chat & AI ──${R}"
+    echo -e "   ${B} 1.${R} Chat (interactive)       ${B} 2.${R} Ask a question"
+    echo -e "   ${B} 3.${R} Agent mode               ${B} 4.${R} Web search"
+    echo -e "  ${B}${BCYAN}── Media ──${R}"
+    echo -e "   ${B} 5.${R} Imagine (image gen)       ${B} 6.${R} Vision (image→text)"
+    echo -e "   ${B} 7.${R} Audio                     ${B} 8.${R} Video"
+    echo -e "  ${B}${BCYAN}── Models & Training ──${R}"
+    echo -e "   ${B} 9.${R} Models / Download         ${B}10.${R} Recommended (195)"
+    echo -e "   ${B}11.${R} TTM / MTM / Mtm           ${B}12.${R} RLHF"
+    echo -e "   ${B}13.${R} Datasets                  ${B}14.${R} Fine-tune"
+    echo -e "  ${B}${BCYAN}── Workspace ──${R}"
+    echo -e "   ${B}15.${R} Canvas                    ${B}16.${R} Notebook"
+    echo -e "   ${B}17.${R} Write (blog/email/docs)   ${B}18.${R} Node Editor"
+    echo -e "  ${B}${BCYAN}── v2.9 Features ──${R}"
+    echo -e "   ${B}19.${R} Health check              ${B}20.${R} Perf benchmark"
+    echo -e "   ${B}21.${R} RAG knowledge base        ${B}22.${R} Prompt templates"
+    echo -e "   ${B}23.${R} Config snapshots           ${B}24.${R} Model compare"
+    echo -e "   ${B}25.${R} Batch queue               ${B}26.${R} Analytics"
+    echo -e "  ${B}${BCYAN}── System ──${R}"
+    echo -e "   ${B}27.${R} Status                    ${B}28.${R} Settings"
+    echo -e "   ${B}29.${R} Extensions                ${B}30.${R} Plugins"
+    echo -e "   ${B}31.${R} Multi-AI Arena            ${B}32.${R} Learn mode"
+    echo -e "   ${B} 0.${R} Quit"
+    echo ""
+    read -rp "Choose [0-32]: " choice
     case "$choice" in
       1)  cmd_chat_interactive ;;
       2)  read -rp "Question: " q; dispatch_ask "$q" ;;
-      3)  read -rp "Prompt: " p; cmd_imagine "$p" ;;
-      4)  read -rp "Image path: " img; read -rp "Question: " q; cmd_vision "$img" "$q" ;;
-      5)  cmd_audio ;;
-      6)  cmd_video ;;
-      7)  cmd_canvas_v2 help ;;
-      8)  cmd_list_models; echo ""; read -rp "Download #: " n; [[ -n "$n" ]] && cmd_recommended download "$n" ;;
-      9)  cmd_ttm ;;
-      10) cmd_mtm ;;
-      11) cmd_Mtm ;;
-      12) cmd_dataset list ;;
-      13) cmd_rlhf status ;;
-      14) read -rp "Topic: " q; read -rp "Mode (debate/collab): " m; cmd_multiai "${m:-debate}" "$q" ;;
-      15) read -rp "Search: " q; cmd_websearch "$q" ;;
-      16) cmd_github help ;;
-      17) cmd_papers help ;;
-      18) cmd_config ;;
-      19) cmd_status ;;
-      20) cmd_extension list ;;
-      21) cmd_install_firefox_ext ;;
-      22|q|Q|"") break ;;
+      3)  read -rp "Task: " q; cmd_agent "$q" ;;
+      4)  read -rp "Search: " q; cmd_websearch "$q" ;;
+      5)  read -rp "Prompt: " p; cmd_imagine "$p" ;;
+      6)  read -rp "Image: " img; read -rp "Question: " q; cmd_vision ask "$img" "$q" ;;
+      7)  cmd_audio ;;
+      8)  cmd_video ;;
+      9)  cmd_list_models ;;
+      10) cmd_recommended ;;
+      11) read -rp "Model (TTM/MTM/Mtm): " m; case "$m" in TTM|ttm) cmd_ttm ;; MTM|mtm) cmd_mtm ;; *) cmd_Mtm ;; esac ;;
+      12) cmd_rlhf status ;;
+      13) cmd_dataset list ;;
+      14) cmd_finetune ;;
+      15) cmd_canvas ;;
+      16) cmd_notebook ;;
+      17) cmd_write ;;
+      18) cmd_node ;;
+      19) cmd_health ;;
+      20) cmd_perf ;;
+      21) cmd_rag ;;
+      22) cmd_template ;;
+      23) cmd_snap ;;
+      24) read -rp "Prompt: " q; cmd_compare "$q" ;;
+      25) cmd_batch ;;
+      26) cmd_analytics ;;
+      27) cmd_status ;;
+      28) cmd_config ;;
+      29) cmd_extension list ;;
+      30) cmd_plugin list ;;
+      31) read -rp "Topic: " q; cmd_multiai debate "$q" ;;
+      32) read -rp "Topic: " q; cmd_learn "$q" ;;
+      0|q|Q|"") break ;;
       *) warn "Invalid choice" ;;
     esac
   done
 }
 
 # ════════════════════════════════════════════════════════════════════════════════
-#  GUI+ v2 — Advanced tkinter GUI (2.1× size, tabbed, modern)
+#  GUI+ v3 — Advanced tkinter GUI (2.1× size, tabbed, modern)
 # ════════════════════════════════════════════════════════════════════════════════
 #  Requires: python3-tk  (sudo apt install python3-tk / pacman -S tk)
 #  Falls back to enhanced curses GUI+ if tkinter unavailable
@@ -6031,7 +6227,7 @@ cmd_gui_plus() {
   local script; script=$(mktemp /tmp/ai_guiplus_XXXX.py)
   cat > "$script" << 'GUIPLUSEOF'
 #!/usr/bin/env python3
-"""AI CLI v2.7.4 — GUI+ v2: tkinter, 2.1x size, tabbed, dark/light themes"""
+"""AI CLI v2.9.0 — GUI+ v3: tkinter, tabbed, dark/light themes, v2.9 features"""
 import sys, os, subprocess, threading, json, time, tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog, simpledialog
 
@@ -6133,7 +6329,7 @@ class ChatTab(tk.Frame):
         StyledButton(right, text="/agent", command=lambda: self._quick("/agent ")).pack(fill="x",pady=2)
         tk.Label(self, text="Enter=send  Shift+Enter=newline  /web /agent /model /clear /help /quit",
             bg=P["bg"], fg=P["dim"], font=("Segoe UI",8)).pack(pady=(0,4))
-        self._add("sys","Welcome to AI CLI v2.7.4 — GUI+ v2  (type /help for commands)")
+        self._add("sys","Welcome to AI CLI v2.9.0 — GUI+ v3  (type /help for commands)")
         threading.Thread(target=self._load_model, daemon=True).start()
     def _add(self, role, text):
         self.chat.config(state="normal")
@@ -6323,7 +6519,7 @@ class NodeTab(tk.Frame):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("AI CLI v2.7.4 — GUI+ v2")
+        self.title("AI CLI v2.9.0 — GUI+ v3")
         self.configure(bg=P["bg"])
         self.geometry("1280x820"); self.minsize(900,600)
         self._setup_style(); self._build_menu(); self._build_tabs(); self._build_statusbar()
@@ -6361,22 +6557,22 @@ class App(tk.Tk):
                           ("🧩 Nodes",NodeTab),("🔌 Extensions",ExtensionsTab),("📊 Status",StatusTab)]:
             frame=Cls(nb); nb.add(frame,text=f"  {label}  ")
     def _build_statusbar(self):
-        self.status_var=tk.StringVar(value="AI CLI v2.7.4 — GUI+ v2 ready")
+        self.status_var=tk.StringVar(value="AI CLI v2.9.0 — GUI+ v3 ready")
         tk.Label(self,textvariable=self.status_var,bg=P["panel"],fg=P["dim"],
             font=("Segoe UI",8),anchor="w",padx=8,pady=3).pack(fill="x",side="bottom")
     def _bg_status(self):
         out=run_ai("status",timeout=10); short=(out.splitlines()[0][:80] if out else "")
         self.status_var.set(f"AI CLI v2.7.4 — {short}")
     def _about(self):
-        messagebox.showinfo("About GUI+ v2",
-            "AI CLI v2.7.4 — GUI+ v2\n\n2.1× advanced tkinter GUI\n"
+        messagebox.showinfo("About GUI+ v3",
+            "AI CLI v2.9.0 — GUI+ v3\n\n2.1× advanced tkinter GUI\n"
             "Tabs: Chat · Models · Settings · Nodes · Extensions · Status\n\n"
-            "New in v2.7.4:\n  • GUI+ v2 (tkinter)\n  • AI Node Editor (125+ nodes)\n"
+            "New in v2.7.4:\n  • GUI+ v3 (tkinter)\n  • AI Node Editor (125+ nodes)\n"
             "  • Detailed help: ai -h <command>\n\nRun 'ai help' for full reference.")
 
 App().mainloop()
 GUIPLUSEOF
-  info "Launching GUI+ v2 (tkinter, 2.1× size)…"
+  info "Launching GUI+ v3 (tkinter, 2.1× size)…"
   "$PYTHON" "$script" "$cli_bin" "$theme" "$cfg_dir"
   local rc=$?
   rm -f "$script"
@@ -6416,7 +6612,7 @@ class App:
         self.s.erase(); H,W=self.s.getmaxyx(); sw=max(26,W//4); cw=W-sw-2
         try:
             self.s.addstr(0,0,"─"*W,curses.color_pair(1)|curses.A_BOLD)
-            hdr=" AI CLI v2.7.4 — GUI+ v2 "; self.s.addstr(0,max(0,(W-len(hdr))//2),hdr,curses.color_pair(3)|curses.A_BOLD)
+            hdr=" AI CLI v2.9.0 — GUI+ v3 "; self.s.addstr(0,max(0,(W-len(hdr))//2),hdr,curses.color_pair(3)|curses.A_BOLD)
             for i,(label,_) in enumerate(MENU):
                 r=1+i
                 if r>=H-1: break
@@ -7051,6 +7247,81 @@ elif isinstance(d,dict): print(d.get('generated_text',str(d)),end='')
 " 2>/dev/null
 }
 
+ask_groq() {
+  local prompt="$1"
+  [[ -z "${GROQ_API_KEY:-}" ]] && { err "GROQ_API_KEY not set. Run: ai keys set GROQ_API_KEY gsk_..."; return 1; }
+  local model="${ACTIVE_MODEL:-llama-3.3-70b-versatile}"
+  local sys_prompt; sys_prompt=$(_get_effective_system)
+  ASKAPI_PROMPT="$prompt" ASKAPI_SYS="$sys_prompt" ASKAPI_MODEL="$model" \
+  ASKAPI_MAX="$MAX_TOKENS" ASKAPI_TEMP="$TEMPERATURE" \
+  ASKAPI_URL="https://api.groq.com/openai/v1/chat/completions" \
+  ASKAPI_KEY="$GROQ_API_KEY" "$PYTHON" -c '
+import os,json,sys,urllib.request
+body=json.dumps({"model":os.environ["ASKAPI_MODEL"],"max_tokens":int(os.environ["ASKAPI_MAX"]),
+  "temperature":float(os.environ["ASKAPI_TEMP"]),
+  "messages":[{"role":"system","content":os.environ["ASKAPI_SYS"]},
+              {"role":"user","content":os.environ["ASKAPI_PROMPT"]}]})
+req=urllib.request.Request(os.environ["ASKAPI_URL"],data=body.encode(),
+  headers={"Authorization":"Bearer "+os.environ["ASKAPI_KEY"],"Content-Type":"application/json"})
+try:
+  with urllib.request.urlopen(req,timeout=60) as r:
+    d=json.loads(r.read())
+    print(d["choices"][0]["message"]["content"],end="",flush=True)
+except Exception as e:
+  print(f"Groq error: {e}",file=sys.stderr)
+' 2>/dev/null
+}
+
+
+ask_mistral() {
+  local prompt="$1"
+  [[ -z "${MISTRAL_API_KEY:-}" ]] && { err "MISTRAL_API_KEY not set"; return 1; }
+  local model="${ACTIVE_MODEL:-mistral-small-latest}"
+  local sys_prompt; sys_prompt=$(_get_effective_system)
+  ASKAPI_PROMPT="$prompt" ASKAPI_SYS="$sys_prompt" ASKAPI_MODEL="$model" \
+  ASKAPI_MAX="$MAX_TOKENS" ASKAPI_TEMP="$TEMPERATURE" \
+  ASKAPI_URL="https://api.mistral.ai/v1/chat/completions" \
+  ASKAPI_KEY="$MISTRAL_API_KEY" "$PYTHON" -c '
+import os,json,sys,urllib.request
+body=json.dumps({"model":os.environ["ASKAPI_MODEL"],"max_tokens":int(os.environ["ASKAPI_MAX"]),
+  "temperature":float(os.environ["ASKAPI_TEMP"]),
+  "messages":[{"role":"system","content":os.environ["ASKAPI_SYS"]},
+              {"role":"user","content":os.environ["ASKAPI_PROMPT"]}]})
+req=urllib.request.Request(os.environ["ASKAPI_URL"],data=body.encode(),
+  headers={"Authorization":"Bearer "+os.environ["ASKAPI_KEY"],"Content-Type":"application/json"})
+try:
+  with urllib.request.urlopen(req,timeout=60) as r:
+    d=json.loads(r.read())
+    print(d["choices"][0]["message"]["content"],end="",flush=True)
+except Exception as e:
+  print(f"Mistral error: {e}",file=sys.stderr)
+' 2>/dev/null
+}
+
+ask_together() {
+  local prompt="$1"
+  [[ -z "${TOGETHER_API_KEY:-}" ]] && { err "TOGETHER_API_KEY not set"; return 1; }
+  local model="${ACTIVE_MODEL:-meta-llama/Llama-3.3-70B-Instruct-Turbo}"
+  local sys_prompt; sys_prompt=$(_get_effective_system)
+  ASKAPI_PROMPT="$prompt" ASKAPI_SYS="$sys_prompt" ASKAPI_MODEL="$model" \
+  ASKAPI_MAX="$MAX_TOKENS" ASKAPI_TEMP="$TEMPERATURE" \
+  ASKAPI_URL="https://api.together.xyz/v1/chat/completions" \
+  ASKAPI_KEY="$TOGETHER_API_KEY" "$PYTHON" -c '
+import os,json,sys,urllib.request
+body=json.dumps({"model":os.environ["ASKAPI_MODEL"],"max_tokens":int(os.environ["ASKAPI_MAX"]),
+  "temperature":float(os.environ["ASKAPI_TEMP"]),
+  "messages":[{"role":"system","content":os.environ["ASKAPI_SYS"]},
+              {"role":"user","content":os.environ["ASKAPI_PROMPT"]}]})
+req=urllib.request.Request(os.environ["ASKAPI_URL"],data=body.encode(),
+  headers={"Authorization":"Bearer "+os.environ["ASKAPI_KEY"],"Content-Type":"application/json"})
+try:
+  with urllib.request.urlopen(req,timeout=60) as r:
+    d=json.loads(r.read())
+    print(d["choices"][0]["message"]["content"],end="",flush=True)
+except Exception as e:
+  print(f"Together error: {e}",file=sys.stderr)
+' 2>/dev/null
+}
 _auto_detect_backend() {
   local model="${ACTIVE_MODEL:-}"
   [[ -z "$model" ]] && {
@@ -7059,24 +7330,25 @@ _auto_detect_backend() {
     [[ -n "${GEMINI_API_KEY:-}" ]] && { echo "gemini"; return; }
     echo ""; return
   }
-  [[ "$model" == gpt-* || "$model" == o1* || "$model" == o3* ]] && { echo "openai"; return; }
+  [[ "$model" == gpt-* || "$model" == o1* || "$model" == o3* || "$model" == chatgpt-* ]] && { echo "openai"; return; }
   [[ "$model" == claude-* ]] && { echo "claude"; return; }
   [[ "$model" == gemini-* ]] && { echo "gemini"; return; }
-  # gguf detection — all conditions in a single bracket to avoid || short-circuit bug
+  [[ "$model" == llama-* || "$model" == mixtral-* ]] && [[ -n "${GROQ_API_KEY:-}" ]] && { echo "groq"; return; }
+  [[ "$model" == mistral-* || "$model" == codestral-* || "$model" == pixtral-* ]] && { echo "mistral"; return; }
+  [[ "$model" == meta-llama/* || "$model" == *Turbo ]] && [[ -n "${TOGETHER_API_KEY:-}" ]] && { echo "together"; return; }
   if [[ "$model" == *.gguf || "$model" == *Q4_K* || "$model" == *Q5_K* || \
         "$model" == *Q8_0* || "$model" == *Q4_0* || "$model" == *IQ4* ]]; then
     echo "gguf"; return
   fi
-  [[ -f "$model" ]] && { echo "gguf"; return; }          # any local file → gguf
+  [[ -f "$model" ]] && { echo "gguf"; return; }
   [[ -d "$model" && -f "$model/config.json" ]] && { echo "pytorch"; return; }
-  # HuggingFace repo id (org/name format, no local path)
-  if [[ "$model" == */* && ! -d "$model" ]]; then
-    echo "hf"; return
-  fi
-  # Fallback: if API key available use it
+  if [[ "$model" == */* && ! -d "$model" ]]; then echo "hf"; return; fi
   [[ -n "${OPENAI_API_KEY:-}" ]] && { echo "openai"; return; }
   [[ -n "${ANTHROPIC_API_KEY:-}" ]] && { echo "claude"; return; }
   [[ -n "${GEMINI_API_KEY:-}" ]] && { echo "gemini"; return; }
+  [[ -n "${GROQ_API_KEY:-}" ]] && { echo "groq"; return; }
+  [[ -n "${MISTRAL_API_KEY:-}" ]] && { echo "mistral"; return; }
+  [[ -n "${TOGETHER_API_KEY:-}" ]] && { echo "together"; return; }
   echo "gguf"
 }
 
@@ -7117,7 +7389,7 @@ dispatch_ask() {
     echo "  ai keys set ANTHROPIC_API_KEY sk-ant-... (Claude)"
     echo "  ai keys set GEMINI_API_KEY AIza...       (Gemini)"
     echo "  ai download 1                             (tiny local model, any CPU)"
-    echo "  ai recommended                            (browse 28 curated models)"
+    echo "  ai recommended                            (browse 195 curated models)"
     return 1
   fi
 
@@ -7126,11 +7398,14 @@ dispatch_ask() {
 
   local response="" rc=0
   case "$backend" in
-    gguf)      response=$(ask_gguf "$enriched_prompt");   rc=$? ;;
+    gguf)      response=$(ask_gguf "$enriched_prompt");     rc=$? ;;
     pytorch)   response=$(ask_pytorch "$enriched_prompt"); rc=$? ;;
     openai)    response=$(ask_openai "$enriched_prompt");  rc=$? ;;
     claude)    response=$(ask_claude "$enriched_prompt");  rc=$? ;;
     gemini)    response=$(ask_gemini "$enriched_prompt");  rc=$? ;;
+    groq)      response=$(ask_groq "$enriched_prompt");    rc=$? ;;
+    mistral)   response=$(ask_mistral "$enriched_prompt"); rc=$? ;;
+    together)  response=$(ask_together "$enriched_prompt"); rc=$? ;;
     hf)        response=$(ask_hf "$enriched_prompt");      rc=$? ;;
     diffusers)
       cmd_imagine "$enriched_prompt"
@@ -7515,388 +7790,6 @@ json.dump(hist,open(f,'w'),indent=2)
   fi
 }
 
-ask_gguf() {
-  local prompt="$1"
-  local model="${ACTIVE_MODEL:-}"
-  if [[ -z "$model" ]]; then
-    err ERR201 "No model set. Run: ai download 1  OR  ai recommended"
-    return 1
-  fi
-  # v2.7.3: GGUF model resolution — search MODELS_DIR if direct path fails
-  if [[ ! -f "$model" ]]; then
-    # Try exact basename match in MODELS_DIR
-    local candidate; candidate=$(find "$MODELS_DIR" -maxdepth 1 -name "$(basename "$model")" 2>/dev/null | head -1)
-    if [[ -n "$candidate" && -f "$candidate" ]]; then
-      model="$candidate"
-      ACTIVE_MODEL="$model"; save_config 2>/dev/null || true
-    else
-      # Try partial name match (case-insensitive)
-      candidate=$(find "$MODELS_DIR" -maxdepth 1 -iname "*$(basename "$model" .gguf)*" -name "*.gguf" 2>/dev/null | head -1)
-      if [[ -n "$candidate" && -f "$candidate" ]]; then
-        model="$candidate"
-        ACTIVE_MODEL="$model"; save_config 2>/dev/null || true
-      else
-        err ERR202 "GGUF model not found: $model"
-        echo "  Hint: Run 'ai models' to list downloaded models."
-        echo "  Hint: Run 'ai recommended download <N>' to download a model."
-        return 1
-      fi
-    fi
-  fi
-
-  if [[ "${LLAMA_BIN:-}" == "llama_cpp_python" ]]; then
-    [[ -z "$PYTHON" ]] && { err "Python not found"; return 1; }
-    local sys_prompt; sys_prompt=$(_get_effective_system)
-    LLAMA_PROMPT="$prompt" LLAMA_MODEL="$model" LLAMA_MAX="${MAX_TOKENS:-512}" \
-    LLAMA_TEMP="${TEMPERATURE:-0.7}" LLAMA_CTX="${CONTEXT_SIZE:-4096}" \
-    LLAMA_GPU="${GPU_LAYERS:-0}" LLAMA_SYS="$sys_prompt" \
-    "$PYTHON" - <<'PYEOF'
-import os, sys
-try:
-    from llama_cpp import Llama
-except ImportError:
-    print("llama-cpp-python not installed. Run: ai install-deps", file=sys.stderr); sys.exit(1)
-try:
-    sys_prompt = os.environ.get('LLAMA_SYS', '').strip()
-    user_prompt = os.environ['LLAMA_PROMPT']
-    llm = Llama(model_path=os.environ['LLAMA_MODEL'],
-                n_ctx=int(os.environ['LLAMA_CTX']),
-                n_gpu_layers=int(os.environ['LLAMA_GPU']),
-                verbose=False)
-    # Use chat_completion if system prompt set, else plain completion
-    if sys_prompt:
-        out = llm.create_chat_completion(
-            messages=[{"role": "system", "content": sys_prompt},
-                      {"role": "user",   "content": user_prompt}],
-            max_tokens=int(os.environ['LLAMA_MAX']),
-            temperature=float(os.environ['LLAMA_TEMP']))
-        print(out['choices'][0]['message']['content'], end='', flush=True)
-    else:
-        out = llm(user_prompt,
-                  max_tokens=int(os.environ['LLAMA_MAX']),
-                  temperature=float(os.environ['LLAMA_TEMP']),
-                  stream=False)
-        print(out['choices'][0]['text'], end='', flush=True)
-except Exception as e:
-    print(f"GGUF inference error: {e}", file=sys.stderr); sys.exit(1)
-PYEOF
-  elif [[ -n "${LLAMA_BIN:-}" ]]; then
-    # Use llama.cpp binary — show stderr so user sees errors
-    local _sys; _sys=$(_get_effective_system)
-    local _prompt_arg="$prompt"
-    # Prepend system as prefix when not empty
-    [[ -n "$_sys" ]] && _prompt_arg="System: ${_sys}
-
-User: ${prompt}"
-    "$LLAMA_BIN" -m "$model" -p "$_prompt_arg" \
-      -n "${MAX_TOKENS:-512}" --temp "${TEMPERATURE:-0.7}" \
-      -c "${CONTEXT_SIZE:-4096}" \
-      --n-gpu-layers "${GPU_LAYERS:-0}" \
-      --threads "${THREADS:-4}" -s 0 --no-display-prompt 2>&1 | \
-      grep -v "^llama\|^ggml\|^system\|^model\|^\[" || true
-  else
-    err "llama.cpp not found. Run: ai install-deps"
-    info "Or install manually: pip install llama-cpp-python"
-    return 1
-  fi
-}
-
-ask_pytorch() {
-  local prompt="$1"
-  local model="${ACTIVE_MODEL:-}"
-  if [[ -z "$model" ]]; then err "No model set. Run: ai model <path>  OR  ai ttm load"; return 1; fi
-  if [[ -z "$PYTHON" ]]; then err "Python not found. Run: ai install-deps"; return 1; fi
-  if [[ ! -d "$model" ]]; then err "Model directory not found: $model"; return 1; fi
-
-  local sys_prompt; sys_prompt=$(_get_effective_system)
-  MODEL_PATH="$model" PROMPT="$prompt" MAX_TOKENS="${MAX_TOKENS:-512}" \
-  TEMPERATURE="${TEMPERATURE:-0.7}" SYS_PROMPT="$sys_prompt" "$PYTHON" - <<'PYEOF'
-import os, sys
-try:
-    import torch
-    from transformers import AutoTokenizer, AutoModelForCausalLM
-except ImportError as e:
-    print(f"Missing dependency: {e}\nRun: ai install-deps", file=sys.stderr); sys.exit(1)
-
-mp         = os.environ['MODEL_PATH']
-prompt     = os.environ['PROMPT']
-sys_prompt = os.environ.get('SYS_PROMPT', '').strip()
-maxt   = int(os.environ.get('MAX_TOKENS', 512))
-temp   = float(os.environ.get('TEMPERATURE', 0.7))
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-dtype  = torch.float16 if device == 'cuda' else torch.float32
-
-try:
-    tok = AutoTokenizer.from_pretrained(mp, trust_remote_code=True)
-    if tok.pad_token is None:
-        tok.pad_token = tok.eos_token
-    # v2.6 fix: patch config.json if model_type key is missing (causes unrecognized model error)
-    import json as _json, pathlib as _pl
-    _cfg_path = _pl.Path(mp) / 'config.json'
-    if _cfg_path.exists():
-        try:
-            _cfg = _json.loads(_cfg_path.read_text())
-            if 'model_type' not in _cfg:
-                _cfg['model_type'] = 'llama'   # safe default; transformers will handle it
-                _cfg_path.write_text(_json.dumps(_cfg, indent=2))
-        except Exception:
-            pass
-
-    mdl = AutoModelForCausalLM.from_pretrained(mp, torch_dtype=dtype,
-            low_cpu_mem_usage=True, trust_remote_code=True)
-    mdl = mdl.to(device).eval()
-
-    # Apply chat template if available, else use raw prompt
-    # Inject system prompt (custom or persona) when the template supports it
-    if hasattr(tok, 'apply_chat_template') and tok.chat_template:
-        messages = []
-        if sys_prompt:
-            messages.append({"role": "system", "content": sys_prompt})
-        messages.append({"role": "user", "content": prompt})
-        input_ids = tok.apply_chat_template(messages, return_tensors='pt',
-                                            add_generation_prompt=True).to(device)
-    else:
-        # Prepend system prompt as plain text when no chat template is available
-        full_prompt = f"[SYSTEM]: {sys_prompt}\n\n[USER]: {prompt}" if sys_prompt else prompt
-        input_ids = tok(full_prompt, return_tensors='pt').input_ids.to(device)
-
-    gen_kwargs = dict(
-        max_new_tokens=maxt,
-        do_sample=(temp > 0),
-        pad_token_id=tok.eos_token_id,
-        eos_token_id=tok.eos_token_id,
-    )
-    if temp > 0:
-        gen_kwargs['temperature'] = temp
-        gen_kwargs['top_p'] = 0.9
-
-    with torch.no_grad():
-        out = mdl.generate(input_ids, **gen_kwargs)
-
-    new_tokens = out[0][input_ids.shape[1]:]
-    text = tok.decode(new_tokens, skip_special_tokens=True).strip()
-    print(text, flush=True)
-except FileNotFoundError:
-    print(f"Model not found: {mp}", file=sys.stderr)
-    sys.exit(1)
-except Exception as e:
-    import traceback
-    print(f"PyTorch inference error: {e}", file=sys.stderr)
-    traceback.print_exc(file=sys.stderr)
-    sys.exit(1)
-PYEOF
-}
-
-ask_openai() {
-  local prompt="$1"
-  [[ -z "${OPENAI_API_KEY:-}" ]] && { err "OPENAI_API_KEY not set"; return 1; }
-  local model="${ACTIVE_MODEL:-gpt-4o}"
-  local sys_prompt; sys_prompt=$(_get_effective_system)
-
-  local messages_json
-  messages_json=$(python3 -c "
-import json,sys
-sys_p=$(echo "$sys_prompt" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().strip()))')
-user_p=$(echo "$prompt" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().strip()))')
-msgs=[{'role':'system','content':sys_p},{'role':'user','content':user_p}]
-print(json.dumps(msgs))
-" 2>/dev/null)
-
-  local body; body=$(python3 -c "
-import json
-body={'model':'${model}','messages':${messages_json},'max_tokens':${MAX_TOKENS},'temperature':${TEMPERATURE},'stream':False}
-print(json.dumps(body))
-" 2>/dev/null)
-
-  curl -sS https://api.openai.com/v1/chat/completions \
-    -H "Authorization: Bearer $OPENAI_API_KEY" \
-    -H "Content-Type: application/json" \
-    -d "$body" 2>/dev/null | \
-    python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-if 'error' in d: print(f\"Error: {d['error']['message']}\",file=sys.stderr)
-else: print(d['choices'][0]['message']['content'],end='',flush=True)
-" 2>/dev/null
-}
-
-ask_claude() {
-  local prompt="$1"
-  [[ -z "${ANTHROPIC_API_KEY:-}" ]] && { err "ANTHROPIC_API_KEY not set"; return 1; }
-  local model="${ACTIVE_MODEL:-claude-sonnet-4-5}"
-  local sys_prompt; sys_prompt=$(_get_effective_system)
-
-  local user_content; user_content=$(echo "$prompt" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))' 2>/dev/null)
-  local sys_content; sys_content=$(echo "$sys_prompt" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))' 2>/dev/null)
-
-  curl -sS https://api.anthropic.com/v1/messages \
-    -H "x-api-key: $ANTHROPIC_API_KEY" \
-    -H "anthropic-version: 2023-06-01" \
-    -H "Content-Type: application/json" \
-    -d "{\"model\":\"$model\",\"max_tokens\":$MAX_TOKENS,\"system\":$sys_content,\"messages\":[{\"role\":\"user\",\"content\":$user_content}]}" 2>/dev/null | \
-    python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-if 'error' in d: print(f\"Error: {d['error']['message']}\",file=sys.stderr)
-else: print(d['content'][0]['text'],end='',flush=True)
-" 2>/dev/null
-}
-
-ask_gemini() {
-  local prompt="$1"
-  [[ -z "${GEMINI_API_KEY:-}" ]] && { err "GEMINI_API_KEY not set"; return 1; }
-  local model="${ACTIVE_MODEL:-gemini-2.0-flash}"
-  local user_content; user_content=$(echo "$prompt" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))' 2>/dev/null)
-
-  curl -sS "https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=$GEMINI_API_KEY" \
-    -H "Content-Type: application/json" \
-    -d "{\"contents\":[{\"parts\":[{\"text\":$user_content}]}]}" 2>/dev/null | \
-    python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-if 'error' in d: print(f\"Error: {d['error']['message']}\",file=sys.stderr)
-else: print(d['candidates'][0]['content']['parts'][0]['text'],end='',flush=True)
-" 2>/dev/null
-}
-
-ask_hf() {
-  local prompt="$1"
-  local model="${ACTIVE_MODEL:-}"
-  [[ -z "$model" ]] && { err "No model set"; return 1; }
-  local hf_key="${HF_TOKEN:-}"
-  local auth_header=""
-  [[ -n "$hf_key" ]] && auth_header="-H \"Authorization: Bearer $hf_key\""
-  local user_content; user_content=$(echo "$prompt" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))' 2>/dev/null)
-  curl -sS "https://api-inference.huggingface.co/models/${model}" \
-    ${hf_key:+-H "Authorization: Bearer $hf_key"} \
-    -H "Content-Type: application/json" \
-    -d "{\"inputs\":$user_content,\"parameters\":{\"max_new_tokens\":$MAX_TOKENS,\"temperature\":$TEMPERATURE}}" 2>/dev/null | \
-    python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-if isinstance(d,list): print(d[0].get('generated_text',''),end='')
-elif isinstance(d,dict): print(d.get('generated_text',str(d)),end='')
-" 2>/dev/null
-}
-
-_auto_detect_backend() {
-  local model="${ACTIVE_MODEL:-}"
-  [[ -z "$model" ]] && {
-    [[ -n "${OPENAI_API_KEY:-}" ]] && { echo "openai"; return; }
-    [[ -n "${ANTHROPIC_API_KEY:-}" ]] && { echo "claude"; return; }
-    [[ -n "${GEMINI_API_KEY:-}" ]] && { echo "gemini"; return; }
-    echo ""; return
-  }
-  [[ "$model" == gpt-* || "$model" == o1* || "$model" == o3* ]] && { echo "openai"; return; }
-  [[ "$model" == claude-* ]] && { echo "claude"; return; }
-  [[ "$model" == gemini-* ]] && { echo "gemini"; return; }
-  # gguf detection — all conditions in a single bracket to avoid || short-circuit bug
-  if [[ "$model" == *.gguf || "$model" == *Q4_K* || "$model" == *Q5_K* || \
-        "$model" == *Q8_0* || "$model" == *Q4_0* || "$model" == *IQ4* ]]; then
-    echo "gguf"; return
-  fi
-  [[ -f "$model" ]] && { echo "gguf"; return; }          # any local file → gguf
-  [[ -d "$model" && -f "$model/config.json" ]] && { echo "pytorch"; return; }
-  # HuggingFace repo id (org/name format, no local path)
-  if [[ "$model" == */* && ! -d "$model" ]]; then
-    echo "hf"; return
-  fi
-  # Fallback: if API key available use it
-  [[ -n "${OPENAI_API_KEY:-}" ]] && { echo "openai"; return; }
-  [[ -n "${ANTHROPIC_API_KEY:-}" ]] && { echo "claude"; return; }
-  [[ -n "${GEMINI_API_KEY:-}" ]] && { echo "gemini"; return; }
-  echo "gguf"
-}
-
-_maybe_inject_search() {
-  local prompt="$1"
-  [[ "$WEB_SEARCH_ENABLED" != "1" ]] && { echo "$prompt"; return; }
-  local backend; backend=$(_auto_detect_backend)
-  # OpenAI tool calling handles its own search
-  [[ "$backend" == "openai" ]] && { echo "$prompt"; return; }
-  # Detect search-worthy keywords
-  if echo "$prompt" | grep -qiE 'latest|current|today|2024|2025|2026|news|price|who is|what is the status|recent|now|trending'; then
-    local search_terms; search_terms=$(echo "$prompt" | sed 's/[?!.,]//g' | tr '[:upper:]' '[:lower:]' | \
-      sed 's/what is//g;s/who is//g;s/tell me about//g;s/the latest//g' | \
-      awk '{for(i=1;i<=NF&&i<=6;i++) printf $i" "; print ""}' | xargs)
-    local results; results=$(web_search "$search_terms" 3 2>/dev/null)
-    if [[ -n "$results" ]]; then
-      echo "[Web search results for context:]
-$results
-
-[User question:] $prompt"
-      return
-    fi
-  fi
-  echo "$prompt"
-}
-
-dispatch_ask() {
-  local prompt="$1"
-  local backend="${ACTIVE_BACKEND:-}"
-  [[ -z "$backend" ]] && backend=$(_auto_detect_backend)
-
-  # No backend at all — give clear diagnostic
-  if [[ -z "$backend" ]]; then
-    err "No model or API key configured."
-    echo ""
-    echo -e "${BCYAN}Quick setup:${R}"
-    echo "  ai keys set OPENAI_API_KEY sk-...        (OpenAI GPT-4)"
-    echo "  ai keys set ANTHROPIC_API_KEY sk-ant-... (Claude)"
-    echo "  ai keys set GEMINI_API_KEY AIza...       (Gemini)"
-    echo "  ai download 1                             (tiny local model, any CPU)"
-    echo "  ai recommended                            (browse 28 curated models)"
-    return 1
-  fi
-
-  # Auto-inject web search if needed
-  local enriched_prompt; enriched_prompt=$(_maybe_inject_search "$prompt")
-
-  local response="" rc=0
-  case "$backend" in
-    gguf)      response=$(ask_gguf "$enriched_prompt");   rc=$? ;;
-    pytorch)   response=$(ask_pytorch "$enriched_prompt"); rc=$? ;;
-    openai)    response=$(ask_openai "$enriched_prompt");  rc=$? ;;
-    claude)    response=$(ask_claude "$enriched_prompt");  rc=$? ;;
-    gemini)    response=$(ask_gemini "$enriched_prompt");  rc=$? ;;
-    hf)        response=$(ask_hf "$enriched_prompt");      rc=$? ;;
-    diffusers)
-      cmd_imagine "$enriched_prompt"
-      response="[Image generated]"
-      ;;
-    *)
-      if [[ -n "${OPENAI_API_KEY:-}" ]]; then
-        ACTIVE_BACKEND="openai"; response=$(ask_openai "$enriched_prompt"); rc=$?
-      elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-        ACTIVE_BACKEND="claude"; response=$(ask_claude "$enriched_prompt"); rc=$?
-      elif [[ -n "${GEMINI_API_KEY:-}" ]]; then
-        ACTIVE_BACKEND="gemini"; response=$(ask_gemini "$enriched_prompt"); rc=$?
-      else
-        err "Unknown backend '$backend'. Run: ai status"
-        return 1
-      fi
-      ;;
-  esac
-
-  if [[ $rc -ne 0 || -z "$response" ]]; then
-    err "No response from backend '$backend'."
-    [[ -z "${ACTIVE_MODEL:-}" ]] && echo "  Hint: no model set. Run: ai recommended"
-    [[ "$backend" == "pytorch" && ! -d "${ACTIVE_MODEL:-x}" ]] && \
-      echo "  Hint: model dir not found (${ACTIVE_MODEL:-not set}). Run: ai ttm pretrain"
-    [[ "$backend" == "gguf" && ! -f "${ACTIVE_MODEL:-x}" ]] && \
-      echo "  Hint: model file not found (${ACTIVE_MODEL:-not set}). Run: ai download 1"
-    return 1
-  fi
-
-  echo "$response"
-  log_history "user" "$prompt"
-  log_history "assistant" "$response"
-  _save_session_turn "$prompt" "$response"
-  [[ -n "${CURRENT_CHAT_FILE:-}" ]] && _chat_append "assistant" "$response"
-
-  # Background TTM batch train if enabled
-  [[ "${TTM_AUTO_TRAIN:-0}" == "1" ]] && { _ttm_train_batch &>/dev/null & disown; } 2>/dev/null || true
-}
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  CANVAS — Code workspace with AI assistance
@@ -8301,45 +8194,149 @@ cmd_imagine() {
 
 cmd_chat_interactive() {
   local chat_name="${CURRENT_CHAT_NAME:-}"
-  hdr "AI Chat — Session: $ACTIVE_SESSION"
+  hdr "AI Chat v2.9 — Session: $ACTIVE_SESSION"
+  info "Backend: ${ACTIVE_BACKEND:-auto} | Model: ${ACTIVE_MODEL:-auto-detect}"
   [[ -n "$chat_name" ]] && info "Chat log: $CURRENT_CHAT_FILE"
-  echo "  Commands: /quit /clear /session <n> /persona <n> /model <m>"
+  echo ""
+  echo -e "  ${DIM}Commands: /quit /clear /undo /retry /model <m> /persona <n>${R}"
+  echo -e "  ${DIM}          /session <n> /save /export /system <prompt>${R}"
+  echo -e "  ${DIM}          /tokens /cost /context /multiline /help${R}"
   echo ""
 
+  local last_prompt="" last_response="" multiline=0
+  local msg_count=0
+
   while true; do
-    printf "${BCYAN}${B}You: ${R}"
-    local input; read -r input || break
-    [[ -z "$input" ]] && continue
+    local input=""
+    if [[ $multiline -eq 1 ]]; then
+      printf "${BCYAN}${B}You (multi): ${R}${DIM}(empty line to send)${R}\n"
+      local lines=""
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && break
+        lines+="$line"$'\n'
+      done
+      input="${lines%$'\n'}"
+      [[ -z "$input" ]] && continue
+    else
+      printf "${BCYAN}${B}You: ${R}"
+      read -r input || break
+      [[ -z "$input" ]] && continue
+    fi
 
     case "$input" in
-      /quit|/exit|/q) break ;;
+      /quit|/exit|/q) echo ""; info "Chat ended ($msg_count messages)"; break ;;
       /clear)
         echo "[]" > "$SESSIONS_DIR/${ACTIVE_SESSION}.json"
-        info "History cleared"
-        ;;
-      /session*)
-        local n="${input#/session }"; ACTIVE_SESSION="$n"; save_config; info "Session: $n"
-        ;;
-      /persona*)
-        local n="${input#/persona }"; ACTIVE_PERSONA="$n"; save_config; info "Persona: $n"
-        ;;
+        msg_count=0; info "History cleared" ;;
+      /undo)
+        if [[ -n "$last_prompt" ]]; then
+          info "Removed last exchange"
+          last_prompt="" ; last_response=""
+        else
+          warn "Nothing to undo"
+        fi ;;
+      /retry)
+        if [[ -n "$last_prompt" ]]; then
+          info "Retrying: ${last_prompt:0:60}..."
+          printf "${BGREEN}${B}AI: ${R}"
+          last_response=$(dispatch_ask "$last_prompt")
+          echo "$last_response"; echo ""
+        else
+          warn "No previous prompt to retry"
+        fi ;;
       /model*)
-        local m="${input#/model }"; ACTIVE_MODEL="$m"; save_config; info "Model: $m"
-        ;;
+        local m="${input#/model }"; m="${m# }"
+        if [[ -n "$m" && "$m" != "/model" ]]; then
+          ACTIVE_MODEL="$m"; save_config; ok "Model: $m"
+        else
+          info "Current model: ${ACTIVE_MODEL:-auto-detect}"
+        fi ;;
+      /persona*)
+        local n="${input#/persona }"; n="${n# }"
+        if [[ -n "$n" && "$n" != "/persona" ]]; then
+          ACTIVE_PERSONA="$n"; save_config; ok "Persona: $n"
+        else
+          info "Current persona: ${ACTIVE_PERSONA:-default}"
+          info "Available: ${!BUILTIN_PERSONAS[*]}"
+        fi ;;
+      /session*)
+        local n="${input#/session }"; n="${n# }"
+        if [[ -n "$n" && "$n" != "/session" ]]; then
+          ACTIVE_SESSION="$n"; save_config; ok "Session: $n"
+        else
+          info "Current session: $ACTIVE_SESSION"
+        fi ;;
       /save)
-        info "Chat saved: $CURRENT_CHAT_FILE"
+        info "Session: $SESSIONS_DIR/${ACTIVE_SESSION}.json"
+        [[ -n "$CURRENT_CHAT_FILE" ]] && info "Chat: $CURRENT_CHAT_FILE" ;;
+      /export)
+        local out="$EXPORTS_DIR/chat_$(date +%Y%m%d_%H%M%S).md"
+        mkdir -p "$EXPORTS_DIR"
+        {
+          echo "# Chat Export — $(date -Iseconds)"
+          echo "Session: $ACTIVE_SESSION"
+          echo ""
+        } > "$out"
+        [[ -f "$SESSIONS_DIR/${ACTIVE_SESSION}.json" ]] && cat "$SESSIONS_DIR/${ACTIVE_SESSION}.json" >> "$out"
+        ok "Exported: $out" ;;
+      /system*)
+        local sp="${input#/system }"; sp="${sp# }"
+        if [[ -n "$sp" && "$sp" != "/system" ]]; then
+          CUSTOM_SYSTEM_PROMPT="$sp"; save_config
+          ok "System prompt set"
+        else
+          info "Current: $(_get_effective_system | head -c 80)..."
+        fi ;;
+      /tokens)
+        cmd_count_tokens "$last_prompt" 2>/dev/null || info "No previous message" ;;
+      /cost)
+        cmd_cost 500 "${MAX_TOKENS}" 2>/dev/null ;;
+      /context)
+        cmd_context status 2>/dev/null ;;
+      /multiline)
+        multiline=$(( 1 - multiline ))
+        if [[ $multiline -eq 1 ]]; then ok "Multiline ON (empty line sends)"
+        else ok "Multiline OFF"; fi ;;
+      /temp*)
+        local t="${input#/temp }"; t="${t# }"
+        if [[ -n "$t" && "$t" != "/temp" ]]; then
+          TEMPERATURE="$t"; save_config; ok "Temperature: $t"
+        else
+          info "Current temperature: $TEMPERATURE"
+        fi ;;
+      /help|/h)
+        echo "  /quit          Exit chat"
+        echo "  /clear         Clear history"
+        echo "  /undo          Remove last exchange"
+        echo "  /retry         Retry last prompt"
+        echo "  /model <m>     Switch model"
+        echo "  /persona <n>   Switch persona"
+        echo "  /session <n>   Switch session"
+        echo "  /system <p>    Set system prompt"
+        echo "  /save          Show save locations"
+        echo "  /export        Export chat to markdown"
+        echo "  /tokens        Count tokens in last message"
+        echo "  /cost          Show API cost estimate"
+        echo "  /context       Show context window usage"
+        echo "  /multiline     Toggle multi-line input"
+        echo "  /temp <n>      Set temperature"
         ;;
+      /*)
+        warn "Unknown command: $input (try /help)" ;;
       *)
         [[ -n "$CURRENT_CHAT_FILE" ]] && _chat_append "user" "$input"
         printf "${BGREEN}${B}AI: ${R}"
-        dispatch_ask "$input"
+        last_prompt="$input"
+        last_response=$(dispatch_ask "$input")
+        echo "$last_response"
         echo ""
+        (( msg_count++ ))
         ;;
     esac
   done
 }
 cmd_list_models() {
-  hdr "Downloaded Models (v2.7.3)"
+  hdr "Downloaded Models"
   local found=0
 
   # Helper: find recommended entry number for a model file/dir
@@ -8484,12 +8481,14 @@ cmd_recommended() {
             local dir="$MODELS_DIR/$repo"
             [[ -d "$dir" ]] && return 0
             return 1 ;;
-          openai|claude|gemini)
-            # Cloud API — "downloaded" if key is set
+          openai|claude|gemini|groq|mistral|together)
             case "$btype" in
-              openai)  [[ -n "${OPENAI_API_KEY:-}"    ]] && return 0 ;;
-              claude)  [[ -n "${ANTHROPIC_API_KEY:-}" ]] && return 0 ;;
-              gemini)  [[ -n "${GEMINI_API_KEY:-}"    ]] && return 0 ;;
+              openai)   [[ -n "${OPENAI_API_KEY:-}"    ]] && return 0 ;;
+              claude)   [[ -n "${ANTHROPIC_API_KEY:-}" ]] && return 0 ;;
+              gemini)   [[ -n "${GEMINI_API_KEY:-}"    ]] && return 0 ;;
+              groq)     [[ -n "${GROQ_API_KEY:-}"      ]] && return 0 ;;
+              mistral)  [[ -n "${MISTRAL_API_KEY:-}"   ]] && return 0 ;;
+              together) [[ -n "${TOGETHER_API_KEY:-}"   ]] && return 0 ;;
             esac
             return 1 ;;
           *) return 1 ;;
@@ -8500,13 +8499,36 @@ cmd_recommended() {
       local last_group=""
       local groups=(
         "1:8:TINY / CPU-FRIENDLY LLMs"
-        "9:16:GENERAL-PURPOSE LLMs (7–70B)"
-        "17:26:CODING & REASONING LLMs"
-        "27:31:VISION / MULTIMODAL LLMs"
+        "9:16:GENERAL-PURPOSE LLMs (7–9B)"
+        "17:23:CODING LLMs"
+        "24:26:MATH / REASONING"
+        "27:31:VISION / MULTIMODAL"
         "32:37:IMAGE GENERATION"
         "38:42:AUDIO / SPEECH"
         "43:46:EMBEDDING / RAG"
-        "47:56:CLOUD API MODELS"
+        "47:56:CLOUD APIs (OpenAI/Claude/Gemini)"
+        "57:66:LARGE LLMs (13B–70B+)"
+        "67:74:MORE CODING MODELS"
+        "75:80:MORE REASONING / MATH"
+        "81:85:ROLEPLAY / CREATIVE"
+        "86:90:MULTILINGUAL"
+        "91:94:LONG CONTEXT"
+        "95:100:MORE VISION / VL"
+        "101:104:MORE IMAGE GEN"
+        "105:109:MORE AUDIO"
+        "110:113:EMBEDDING / RERANKER"
+        "114:117:SPECIALIZED (MED/LEGAL/FIN)"
+        "118:121:TINY / EDGE MODELS"
+        "122:125:INSTRUCTION TUNED"
+        "126:140:MORE CLOUD APIs (Groq/Mistral/Together)"
+        "141:145:FUNCTION CALLING / AGENT"
+        "146:149:RLHF / DPO / UNCENSORED"
+        "150:153:JAPANESE / SCIENCE"
+        "154:168:NLU / QA / CLASSIFY"
+        "169:178:OCR / DETECTION / DEPTH"
+        "179:181:VIDEO / TTS"
+        "182:189:MORE GGUF + MOE"
+        "190:195:SAFETY / REWARD / NEWEST"
       )
 
       for grp in "${groups[@]}"; do
@@ -8712,11 +8734,11 @@ cmd_install_deps() {
   info "Installing core packages..."
   "$PYTHON" -m pip install transformers tokenizers accelerate safetensors datasets \
     optimum "huggingface_hub>=0.20" "peft>=0.7" "trl>=0.7" diffusers Pillow \
-    openai anthropic google-generativeai tiktoken \
+    openai anthropic google-generativeai groq mistralai tiktoken \
     soundfile pydub -q 2>/dev/null || \
   "$PYTHON" -m pip install transformers tokenizers accelerate safetensors datasets \
     optimum "huggingface_hub>=0.20" "peft>=0.7" "trl>=0.7" diffusers Pillow \
-    openai anthropic google-generativeai tiktoken \
+    openai anthropic google-generativeai groq mistralai tiktoken \
     soundfile pydub --break-system-packages -q 2>/dev/null || true
 
   # Optional packages (may fail on some platforms)
@@ -8832,15 +8854,21 @@ cmd_status() {
   printf "  %-22s %s\n" "GPU layers:"   "$GPU_LAYERS"
   echo ""
   hdr "API Keys"
-  for k in OPENAI_API_KEY ANTHROPIC_API_KEY GEMINI_API_KEY HF_TOKEN HF_DATASET_KEY BRAVE_API_KEY; do
+  for k in OPENAI_API_KEY ANTHROPIC_API_KEY GEMINI_API_KEY GROQ_API_KEY MISTRAL_API_KEY TOGETHER_API_KEY HF_TOKEN BRAVE_API_KEY; do
     local v; v=$(eval "echo \"\${$k:-}\"")
-    if [[ -n "$v" ]]; then printf "  %-24s ${BGREEN}set${R} (%s…%s)\n" "$k:" "${v:0:4}" "${v: -4}"
-    else printf "  %-24s ${DIM}not set${R}\n" "$k:"; fi
+    if [[ -n "$v" ]]; then printf "  %-26s ${BGREEN}set${R} (%s…%s)\n" "$k:" "${v:0:4}" "${v: -4}"
+    else printf "  %-26s ${DIM}not set${R}\n" "$k:"; fi
   done
   echo ""
   printf "  %-22s %s\n" "GGUF models:" "$(find "$MODELS_DIR" -name "*.gguf" 2>/dev/null | wc -l)"
   printf "  %-22s %s\n" "Chat logs:"   "$(ls "$CHAT_LOGS_DIR"/*.jsonl 2>/dev/null | wc -l || echo 0)"
   printf "  %-22s %s\n" "Datasets:"    "$(ls "$DATASETS_DIR" 2>/dev/null | wc -l)"
+  printf "  %-22s %s\n" "Snapshots:"   "$(ls "$SNAPSHOTS_DIR"/*.snap 2>/dev/null | wc -l || echo 0)"
+  printf "  %-22s %s\n" "Templates:"   "$(ls "$TEMPLATES_DIR"/*.tpl 2>/dev/null | wc -l || echo 0)"
+  printf "  %-22s %s\n" "RAG bases:"   "$(ls -d "$RAG_DIR"/*/ 2>/dev/null | wc -l || echo 0)"
+  printf "  %-22s %s\n" "Plugins:"     "$(ls "$PLUGINS_DIR"/*.sh 2>/dev/null | wc -l || echo 0)"
+  printf "  %-22s %s\n" "Disk (models):" "$(du -sh "$MODELS_DIR" 2>/dev/null | awk '{print $1}' || echo '?')"
+  printf "  %-22s %s\n" "Disk (config):" "$(du -sh "$CONFIG_DIR" 2>/dev/null | awk '{print $1}' || echo '?')"
 }
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -12837,9 +12865,9 @@ show_help() {
   echo -e "${W}╔══════════════════════════════════════════════════════════════════╗${R_}"
   echo -e "${W}║  AI CLI  v${VERSION} — Universal AI Shell                        ║${R_}"
   echo -e "${W}║  Chat · Vision · Audio · Video · RLHF v2 · Fine-tune · Multi-AI ║${R_}"
-  echo -e "${W}║  Aliases · ErrorCodes · GGUF-fix · ModelSync · 56 Rec Models    ║${R_}"
-  echo -e "${W}║  v2.7.3: uninstall fix · GUI v5.2 · GGUF fix · alias cmd        ║${R_}"
-  echo -e "${W}║          error codes · ask fix · 2x recommended · model sync    ║${R_}"
+  echo -e "${W}║  RAG · Batch · Snapshots · Benchmark · 195 Models · 8 Backends  ║${R_}"
+  echo -e "${W}║  v2.9.0: Groq+Mistral+Together · RAG · perf · health · plugins  ║${R_}"
+  echo -e "${W}║          templates · snapshots · batch · branch · export · more  ║${R_}"
   echo -e "${W}╚══════════════════════════════════════════════════════════════════╝${R_}"
   echo -e "${DM}  Platform: $PLATFORM | CPU-only: $([[ $CPU_ONLY_MODE -eq 1 ]] && echo yes || echo no) | Python: ${PYTHON:-not found} | GPU arch: ${CUDA_ARCH:-0}${R_}"
   echo ""
@@ -12848,7 +12876,7 @@ show_help() {
   echo -e "${C1}┌─ QUICK START ────────────────────────────────────────────────────┐${R_}"
   echo -e "${C2}│${R_}  ai ask \"<question>\"            Ask anything"
   echo -e "${C2}│${R_}  ai -gui                         Launch TUI (mouse + keyboard)"
-  echo -e "${C2}│${R_}  ai gui+                         Launch GUI+ v2 (2.1x tkinter)"
+  echo -e "${C2}│${R_}  ai gui+                         Launch GUI+ v3 (2.1x tkinter)"
   echo -e "${C2}│${R_}  ai node new                     Open AI Node Editor (125+ nodes)"
   echo -e "${C2}│${R_}  ai -h <command>                 Detailed help for any command"
   echo -e "${C2}│${R_}  ai -aup                         Update to latest version"
@@ -13009,7 +13037,7 @@ show_help() {
 
   echo -e "${C1}┌─ GUI / GUI+ / NODE EDITOR ───────────────────────────────────────┐${R_}"
   echo -e "${C2}│${R_}  ai gui  / ai -gui                  Launch GUI v6 (TUI, terminal)"
-  echo -e "${C2}│${R_}  ai gui+ / ai -gui+                 Launch GUI+ v2 (2.1x tkinter, real window)"
+  echo -e "${C2}│${R_}  ai gui+ / ai -gui+                 Launch GUI+ v3 (2.1x tkinter, real window)"
   echo -e "${C2}│${R_}    Requires: sudo apt install python3-tk"
   echo -e "${C2}│${R_}    Tabs: Chat · Models · Settings · Nodes · Extensions · Status"
   echo -e "${C2}│${R_}  ai node new                        Open AI Node Editor (125+ nodes)"
@@ -13019,7 +13047,7 @@ show_help() {
   echo -e "${C2}│${R_}  ai node config                     View/edit node editor config"
   echo -e "${C2}│${R_}  Themes: dark  light  hacker  dracula  nord"
   echo -e "${C2}│${R_}  ai config gui_theme <theme>        Set default theme"
-  echo -e "${C2}│${R_}  ${B}v2.7.4 new:${R_}  GUI+ v2 · Node Editor · 125+ nodes · -h <cmd>"
+  echo -e "${C2}│${R_}  ${B}v2.7.4 new:${R_}  GUI+ v3 · Node Editor · 125+ nodes · -h <cmd>"
   echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
   echo ""
 
@@ -13110,65 +13138,11 @@ show_help() {
   echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
   echo ""
 
-  # ── Examples ────────────────────────────────────────────────────────────────
-  # ── v2.7.1: New Features ──────────────────────────────────────────────────────
-  echo -e "${C1}┌─ v2.7 / v2.7.1 NEW FEATURES ────────────────────────────────────┐${R_}"
-  echo -e "${C2}│${R_}  ${B}GUI v5.1 (v2.7.1 update):${R_}"
-  echo -e "${C2}│${R_}    Structured settings editor: only editable keys shown"
-  echo -e "${C2}│${R_}    Edit individual settings inline with Enter, saved via ai config"
-  echo -e "${C2}│${R_}  ${B}GUI v5 (v2.7):${R_}"
-  echo -e "${C2}│${R_}    Split-pane layout: sidebar + content panel"
-  echo -e "${C2}│${R_}    Edit-on-click / Enter: items open inline editors"
-  echo -e "${C2}│${R_}    New themes: dracula + all v2.6 themes"
-  echo -e "${C2}│${R_}    / quick-search to filter menu items"
-  echo -e "${C2}│${R_}    F5 refresh, Tab to switch focus sidebar↔content"
-  echo -e "${C2}│${R_}  ${B}AI Extension System (.aipack):${R_}"
-  echo -e "${C2}│${R_}    ai extension create <name>    Scaffold new extension"
-  echo -e "${C2}│${R_}    ai extension load <file>      Load from .aipack file"
-  echo -e "${C2}│${R_}    ai extension locate           Show all + file paths + status"
-  echo -e "${C2}│${R_}    ai extension package <name>   Build distributable .aipack"
-  echo -e "${C2}│${R_}    ai extension edit <name>      Open editor for extension files"
-  echo -e "${C2}│${R_}    ai extension run <name>       Execute an extension"
-  echo -e "${C2}│${R_}    .aipack: gzip tar with ex.sh + main.py + manifest.json"
-  echo -e "${C2}│${R_}  ${B}Firefox LLM Sidebar:${R_}"
-  echo -e "${C2}│${R_}    ai install-firefox-ext        Build & install Firefox extension"
-  echo -e "${C2}│${R_}    Connects to local AI CLI API server (ai api start)"
-  echo -e "${C2}│${R_}    v2.7.1: fixed AI output (non-streaming JSON response)"
-  echo -e "${C2}│${R_}    Full settings: API URL, model, max tokens, temperature"
-  echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
-  echo ""
-
-  echo -e "${C1}┌─ v2.9.0 NEW FEATURES ────────────────────────────────────────────┐${R_}"
-  echo -e "${C2}│${R_}  ${B}Config Snapshots:${R_}"
-  echo -e "${C2}│${R_}    ai snap save/load/list/diff/delete"
-  echo -e "${C2}│${R_}  ${B}Performance Benchmark:${R_}"
-  echo -e "${C2}│${R_}    ai perf [--tokens N] [--runs N]"
-  echo -e "${C2}│${R_}  ${B}Model Comparison:${R_}"
-  echo -e "${C2}│${R_}    ai compare \"prompt\" [--models a,b,c]"
-  echo -e "${C2}│${R_}  ${B}Prompt Templates:${R_}"
-  echo -e "${C2}│${R_}    ai template create/use/list/edit/delete"
-  echo -e "${C2}│${R_}  ${B}RAG Pipeline:${R_}"
-  echo -e "${C2}│${R_}    ai rag create <name> <dir>   Index local documents"
-  echo -e "${C2}│${R_}    ai rag query <name> \"question\""
-  echo -e "${C2}│${R_}  ${B}Batch Queue:${R_}"
-  echo -e "${C2}│${R_}    ai batch add/run/list/results/clear"
-  echo -e "${C2}│${R_}  ${B}Health Check:${R_}"
-  echo -e "${C2}│${R_}    ai health     Full system diagnostics"
-  echo -e "${C2}│${R_}  ${B}Conversation Branching:${R_}"
-  echo -e "${C2}│${R_}    ai branch create/use/list/merge/delete"
-  echo -e "${C2}│${R_}  ${B}Export / Import:${R_}"
-  echo -e "${C2}│${R_}    ai export [all|chat|config|models]"
-  echo -e "${C2}│${R_}    ai import <dir|file>"
-  echo -e "${C2}│${R_}  ${B}Cleanup:${R_}"
-  echo -e "${C2}│${R_}    ai cleanup [--dry-run]"
-  echo -e "${C2}│${R_}  ${B}Model Presets:${R_}"
-  echo -e "${C2}│${R_}    ai preset save/load/list/delete"
-  echo -e "${C2}│${R_}  ${B}Plugin System:${R_}"
-  echo -e "${C2}│${R_}    ai plugin list/install/remove/reload"
-  echo -e "${C2}│${R_}  ${B}Bug Fixes & QOL:${R_}"
-  echo -e "${C2}│${R_}    API retry with exponential backoff + jitter"
-  echo -e "${C2}│${R_}    Enhanced error codes (ERR4xx-6xx) with suggestions"
-  echo -e "${C2}│${R_}    Rate limit tracking and warnings"
+  echo -e "${C1}┌─ CHANGELOG & UPDATE ─────────────────────────────────────────────┐${R_}"
+  echo -e "${C2}│${R_}  ai change                Show full changelog"
+  echo -e "${C2}│${R_}  ai -L                    Show latest changes"
+  echo -e "${C2}│${R_}  ai -Su                   Update from GitHub"
+  echo -e "${C2}│${R_}  ai -aup                  Auto-updater (legacy)"
   echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
   echo ""
 
@@ -15123,7 +15097,7 @@ HELPEOF
     ;;
     gui+|guiplus)
 cat << 'HELPEOF'
-  ai gui+                     Launch GUI+ v2: advanced tkinter GUI (2.1x size)
+  ai gui+                     Launch GUI+ v3: advanced tkinter GUI (2.1x size)
   ai -gui+                    Same as 'ai gui+'
 
   Requires: python3-tk  (sudo apt install python3-tk)
@@ -15342,6 +15316,12 @@ main() {
     # ── Auto-update ───────────────────────────────────────────────────────────
     -aup|--aup|aup|update-check)
       cmd_autoupdate "$@" ;;
+    -Su|--system-update|system-update)
+      cmd_system_update "$@" ;;
+    -L|--latest)
+      cmd_change latest ;;
+    change|changelog|changes)
+      cmd_change "$@" ;;
 
     # ── Asking ───────────────────────────────────────────────────────────────
     ask|a)
@@ -15544,18 +15524,19 @@ $(cat)" ;;
       done | sort
       ;;
     *)
-      # v2.7.3: Check user-defined aliases first before AI fallthrough
+      # v2.9.0: Try extended dispatcher first (all new commands)
+      if _dispatch_v29_final "$cmd" "$@" 2>/dev/null; then
+        return 0
+      fi
+      # v2.7.3: Check user-defined aliases
       local _alias_cmd
       _alias_cmd=$(_resolve_alias "$cmd" 2>/dev/null) || true
       if [[ -n "$_alias_cmd" ]]; then
-        # Expand alias and re-dispatch
         # shellcheck disable=SC2086
         eval "main $_alias_cmd \"\$@\""
         return $?
       fi
-      # Unknown command — show helpful error, then try AI fallthrough
-      echo -e "${DIM}[ai] No command named \"${cmd}\". Checking aliases and passing to AI...${R}" >&2
-      echo -e "${DIM}[ai] Run 'ai help' to see all commands. Run 'ai -h <cmd>' for details.${R}" >&2
+      # Unknown command — AI fallthrough
       dispatch_ask "$cmd $*" ;;
   esac
 }
@@ -16902,6 +16883,164 @@ EOF
       echo "Usage: ai preset <save|load|list|delete>"
       ;;
   esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  CHANGELOG VIEWER — v2.9.0
+#  ai change — show full changelog
+#  ai -L — show latest version changes
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_change() {
+  local sub="${1:-all}"
+  case "$sub" in
+    latest|-L)
+      hdr "AI CLI v${VERSION} — Latest Changes"
+      echo ""
+      echo -e "  ${B}${BCYAN}v2.9.0${R} — Major Release"
+      echo ""
+      echo -e "  ${B}New Backends:${R}"
+      echo "    + Groq API (llama-3.3-70b, mixtral)"
+      echo "    + Mistral API (mistral-large, codestral)"
+      echo "    + Together API (llama-3.3-70b-turbo)"
+      echo ""
+      echo -e "  ${B}New Features:${R}"
+      echo "    + Config snapshots (ai snap save/load)"
+      echo "    + Performance benchmark (ai perf)"
+      echo "    + Model comparison (ai compare)"
+      echo "    + RAG pipeline (ai rag create/query)"
+      echo "    + Batch queue (ai batch add/run)"
+      echo "    + Prompt templates (ai template)"
+      echo "    + Conversation branching (ai branch)"
+      echo "    + Health check (ai health)"
+      echo "    + Plugin system (ai plugin)"
+      echo "    + Model presets (ai preset)"
+      echo "    + Export/Import (ai export/import)"
+      echo "    + Notebook mode (ai notebook)"
+      echo "    + Task planner (ai plan)"
+      echo "    + Learning mode (ai learn)"
+      echo "    + Writing assistant (ai write)"
+      echo "    + AI memory (ai memory)"
+      echo "    + Git AI (ai git commit/pr/blame)"
+      echo "    + Shell helper (ai shell gen/explain/fix)"
+      echo "    + Quiz mode (ai quiz)"
+      echo "    + Interview prep (ai interview)"
+      echo "    + Token counter (ai tokens)"
+      echo "    + Cost estimator (ai cost)"
+      echo "    + Network tools (ai net)"
+      echo "    + Text utilities (ai text)"
+      echo "    + JSON/SQL/Docker/Regex helpers"
+      echo "    + Security audit (ai security)"
+      echo "    + Analytics (ai analytics)"
+      echo ""
+      echo -e "  ${B}Bug Fixes:${R}"
+      echo "    + API retry with exponential backoff"
+      echo "    + Enhanced error codes (ERR4xx-6xx)"
+      echo "    + Rate limit tracking"
+      echo "    + Fixed version strings"
+      echo "    + 195 recommended models (was 56)"
+      echo "    + Chat rewritten with 15+ slash commands"
+      echo ""
+      echo -e "  ${B}Models:${R} 195 curated picks across 31 categories"
+      ;;
+    all|*)
+      cmd_change latest
+      echo ""
+      echo -e "  ${B}${BCYAN}v2.7.4${R}"
+      echo "    GUI+ v2 (tkinter) · AI Node Editor (125+ nodes) · -h <cmd>"
+      echo ""
+      echo -e "  ${B}${BCYAN}v2.7.3${R}"
+      echo "    Aliases · Error codes · GGUF fix · Model sync"
+      echo ""
+      echo -e "  ${B}${BCYAN}v2.7.1${R}"
+      echo "    GUI v5.1 · Structured settings editor"
+      echo ""
+      echo -e "  ${B}${BCYAN}v2.7${R}"
+      echo "    AI Extension System (.aipack) · Firefox LLM Sidebar"
+      echo "    GUI v5 (split-pane) · 9 themes"
+      echo ""
+      echo -e "  ${B}${BCYAN}v2.6${R}"
+      echo "    Projects (multi-chat memory) · First-run setup"
+      echo ""
+      echo -e "  ${B}${BCYAN}v2.5${R}"
+      echo "    GitHub integration · Research papers · Canvas v2"
+      echo "    Multimodal training · Custom system prompts"
+      echo ""
+      echo -e "  ${B}${BCYAN}v2.4${R}"
+      echo "    Custom datasets · LLM API server · Multi-AI arena"
+      echo "    RLHF HF datasets · Right-click AI · API key hosting"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  SYSTEM UPDATE — v2.9.0
+#  ai -Su — update ai-cli from GitHub
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_system_update() {
+  hdr "AI CLI — System Update"
+  info "Checking for updates from GitHub..."
+
+  local remote_ver
+  remote_ver=$(curl -fsSL "https://raw.githubusercontent.com/minerofthesoal/ai-cli/main/main.sh" 2>/dev/null \
+    | grep '^VERSION=' | head -1 | cut -d'"' -f2 || echo "")
+
+  if [[ -z "$remote_ver" ]]; then
+    err "Could not fetch remote version. Check network."
+    return 1
+  fi
+
+  info "Installed: v${VERSION}"
+  info "Remote:    v${remote_ver}"
+
+  if [[ "$VERSION" == "$remote_ver" ]]; then
+    ok "Already up to date (v${VERSION})"
+    return 0
+  fi
+
+  echo ""
+  printf "  ${BYELLOW}Update v${VERSION} → v${remote_ver}? [Y/n]:${R} "
+  read -r confirm
+  [[ "$confirm" =~ ^[Nn] ]] && { info "Cancelled."; return 0; }
+
+  info "Downloading latest main.sh..."
+  local tmp
+  tmp=$(mktemp /tmp/ai-cli-update-XXXXXX)
+  curl -fsSL "https://raw.githubusercontent.com/minerofthesoal/ai-cli/main/main.sh" -o "$tmp"
+
+  if [[ ! -s "$tmp" ]]; then
+    err "Download failed or file empty"
+    rm -f "$tmp"
+    return 1
+  fi
+
+  # Verify it's a valid bash script
+  if ! bash -n "$tmp" 2>/dev/null; then
+    err "Downloaded file has syntax errors. Aborting."
+    rm -f "$tmp"
+    return 1
+  fi
+
+  # Find where ai is installed
+  local ai_path
+  ai_path=$(command -v ai 2>/dev/null || echo "/usr/local/bin/ai")
+
+  if [[ -w "$ai_path" ]]; then
+    cp "$tmp" "$ai_path"
+    chmod +x "$ai_path"
+  elif command -v sudo &>/dev/null; then
+    sudo cp "$tmp" "$ai_path"
+    sudo chmod +x "$ai_path"
+  else
+    err "Cannot write to $ai_path. Run with sudo."
+    rm -f "$tmp"
+    return 1
+  fi
+
+  rm -f "$tmp"
+  ok "Updated to v${remote_ver}!"
+  info "Restart your terminal or run: ai --version"
 }
 
 ####NEW_FEATURES_MARKER####

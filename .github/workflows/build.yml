@@ -335,10 +335,113 @@ jobs:
           echo "RPM spec present and valid:"
           cat packaging/rpm/ai-cli.spec
 
-  # ── 7. Release (runs after all builds, only on tags) ───────────────
+  # ── 7. Build macOS DMG (Intel + Apple Silicon) ─────────────────────
+  build-dmg:
+    name: Build macOS .dmg (${{ matrix.arch }})
+    needs: lint
+    strategy:
+      matrix:
+        include:
+          - runner: macos-13
+            arch: x86_64
+            label: Intel
+          - runner: macos-14
+            arch: arm64
+            label: AppleSilicon
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build DMG
+        run: |
+          VER="${{ needs.lint.outputs.version }}"
+          PKG="ai-cli"
+          DMG_DIR="build/dmg"
+          APP_DIR="${DMG_DIR}/${PKG}"
+
+          mkdir -p "${APP_DIR}/bin"
+          mkdir -p "${APP_DIR}/share/${PKG}"
+          mkdir -p "${APP_DIR}/share/doc/${PKG}"
+
+          # Install main script
+          cp main.sh "${APP_DIR}/bin/ai"
+          chmod +x "${APP_DIR}/bin/ai"
+
+          # Support files
+          cp -r installers/ "${APP_DIR}/share/${PKG}/"
+          [ -f misc/requirements.txt ] && cp misc/requirements.txt "${APP_DIR}/share/${PKG}/"
+          [ -f README.md ] && cp README.md "${APP_DIR}/share/doc/${PKG}/"
+          [ -f LICENSE ] && cp LICENSE "${APP_DIR}/share/doc/${PKG}/"
+
+          # Create installer script inside DMG
+          cat > "${APP_DIR}/install.sh" << 'INSTEOF'
+          #!/bin/sh
+          set -e
+          PREFIX="/usr/local"
+          echo "Installing ai-cli to ${PREFIX}/bin/ai..."
+          sudo mkdir -p "${PREFIX}/bin" "${PREFIX}/share/ai-cli"
+          sudo cp bin/ai "${PREFIX}/bin/ai"
+          sudo chmod +x "${PREFIX}/bin/ai"
+          sudo cp -r share/ai-cli/* "${PREFIX}/share/ai-cli/" 2>/dev/null || true
+          echo "Done! Run: ai --help"
+          INSTEOF
+          sed -i '' 's/^          //' "${APP_DIR}/install.sh"
+          chmod +x "${APP_DIR}/install.sh"
+
+          # Create uninstall script
+          cat > "${APP_DIR}/uninstall.sh" << 'UNINSTEOF'
+          #!/bin/sh
+          echo "Removing ai-cli..."
+          sudo rm -f /usr/local/bin/ai
+          sudo rm -rf /usr/local/share/ai-cli
+          echo "Done. Config at ~/.config/ai-cli/ preserved."
+          UNINSTEOF
+          sed -i '' 's/^          //' "${APP_DIR}/uninstall.sh"
+          chmod +x "${APP_DIR}/uninstall.sh"
+
+          # Create README for DMG
+          cat > "${APP_DIR}/README.txt" << RDMEOF
+          AI CLI v${VER} — Universal AI Terminal Toolkit
+
+          INSTALL:
+            Open Terminal, cd to this folder, then run:
+              sh install.sh
+
+          UNINSTALL:
+              sh uninstall.sh
+
+          QUICK START:
+            ai --help          Show all commands
+            ai ask "hello"     Ask a question
+            ai chat            Interactive chat
+            ai recommended     Browse 195 models
+
+          More info: https://github.com/minerofthesoal/ai-cli
+          RDMEOF
+          sed -i '' 's/^          //' "${APP_DIR}/README.txt"
+
+          # Build DMG
+          DMG_FILE="build/${PKG}-${VER}-macOS-${{ matrix.arch }}.dmg"
+          hdiutil create -volname "${PKG}-${VER}-${{ matrix.label }}" \
+            -srcfolder "${DMG_DIR}" \
+            -ov -format UDZO \
+            "${DMG_FILE}"
+
+          echo "dmg_file=${DMG_FILE}" >> $GITHUB_OUTPUT
+          ls -lh "${DMG_FILE}"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-cli-dmg-${{ matrix.arch }}
+          path: build/*.dmg
+          retention-days: 30
+
+  # ── 8. Release (runs after all builds, only on tags) ───────────────
   release:
     name: Create GitHub Release
-    needs: [lint, build-deb, build-pacman, build-pacstall, build-cpp-installer, build-rpm]
+    needs: [lint, build-deb, build-pacman, build-pacstall, build-cpp-installer, build-rpm, build-dmg]
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
     timeout-minutes: 10
