@@ -8734,11 +8734,11 @@ cmd_install_deps() {
   info "Installing core packages..."
   "$PYTHON" -m pip install transformers tokenizers accelerate safetensors datasets \
     optimum "huggingface_hub>=0.20" "peft>=0.7" "trl>=0.7" diffusers Pillow \
-    openai anthropic google-generativeai tiktoken \
+    openai anthropic google-generativeai groq mistralai tiktoken \
     soundfile pydub -q 2>/dev/null || \
   "$PYTHON" -m pip install transformers tokenizers accelerate safetensors datasets \
     optimum "huggingface_hub>=0.20" "peft>=0.7" "trl>=0.7" diffusers Pillow \
-    openai anthropic google-generativeai tiktoken \
+    openai anthropic google-generativeai groq mistralai tiktoken \
     soundfile pydub --break-system-packages -q 2>/dev/null || true
 
   # Optional packages (may fail on some platforms)
@@ -13138,34 +13138,6 @@ show_help() {
   echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
   echo ""
 
-  # ── Examples ────────────────────────────────────────────────────────────────
-  # ── v2.7.1: New Features ──────────────────────────────────────────────────────
-  echo -e "${C1}┌─ v2.7 / v2.7.1 NEW FEATURES ────────────────────────────────────┐${R_}"
-  echo -e "${C2}│${R_}  ${B}GUI v5.1 (v2.7.1 update):${R_}"
-  echo -e "${C2}│${R_}    Structured settings editor: only editable keys shown"
-  echo -e "${C2}│${R_}    Edit individual settings inline with Enter, saved via ai config"
-  echo -e "${C2}│${R_}  ${B}GUI v5 (v2.7):${R_}"
-  echo -e "${C2}│${R_}    Split-pane layout: sidebar + content panel"
-  echo -e "${C2}│${R_}    Edit-on-click / Enter: items open inline editors"
-  echo -e "${C2}│${R_}    New themes: dracula + all v2.6 themes"
-  echo -e "${C2}│${R_}    / quick-search to filter menu items"
-  echo -e "${C2}│${R_}    F5 refresh, Tab to switch focus sidebar↔content"
-  echo -e "${C2}│${R_}  ${B}AI Extension System (.aipack):${R_}"
-  echo -e "${C2}│${R_}    ai extension create <name>    Scaffold new extension"
-  echo -e "${C2}│${R_}    ai extension load <file>      Load from .aipack file"
-  echo -e "${C2}│${R_}    ai extension locate           Show all + file paths + status"
-  echo -e "${C2}│${R_}    ai extension package <name>   Build distributable .aipack"
-  echo -e "${C2}│${R_}    ai extension edit <name>      Open editor for extension files"
-  echo -e "${C2}│${R_}    ai extension run <name>       Execute an extension"
-  echo -e "${C2}│${R_}    .aipack: gzip tar with ex.sh + main.py + manifest.json"
-  echo -e "${C2}│${R_}  ${B}Firefox LLM Sidebar:${R_}"
-  echo -e "${C2}│${R_}    ai install-firefox-ext        Build & install Firefox extension"
-  echo -e "${C2}│${R_}    Connects to local AI CLI API server (ai api start)"
-  echo -e "${C2}│${R_}    v2.7.1: fixed AI output (non-streaming JSON response)"
-  echo -e "${C2}│${R_}    Full settings: API URL, model, max tokens, temperature"
-  echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
-  echo ""
-
   echo -e "${C1}┌─ CHANGELOG & UPDATE ─────────────────────────────────────────────┐${R_}"
   echo -e "${C2}│${R_}  ai change                Show full changelog"
   echo -e "${C2}│${R_}  ai -L                    Show latest changes"
@@ -15552,18 +15524,19 @@ $(cat)" ;;
       done | sort
       ;;
     *)
-      # v2.7.3: Check user-defined aliases first before AI fallthrough
+      # v2.9.0: Try extended dispatcher first (all new commands)
+      if _dispatch_v29_final "$cmd" "$@" 2>/dev/null; then
+        return 0
+      fi
+      # v2.7.3: Check user-defined aliases
       local _alias_cmd
       _alias_cmd=$(_resolve_alias "$cmd" 2>/dev/null) || true
       if [[ -n "$_alias_cmd" ]]; then
-        # Expand alias and re-dispatch
         # shellcheck disable=SC2086
         eval "main $_alias_cmd \"\$@\""
         return $?
       fi
-      # Unknown command — show helpful error, then try AI fallthrough
-      echo -e "${DIM}[ai] No command named \"${cmd}\". Checking aliases and passing to AI...${R}" >&2
-      echo -e "${DIM}[ai] Run 'ai help' to see all commands. Run 'ai -h <cmd>' for details.${R}" >&2
+      # Unknown command — AI fallthrough
       dispatch_ask "$cmd $*" ;;
   esac
 }
