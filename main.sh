@@ -13552,37 +13552,11 @@ show_help() {
   echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
   echo ""
 
-  echo -e "${C1}┌─ v2.9.0 NEW FEATURES ────────────────────────────────────────────┐${R_}"
-  echo -e "${C2}│${R_}  ${B}Config Snapshots:${R_}"
-  echo -e "${C2}│${R_}    ai snap save/load/list/diff/delete"
-  echo -e "${C2}│${R_}  ${B}Performance Benchmark:${R_}"
-  echo -e "${C2}│${R_}    ai perf [--tokens N] [--runs N]"
-  echo -e "${C2}│${R_}  ${B}Model Comparison:${R_}"
-  echo -e "${C2}│${R_}    ai compare \"prompt\" [--models a,b,c]"
-  echo -e "${C2}│${R_}  ${B}Prompt Templates:${R_}"
-  echo -e "${C2}│${R_}    ai template create/use/list/edit/delete"
-  echo -e "${C2}│${R_}  ${B}RAG Pipeline:${R_}"
-  echo -e "${C2}│${R_}    ai rag create <name> <dir>   Index local documents"
-  echo -e "${C2}│${R_}    ai rag query <name> \"question\""
-  echo -e "${C2}│${R_}  ${B}Batch Queue:${R_}"
-  echo -e "${C2}│${R_}    ai batch add/run/list/results/clear"
-  echo -e "${C2}│${R_}  ${B}Health Check:${R_}"
-  echo -e "${C2}│${R_}    ai health     Full system diagnostics"
-  echo -e "${C2}│${R_}  ${B}Conversation Branching:${R_}"
-  echo -e "${C2}│${R_}    ai branch create/use/list/merge/delete"
-  echo -e "${C2}│${R_}  ${B}Export / Import:${R_}"
-  echo -e "${C2}│${R_}    ai export [all|chat|config|models]"
-  echo -e "${C2}│${R_}    ai import <dir|file>"
-  echo -e "${C2}│${R_}  ${B}Cleanup:${R_}"
-  echo -e "${C2}│${R_}    ai cleanup [--dry-run]"
-  echo -e "${C2}│${R_}  ${B}Model Presets:${R_}"
-  echo -e "${C2}│${R_}    ai preset save/load/list/delete"
-  echo -e "${C2}│${R_}  ${B}Plugin System:${R_}"
-  echo -e "${C2}│${R_}    ai plugin list/install/remove/reload"
-  echo -e "${C2}│${R_}  ${B}Bug Fixes & QOL:${R_}"
-  echo -e "${C2}│${R_}    API retry with exponential backoff + jitter"
-  echo -e "${C2}│${R_}    Enhanced error codes (ERR4xx-6xx) with suggestions"
-  echo -e "${C2}│${R_}    Rate limit tracking and warnings"
+  echo -e "${C1}┌─ CHANGELOG & UPDATE ─────────────────────────────────────────────┐${R_}"
+  echo -e "${C2}│${R_}  ai change                Show full changelog"
+  echo -e "${C2}│${R_}  ai -L                    Show latest changes"
+  echo -e "${C2}│${R_}  ai -Su                   Update from GitHub"
+  echo -e "${C2}│${R_}  ai -aup                  Auto-updater (legacy)"
   echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
   echo ""
 
@@ -15756,6 +15730,12 @@ main() {
     # ── Auto-update ───────────────────────────────────────────────────────────
     -aup|--aup|aup|update-check)
       cmd_autoupdate "$@" ;;
+    -Su|--system-update|system-update)
+      cmd_system_update "$@" ;;
+    -L|--latest)
+      cmd_change latest ;;
+    change|changelog|changes)
+      cmd_change "$@" ;;
 
     # ── Asking ───────────────────────────────────────────────────────────────
     ask|a)
@@ -17316,6 +17296,164 @@ EOF
       echo "Usage: ai preset <save|load|list|delete>"
       ;;
   esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  CHANGELOG VIEWER — v2.9.0
+#  ai change — show full changelog
+#  ai -L — show latest version changes
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_change() {
+  local sub="${1:-all}"
+  case "$sub" in
+    latest|-L)
+      hdr "AI CLI v${VERSION} — Latest Changes"
+      echo ""
+      echo -e "  ${B}${BCYAN}v2.9.0${R} — Major Release"
+      echo ""
+      echo -e "  ${B}New Backends:${R}"
+      echo "    + Groq API (llama-3.3-70b, mixtral)"
+      echo "    + Mistral API (mistral-large, codestral)"
+      echo "    + Together API (llama-3.3-70b-turbo)"
+      echo ""
+      echo -e "  ${B}New Features:${R}"
+      echo "    + Config snapshots (ai snap save/load)"
+      echo "    + Performance benchmark (ai perf)"
+      echo "    + Model comparison (ai compare)"
+      echo "    + RAG pipeline (ai rag create/query)"
+      echo "    + Batch queue (ai batch add/run)"
+      echo "    + Prompt templates (ai template)"
+      echo "    + Conversation branching (ai branch)"
+      echo "    + Health check (ai health)"
+      echo "    + Plugin system (ai plugin)"
+      echo "    + Model presets (ai preset)"
+      echo "    + Export/Import (ai export/import)"
+      echo "    + Notebook mode (ai notebook)"
+      echo "    + Task planner (ai plan)"
+      echo "    + Learning mode (ai learn)"
+      echo "    + Writing assistant (ai write)"
+      echo "    + AI memory (ai memory)"
+      echo "    + Git AI (ai git commit/pr/blame)"
+      echo "    + Shell helper (ai shell gen/explain/fix)"
+      echo "    + Quiz mode (ai quiz)"
+      echo "    + Interview prep (ai interview)"
+      echo "    + Token counter (ai tokens)"
+      echo "    + Cost estimator (ai cost)"
+      echo "    + Network tools (ai net)"
+      echo "    + Text utilities (ai text)"
+      echo "    + JSON/SQL/Docker/Regex helpers"
+      echo "    + Security audit (ai security)"
+      echo "    + Analytics (ai analytics)"
+      echo ""
+      echo -e "  ${B}Bug Fixes:${R}"
+      echo "    + API retry with exponential backoff"
+      echo "    + Enhanced error codes (ERR4xx-6xx)"
+      echo "    + Rate limit tracking"
+      echo "    + Fixed version strings"
+      echo "    + 195 recommended models (was 56)"
+      echo "    + Chat rewritten with 15+ slash commands"
+      echo ""
+      echo -e "  ${B}Models:${R} 195 curated picks across 31 categories"
+      ;;
+    all|*)
+      cmd_change latest
+      echo ""
+      echo -e "  ${B}${BCYAN}v2.7.4${R}"
+      echo "    GUI+ v2 (tkinter) · AI Node Editor (125+ nodes) · -h <cmd>"
+      echo ""
+      echo -e "  ${B}${BCYAN}v2.7.3${R}"
+      echo "    Aliases · Error codes · GGUF fix · Model sync"
+      echo ""
+      echo -e "  ${B}${BCYAN}v2.7.1${R}"
+      echo "    GUI v5.1 · Structured settings editor"
+      echo ""
+      echo -e "  ${B}${BCYAN}v2.7${R}"
+      echo "    AI Extension System (.aipack) · Firefox LLM Sidebar"
+      echo "    GUI v5 (split-pane) · 9 themes"
+      echo ""
+      echo -e "  ${B}${BCYAN}v2.6${R}"
+      echo "    Projects (multi-chat memory) · First-run setup"
+      echo ""
+      echo -e "  ${B}${BCYAN}v2.5${R}"
+      echo "    GitHub integration · Research papers · Canvas v2"
+      echo "    Multimodal training · Custom system prompts"
+      echo ""
+      echo -e "  ${B}${BCYAN}v2.4${R}"
+      echo "    Custom datasets · LLM API server · Multi-AI arena"
+      echo "    RLHF HF datasets · Right-click AI · API key hosting"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  SYSTEM UPDATE — v2.9.0
+#  ai -Su — update ai-cli from GitHub
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_system_update() {
+  hdr "AI CLI — System Update"
+  info "Checking for updates from GitHub..."
+
+  local remote_ver
+  remote_ver=$(curl -fsSL "https://raw.githubusercontent.com/minerofthesoal/ai-cli/main/main.sh" 2>/dev/null \
+    | grep '^VERSION=' | head -1 | cut -d'"' -f2 || echo "")
+
+  if [[ -z "$remote_ver" ]]; then
+    err "Could not fetch remote version. Check network."
+    return 1
+  fi
+
+  info "Installed: v${VERSION}"
+  info "Remote:    v${remote_ver}"
+
+  if [[ "$VERSION" == "$remote_ver" ]]; then
+    ok "Already up to date (v${VERSION})"
+    return 0
+  fi
+
+  echo ""
+  printf "  ${BYELLOW}Update v${VERSION} → v${remote_ver}? [Y/n]:${R} "
+  read -r confirm
+  [[ "$confirm" =~ ^[Nn] ]] && { info "Cancelled."; return 0; }
+
+  info "Downloading latest main.sh..."
+  local tmp
+  tmp=$(mktemp /tmp/ai-cli-update-XXXXXX)
+  curl -fsSL "https://raw.githubusercontent.com/minerofthesoal/ai-cli/main/main.sh" -o "$tmp"
+
+  if [[ ! -s "$tmp" ]]; then
+    err "Download failed or file empty"
+    rm -f "$tmp"
+    return 1
+  fi
+
+  # Verify it's a valid bash script
+  if ! bash -n "$tmp" 2>/dev/null; then
+    err "Downloaded file has syntax errors. Aborting."
+    rm -f "$tmp"
+    return 1
+  fi
+
+  # Find where ai is installed
+  local ai_path
+  ai_path=$(command -v ai 2>/dev/null || echo "/usr/local/bin/ai")
+
+  if [[ -w "$ai_path" ]]; then
+    cp "$tmp" "$ai_path"
+    chmod +x "$ai_path"
+  elif command -v sudo &>/dev/null; then
+    sudo cp "$tmp" "$ai_path"
+    sudo chmod +x "$ai_path"
+  else
+    err "Cannot write to $ai_path. Run with sudo."
+    rm -f "$tmp"
+    return 1
+  fi
+
+  rm -f "$tmp"
+  ok "Updated to v${remote_ver}!"
+  info "Restart your terminal or run: ai --version"
 }
 
 ####NEW_FEATURES_MARKER####
