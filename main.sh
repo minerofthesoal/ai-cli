@@ -4953,7 +4953,7 @@ cmd_gui() {
 
   cat > "$gui_script" << 'GUIEOF'
 #!/usr/bin/env python3
-"""AI CLI v2.7.3 — GUI v5.2: split-pane, structured settings editor, extensions, aliases"""
+"""AI CLI v2.9.0 — GUI v7: split-pane, structured settings editor, extensions, aliases, v2.9 features"""
 import sys, os, curses, subprocess, threading, time, textwrap, json, glob, shutil
 
 CLI      = sys.argv[1] if len(sys.argv) > 1 else "ai"
@@ -6130,7 +6130,7 @@ def main(stdscr):
 curses.wrapper(main)
 GUIEOF
 
-  info "Launching GUI v5.2 (split-pane, structured settings, edit-on-select, aliases panel)..."
+  info "Launching GUI v7 (split-pane, structured settings, v2.9 features)..."
   "$PYTHON" "$gui_script" "$cli_bin" "$theme" "$ext_dir"
   local rc=$?
   rm -f "$gui_script"
@@ -6141,48 +6141,67 @@ _gui_fallback() {
   # Text-mode fallback when Python/curses unavailable
   while true; do
     echo ""
-    hdr "═══ AI CLI v${VERSION} — Main Menu (GUI v6 text mode) ═══"
-    local items=(
-      "Chat (interactive)"       "Ask a question"
-      "Imagine (image gen)"      "Vision (image→text)"
-      "Audio"                    "Video"
-      "Canvas v2"                "Models / Download"
-      "TTM (Tiny ~179M)"         "MTM (Mini ~0.61B)"
-      "Mtm (Medium ~1.075B)"     "Datasets"
-      "RLHF"                     "Multi-AI Arena"
-      "Web Search"               "GitHub"
-      "Research Papers"          "Settings / Config"
-      "Status"                   "Extensions"
-      "Install Firefox Ext"      "Quit"
-    )
-    for i in "${!items[@]}"; do
-      printf "  ${B}%2d.${R} %s\n" "$(( i+1 ))" "${items[$i]}"
-    done
+    hdr "═══ AI CLI v${VERSION} — Main Menu (GUI v7 text mode) ═══"
     echo ""
-    read -rp "Choose [1-${#items[@]}]: " choice
+    echo -e "  ${B}${BCYAN}── Chat & AI ──${R}"
+    echo -e "   ${B} 1.${R} Chat (interactive)       ${B} 2.${R} Ask a question"
+    echo -e "   ${B} 3.${R} Agent mode               ${B} 4.${R} Web search"
+    echo -e "  ${B}${BCYAN}── Media ──${R}"
+    echo -e "   ${B} 5.${R} Imagine (image gen)       ${B} 6.${R} Vision (image→text)"
+    echo -e "   ${B} 7.${R} Audio                     ${B} 8.${R} Video"
+    echo -e "  ${B}${BCYAN}── Models & Training ──${R}"
+    echo -e "   ${B} 9.${R} Models / Download         ${B}10.${R} Recommended (195)"
+    echo -e "   ${B}11.${R} TTM / MTM / Mtm           ${B}12.${R} RLHF"
+    echo -e "   ${B}13.${R} Datasets                  ${B}14.${R} Fine-tune"
+    echo -e "  ${B}${BCYAN}── Workspace ──${R}"
+    echo -e "   ${B}15.${R} Canvas                    ${B}16.${R} Notebook"
+    echo -e "   ${B}17.${R} Write (blog/email/docs)   ${B}18.${R} Node Editor"
+    echo -e "  ${B}${BCYAN}── v2.9 Features ──${R}"
+    echo -e "   ${B}19.${R} Health check              ${B}20.${R} Perf benchmark"
+    echo -e "   ${B}21.${R} RAG knowledge base        ${B}22.${R} Prompt templates"
+    echo -e "   ${B}23.${R} Config snapshots           ${B}24.${R} Model compare"
+    echo -e "   ${B}25.${R} Batch queue               ${B}26.${R} Analytics"
+    echo -e "  ${B}${BCYAN}── System ──${R}"
+    echo -e "   ${B}27.${R} Status                    ${B}28.${R} Settings"
+    echo -e "   ${B}29.${R} Extensions                ${B}30.${R} Plugins"
+    echo -e "   ${B}31.${R} Multi-AI Arena            ${B}32.${R} Learn mode"
+    echo -e "   ${B} 0.${R} Quit"
+    echo ""
+    read -rp "Choose [0-32]: " choice
     case "$choice" in
       1)  cmd_chat_interactive ;;
       2)  read -rp "Question: " q; dispatch_ask "$q" ;;
-      3)  read -rp "Prompt: " p; cmd_imagine "$p" ;;
-      4)  read -rp "Image path: " img; read -rp "Question: " q; cmd_vision "$img" "$q" ;;
-      5)  cmd_audio ;;
-      6)  cmd_video ;;
-      7)  cmd_canvas_v2 help ;;
-      8)  cmd_list_models; echo ""; read -rp "Download #: " n; [[ -n "$n" ]] && cmd_recommended download "$n" ;;
-      9)  cmd_ttm ;;
-      10) cmd_mtm ;;
-      11) cmd_Mtm ;;
-      12) cmd_dataset list ;;
-      13) cmd_rlhf status ;;
-      14) read -rp "Topic: " q; read -rp "Mode (debate/collab): " m; cmd_multiai "${m:-debate}" "$q" ;;
-      15) read -rp "Search: " q; cmd_websearch "$q" ;;
-      16) cmd_github help ;;
-      17) cmd_papers help ;;
-      18) cmd_config ;;
-      19) cmd_status ;;
-      20) cmd_extension list ;;
-      21) cmd_install_firefox_ext ;;
-      22|q|Q|"") break ;;
+      3)  read -rp "Task: " q; cmd_agent "$q" ;;
+      4)  read -rp "Search: " q; cmd_websearch "$q" ;;
+      5)  read -rp "Prompt: " p; cmd_imagine "$p" ;;
+      6)  read -rp "Image: " img; read -rp "Question: " q; cmd_vision ask "$img" "$q" ;;
+      7)  cmd_audio ;;
+      8)  cmd_video ;;
+      9)  cmd_list_models ;;
+      10) cmd_recommended ;;
+      11) read -rp "Model (TTM/MTM/Mtm): " m; case "$m" in TTM|ttm) cmd_ttm ;; MTM|mtm) cmd_mtm ;; *) cmd_Mtm ;; esac ;;
+      12) cmd_rlhf status ;;
+      13) cmd_dataset list ;;
+      14) cmd_finetune ;;
+      15) cmd_canvas ;;
+      16) cmd_notebook ;;
+      17) cmd_write ;;
+      18) cmd_node ;;
+      19) cmd_health ;;
+      20) cmd_perf ;;
+      21) cmd_rag ;;
+      22) cmd_template ;;
+      23) cmd_snap ;;
+      24) read -rp "Prompt: " q; cmd_compare "$q" ;;
+      25) cmd_batch ;;
+      26) cmd_analytics ;;
+      27) cmd_status ;;
+      28) cmd_config ;;
+      29) cmd_extension list ;;
+      30) cmd_plugin list ;;
+      31) read -rp "Topic: " q; cmd_multiai debate "$q" ;;
+      32) read -rp "Topic: " q; cmd_learn "$q" ;;
+      0|q|Q|"") break ;;
       *) warn "Invalid choice" ;;
     esac
   done
@@ -6208,7 +6227,7 @@ cmd_gui_plus() {
   local script; script=$(mktemp /tmp/ai_guiplus_XXXX.py)
   cat > "$script" << 'GUIPLUSEOF'
 #!/usr/bin/env python3
-"""AI CLI v2.7.4 — GUI+ v2: tkinter, 2.1x size, tabbed, dark/light themes"""
+"""AI CLI v2.9.0 — GUI+ v3: tkinter, tabbed, dark/light themes, v2.9 features"""
 import sys, os, subprocess, threading, json, time, tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog, simpledialog
 
@@ -13207,9 +13226,9 @@ show_help() {
   echo -e "${W}╔══════════════════════════════════════════════════════════════════╗${R_}"
   echo -e "${W}║  AI CLI  v${VERSION} — Universal AI Shell                        ║${R_}"
   echo -e "${W}║  Chat · Vision · Audio · Video · RLHF v2 · Fine-tune · Multi-AI ║${R_}"
-  echo -e "${W}║  Aliases · ErrorCodes · GGUF-fix · ModelSync · 56 Rec Models    ║${R_}"
-  echo -e "${W}║  v2.7.3: uninstall fix · GUI v5.2 · GGUF fix · alias cmd        ║${R_}"
-  echo -e "${W}║          error codes · ask fix · 2x recommended · model sync    ║${R_}"
+  echo -e "${W}║  RAG · Batch · Snapshots · Benchmark · 195 Models · 8 Backends  ║${R_}"
+  echo -e "${W}║  v2.9.0: Groq+Mistral+Together · RAG · perf · health · plugins  ║${R_}"
+  echo -e "${W}║          templates · snapshots · batch · branch · export · more  ║${R_}"
   echo -e "${W}╚══════════════════════════════════════════════════════════════════╝${R_}"
   echo -e "${DM}  Platform: $PLATFORM | CPU-only: $([[ $CPU_ONLY_MODE -eq 1 ]] && echo yes || echo no) | Python: ${PYTHON:-not found} | GPU arch: ${CUDA_ARCH:-0}${R_}"
   echo ""
