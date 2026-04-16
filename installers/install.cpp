@@ -5,6 +5,7 @@
  * Usage:   ./install [--prefix /usr/local] [--branch main] [--force] [--uninstall]
  */
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
