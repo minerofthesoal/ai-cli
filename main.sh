@@ -501,6 +501,183 @@ RECOMMENDED_MODELS=(
   [54]="gemini-2.0-flash-lite|gemini|API|Gemini 2.0 Flash Lite — cheapest Gemini"
   [55]="gemini-1.5-pro|gemini|API|Gemini 1.5 Pro — long context 2M"
   [56]="o1-mini|openai|API|OpenAI o1-mini — fast reasoning model"
+  # ── Large LLMs (13B–70B+) ─────────────────────────────────────────
+  [57]="bartowski/Qwen2.5-14B-Instruct-GGUF|gguf|14B|Qwen2.5 14B — strong mid-size"
+  [58]="bartowski/Qwen2.5-32B-Instruct-GGUF|gguf|32B|Qwen2.5 32B — top open model"
+  [59]="bartowski/Qwen2.5-72B-Instruct-GGUF|gguf|72B|Qwen2.5 72B — flagship Qwen"
+  [60]="bartowski/Mixtral-8x7B-Instruct-v0.1-GGUF|gguf|46B|Mixtral 8x7B MoE — fast 46B"
+  [61]="bartowski/Yi-1.5-34B-Chat-GGUF|gguf|34B|Yi 1.5 34B — bilingual EN/ZH"
+  [62]="bartowski/c4ai-command-r-plus-GGUF|gguf|104B|Command R+ — enterprise RAG"
+  [63]="bartowski/Llama-3.3-70B-Instruct-GGUF|gguf|70B|Llama 3.3 70B — latest Meta"
+  [64]="bartowski/gemma-2-27b-it-GGUF|gguf|27B|Gemma 2 27B — Google large"
+  [65]="bartowski/Phi-4-GGUF|gguf|14B|Phi-4 14B — Microsoft best small"
+  [66]="bartowski/Mistral-Small-24B-Instruct-2501-GGUF|gguf|24B|Mistral Small 24B"
+  # ── More Coding Models ────────────────────────────────────────────
+  [67]="bartowski/Qwen2.5-Coder-14B-Instruct-GGUF|gguf|14B|Qwen2.5 Coder 14B"
+  [68]="bartowski/Qwen2.5-Coder-32B-Instruct-GGUF|gguf|32B|Qwen2.5 Coder 32B — top coder"
+  [69]="bartowski/DeepSeek-Coder-V2-Instruct-GGUF|gguf|236B|DeepSeek Coder V2 MoE"
+  [70]="bartowski/CodeLlama-34b-Instruct-GGUF|gguf|34B|Code Llama 34B"
+  [71]="bartowski/starcoder2-15b-GGUF|gguf|15B|StarCoder2 15B — multi-lang code"
+  [72]="bartowski/stable-code-instruct-3b-GGUF|gguf|3B|Stable Code 3B — tiny coder"
+  [73]="bartowski/codegemma-7b-it-GGUF|gguf|7B|CodeGemma 7B — Google code"
+  [74]="bartowski/WizardCoder-33B-V1.1-GGUF|gguf|33B|WizardCoder 33B"
+  # ── More Reasoning / Math ─────────────────────────────────────────
+  [75]="bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF|gguf|14B|DeepSeek-R1 14B reasoning"
+  [76]="bartowski/DeepSeek-R1-Distill-Qwen-32B-GGUF|gguf|32B|DeepSeek-R1 32B reasoning"
+  [77]="bartowski/Qwen2.5-Math-72B-Instruct-GGUF|gguf|72B|Qwen2.5 Math 72B — flagship math"
+  [78]="bartowski/Qwen2.5-Math-1.5B-Instruct-GGUF|gguf|1.5B|Qwen2.5 Math 1.5B — tiny math"
+  [79]="bartowski/WizardMath-7B-V1.1-GGUF|gguf|7B|WizardMath 7B"
+  [80]="bartowski/Abel-7B-002-GGUF|gguf|7B|Abel 7B — math reasoning"
+  # ── Roleplay / Creative ──────────────────────────────────────────
+  [81]="bartowski/Nous-Hermes-2-Mixtral-8x7B-DPO-GGUF|gguf|46B|Nous Hermes 2 Mixtral"
+  [82]="bartowski/OpenHermes-2.5-Mistral-7B-GGUF|gguf|7B|OpenHermes 2.5 7B"
+  [83]="bartowski/Mythomax-L2-13B-GGUF|gguf|13B|MythoMax 13B — creative writing"
+  [84]="bartowski/dolphin-2.9.3-mistral-7B-32k-GGUF|gguf|7B|Dolphin Mistral — uncensored"
+  [85]="bartowski/Samantha-1.11-70b-GGUF|gguf|70B|Samantha 70B — empathetic AI"
+  # ── Multilingual Models ──────────────────────────────────────────
+  [86]="bartowski/aya-23-8B-GGUF|gguf|8B|Aya 23 8B — 23 languages"
+  [87]="bartowski/aya-23-35B-GGUF|gguf|35B|Aya 23 35B — 23 languages large"
+  [88]="bartowski/Llama-3.1-8B-Instruct-GGUF|gguf|8B|Llama 3.1 8B multilingual"
+  [89]="bartowski/Qwen2.5-3B-Instruct-GGUF|gguf|3B|Qwen2.5 3B — multilingual tiny"
+  [90]="bartowski/Vikhr-Nemo-12B-Instruct-R-GGUF|gguf|12B|Vikhr 12B — Russian specialist"
+  # ── Long Context Models ──────────────────────────────────────────
+  [91]="bartowski/Llama-3.1-8B-Instruct-GGUF|gguf|8B|Llama 3.1 8B — 128k context"
+  [92]="bartowski/Qwen2.5-7B-Instruct-GGUF|gguf|7B|Qwen2.5 7B — 128k context"
+  [93]="bartowski/Yi-1.5-9B-Chat-GGUF|gguf|9B|Yi 1.5 9B — 200k context"
+  [94]="bartowski/Phi-3.1-mini-128k-instruct-GGUF|gguf|3.8B|Phi 3.1 128k context"
+  # ── More Vision / VL Models ──────────────────────────────────────
+  [95]="Qwen/Qwen2.5-VL-7B-Instruct|hf|7B|Qwen2.5-VL 7B — latest vision"
+  [96]="Qwen/Qwen2.5-VL-3B-Instruct|hf|3B|Qwen2.5-VL 3B — tiny vision"
+  [97]="microsoft/Florence-2-large|hf|0.7B|Florence 2 — image understanding"
+  [98]="llava-hf/llava-onevision-qwen2-7b-ov-hf|hf|7B|LLaVA OneVision 7B"
+  [99]="vikhyatk/moondream2|hf|1.8B|Moondream2 — tiny vision model"
+  [100]="THUDM/cogvlm2-llama3-chat-19B|hf|19B|CogVLM2 19B — powerful VL"
+  # ── More Image Generation ────────────────────────────────────────
+  [101]="stabilityai/stable-diffusion-3.5-large|diffusers|SD3.5|SD 3.5 Large — newest SD"
+  [102]="playgroundai/playground-v2.5-1024px-aesthetic|diffusers|PG2.5|Playground v2.5"
+  [103]="dataautogpt3/FLUX-anime2|diffusers|FLUX-A|FLUX Anime — anime style"
+  [104]="Shakker-Labs/FLUX.1-dev-LoRA-Logo-Design|diffusers|FLUX-L|FLUX Logo Design"
+  # ── More Audio ────────────────────────────────────────────────────
+  [105]="openai/whisper-small|hf|244M|Whisper small — balanced speed/quality"
+  [106]="openai/whisper-tiny|hf|39M|Whisper tiny — fastest transcription"
+  [107]="facebook/musicgen-medium|hf|1.5B|MusicGen medium — better music"
+  [108]="facebook/musicgen-large|hf|3.3B|MusicGen large — best music"
+  [109]="parler-tts/parler-tts-mini-v1|hf|0.8B|Parler TTS mini — natural speech"
+  # ── Embedding / Reranker ─────────────────────────────────────────
+  [110]="BAAI/bge-m3|hf|568M|BGE M3 — multilingual embeddings"
+  [111]="jinaai/jina-embeddings-v3|hf|570M|Jina v3 — task-specific embeddings"
+  [112]="BAAI/bge-reranker-v2-m3|hf|568M|BGE Reranker M3 — cross-encoder"
+  [113]="Xenova/all-MiniLM-L6-v2|hf|22M|MiniLM ONNX — fastest embeddings"
+  # ── Specialized / Niche ──────────────────────────────────────────
+  [114]="bartowski/BioMistral-7B-GGUF|gguf|7B|BioMistral — medical/bio AI"
+  [115]="bartowski/Meditron-7B-GGUF|gguf|7B|Meditron — clinical medicine"
+  [116]="bartowski/LegalBert-GGUF|gguf|0.3B|LegalBERT — legal text"
+  [117]="bartowski/finance-LLM-GGUF|gguf|7B|FinanceLLM — financial analysis"
+  # ── Tiny / Edge Models ───────────────────────────────────────────
+  [118]="bartowski/TinyLlama-1.1B-Chat-v1.0-GGUF|gguf|1.1B|TinyLlama 1.1B — ultra light"
+  [119]="bartowski/Qwen2.5-0.5B-Instruct-GGUF|gguf|0.5B|Qwen2.5 0.5B — smallest chat"
+  [120]="bartowski/SmolLM2-360M-Instruct-GGUF|gguf|0.36B|SmolLM2 360M — edge device"
+  [121]="bartowski/SmolLM2-135M-Instruct-GGUF|gguf|0.13B|SmolLM2 135M — IOT/embedded"
+  # ── Instruction Tuned ────────────────────────────────────────────
+  [122]="bartowski/neural-chat-7b-v3-3-GGUF|gguf|7B|Neural Chat — Intel tuned"
+  [123]="bartowski/zephyr-7b-beta-GGUF|gguf|7B|Zephyr 7B — HuggingFace tuned"
+  [124]="bartowski/openchat-3.5-0106-GGUF|gguf|7B|OpenChat 3.5 — competitive 7B"
+  [125]="bartowski/Starling-LM-7B-alpha-GGUF|gguf|7B|Starling 7B — RLHF champion"
+  # ── More Cloud APIs ──────────────────────────────────────────────
+  [126]="o3-mini|openai|API|OpenAI o3-mini — advanced reasoning"
+  [127]="gpt-4-turbo|openai|API|GPT-4 Turbo — fast GPT-4"
+  [128]="gpt-3.5-turbo|openai|API|GPT-3.5 Turbo — cheapest OpenAI"
+  [129]="claude-sonnet-4-6|claude|API|Claude Sonnet 4.6 — latest Sonnet"
+  [130]="claude-opus-4-7|claude|API|Claude Opus 4.7 — most capable"
+  [131]="gemini-2.5-pro|gemini|API|Gemini 2.5 Pro — latest Gemini"
+  [132]="gemini-2.5-flash|gemini|API|Gemini 2.5 Flash — fast Gemini"
+  [133]="llama-3.3-70b-versatile|groq|API|Groq Llama 70B — ultra fast"
+  [134]="llama-3.1-8b-instant|groq|API|Groq Llama 8B — instant replies"
+  [135]="mixtral-8x7b-32768|groq|API|Groq Mixtral — fast MoE"
+  [136]="mistral-large-latest|mistral|API|Mistral Large — flagship"
+  [137]="mistral-small-latest|mistral|API|Mistral Small — affordable"
+  [138]="codestral-latest|mistral|API|Codestral — Mistral code"
+  [139]="meta-llama/Llama-3.3-70B-Instruct-Turbo|together|API|Together Llama 70B"
+  [140]="meta-llama/Llama-3.1-8B-Instruct-Turbo|together|API|Together Llama 8B"
+  # ── Function Calling / Tool Use ──────────────────────────────────
+  [141]="bartowski/Hermes-3-Llama-3.1-70B-GGUF|gguf|70B|Hermes 3 70B — tool calling"
+  [142]="bartowski/functionary-small-v3.2-GGUF|gguf|8B|Functionary 8B — function calling"
+  [143]="bartowski/NexusRaven-V2-13B-GGUF|gguf|13B|NexusRaven — function calling"
+  # ── Agent / Planning ─────────────────────────────────────────────
+  [144]="bartowski/Qwen2.5-7B-Instruct-GGUF|gguf|7B|Qwen2.5 7B — agentic"
+  [145]="bartowski/Llama-3.1-Storm-8B-GGUF|gguf|8B|Storm 8B — planning agent"
+  # ── RLHF / DPO Tuned ────────────────────────────────────────────
+  [146]="bartowski/tulu-2-dpo-70b-GGUF|gguf|70B|Tulu 2 DPO 70B — RLHF aligned"
+  [147]="bartowski/Nous-Hermes-2-SOLAR-10.7B-GGUF|gguf|10.7B|Hermes SOLAR — DPO tuned"
+  # ── Uncensored / Unfiltered ──────────────────────────────────────
+  [148]="bartowski/dolphin-2.9.3-llama-3.1-8B-GGUF|gguf|8B|Dolphin Llama 8B"
+  [149]="bartowski/Midnight-Miqu-70B-v1.5-GGUF|gguf|70B|Midnight Miqu 70B"
+  # ── Japanese / CJK ──────────────────────────────────────────────
+  [150]="bartowski/Llama-3-ELYZA-JP-8B-GGUF|gguf|8B|ELYZA 8B — Japanese"
+  [151]="bartowski/Japanese-Starling-ChatV-7B-GGUF|gguf|7B|Starling JP — Japanese chat"
+  # ── Science / Research ───────────────────────────────────────────
+  [152]="bartowski/SciGLM-6B-GGUF|gguf|6B|SciGLM — science QA"
+  [153]="bartowski/ChemLLM-7B-Chat-GGUF|gguf|7B|ChemLLM — chemistry"
+  # ── Text Classification / NLU ────────────────────────────────────
+  [154]="MoritzLaurer/deberta-v3-large-zeroshot-v2.0|hf|0.4B|DeBERTa — zero-shot classify"
+  [155]="facebook/bart-large-mnli|hf|0.4B|BART MNLI — NLI classifier"
+  # ── Summarization ────────────────────────────────────────────────
+  [156]="facebook/bart-large-cnn|hf|0.4B|BART CNN — summarization"
+  [157]="google/pegasus-xsum|hf|0.5B|Pegasus — abstractive summary"
+  # ── Translation ──────────────────────────────────────────────────
+  [158]="facebook/nllb-200-distilled-600M|hf|0.6B|NLLB-200 — 200 languages"
+  [159]="Helsinki-NLP/opus-mt-en-fr|hf|0.3B|OPUS EN→FR translation"
+  [160]="Helsinki-NLP/opus-mt-en-de|hf|0.3B|OPUS EN→DE translation"
+  [161]="Helsinki-NLP/opus-mt-en-es|hf|0.3B|OPUS EN→ES translation"
+  [162]="Helsinki-NLP/opus-mt-en-zh|hf|0.3B|OPUS EN→ZH translation"
+  # ── Sentiment / Emotion ──────────────────────────────────────────
+  [163]="cardiffnlp/twitter-roberta-base-sentiment-latest|hf|0.1B|Twitter Sentiment"
+  [164]="SamLowe/roberta-base-go_emotions|hf|0.1B|GoEmotions — 28 emotions"
+  # ── Named Entity Recognition ─────────────────────────────────────
+  [165]="dslim/bert-base-NER|hf|0.1B|BERT NER — entity extraction"
+  [166]="Jean-Baptiste/camembert-ner|hf|0.1B|CamemBERT NER — French NER"
+  # ── Q&A / Reading Comprehension ──────────────────────────────────
+  [167]="deepset/roberta-base-squad2|hf|0.1B|RoBERTa SQuAD2 — extractive QA"
+  [168]="Intel/dynamic_tinybert|hf|0.06B|TinyBERT — fast QA"
+  # ── OCR / Document ───────────────────────────────────────────────
+  [169]="microsoft/trocr-base-printed|hf|0.3B|TrOCR — printed text OCR"
+  [170]="microsoft/trocr-base-handwritten|hf|0.3B|TrOCR — handwriting OCR"
+  [171]="microsoft/layoutlmv3-base|hf|0.1B|LayoutLMv3 — document AI"
+  # ── Object Detection / Segmentation ──────────────────────────────
+  [172]="facebook/detr-resnet-50|hf|41M|DETR — object detection"
+  [173]="facebook/sam-vit-base|hf|0.3B|SAM — segment anything"
+  [174]="google/owlvit-base-patch32|hf|0.15B|OWL-ViT — open vocab detection"
+  # ── Image Classification ─────────────────────────────────────────
+  [175]="google/vit-base-patch16-224|hf|86M|ViT — image classification"
+  [176]="microsoft/resnet-50|hf|25M|ResNet-50 — classic image classifier"
+  # ── Depth Estimation ─────────────────────────────────────────────
+  [177]="Intel/dpt-large|hf|0.3B|DPT — monocular depth estimation"
+  [178]="LiheYoung/depth-anything-base-hf|hf|97M|Depth Anything — relative depth"
+  # ── Video Models ─────────────────────────────────────────────────
+  [179]="MCG-NJU/videomae-base|hf|86M|VideoMAE — video understanding"
+  # ── Text-to-Speech Extended ──────────────────────────────────────
+  [180]="microsoft/speecht5_tts|hf|0.3B|SpeechT5 — fast TTS"
+  [181]="facebook/mms-tts-eng|hf|0.3B|MMS TTS English — Meta speech"
+  # ── More GGUF Small Models ───────────────────────────────────────
+  [182]="bartowski/Llama-3.2-1B-Instruct-GGUF|gguf|1B|Llama 3.2 1B — Meta tiny"
+  [183]="bartowski/internlm2_5-1_8b-chat-GGUF|gguf|1.8B|InternLM2.5 1.8B"
+  [184]="bartowski/stablelm-zephyr-3b-GGUF|gguf|3B|StableLM Zephyr 3B"
+  [185]="bartowski/rocket-3B-GGUF|gguf|3B|Rocket 3B — ultra fast"
+  [186]="bartowski/H2O-Danube3-500M-Chat-GGUF|gguf|0.5B|H2O Danube 500M — edge"
+  # ── Mixture of Experts ───────────────────────────────────────────
+  [187]="bartowski/Mixtral-8x22B-Instruct-v0.1-GGUF|gguf|141B|Mixtral 8x22B — massive MoE"
+  [188]="bartowski/DeepSeek-V2-Lite-Chat-GGUF|gguf|16B|DeepSeek V2 Lite MoE"
+  [189]="bartowski/DBRX-Instruct-GGUF|gguf|132B|DBRX — Databricks MoE"
+  # ── Safety / Moderation ──────────────────────────────────────────
+  [190]="meta-llama/Llama-Guard-3-8B|hf|8B|Llama Guard 3 — content safety"
+  [191]="meta-llama/Prompt-Guard-86M|hf|86M|Prompt Guard — injection detection"
+  # ── Reward Models ────────────────────────────────────────────────
+  [192]="OpenAssistant/reward-model-deberta-v3-large-v2|hf|0.4B|OA Reward Model"
+  # ── Code Completion ──────────────────────────────────────────────
+  [193]="bigcode/starcoder2-3b|hf|3B|StarCoder2 3B — code completion"
+  [194]="Qwen/CodeQwen1.5-7B|hf|7B|CodeQwen 1.5 — code gen"
+  # ── Newest 2025 Models ───────────────────────────────────────────
+  [195]="bartowski/Qwen3-8B-GGUF|gguf|8B|Qwen3 8B — latest Qwen generation"
 )
 
 # ════════════════════════════════════════════════════════════════════════════════
