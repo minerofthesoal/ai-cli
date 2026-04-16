@@ -350,8 +350,16 @@ jobs:
       - name: Resolve version
         id: ver
         run: |
-          VER="${GITHUB_REF#refs/tags/v}"
-          TAG="${GITHUB_REF#refs/tags/}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VER="${GITHUB_REF#refs/tags/v}"
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            VER=$(grep '^VERSION=' main.sh | head -1 | cut -d'"' -f2)
+            TAG="v${VER}"
+            # Create the tag if it doesn't exist
+            git tag "$TAG" 2>/dev/null || true
+            git push origin "$TAG" 2>/dev/null || true
+          fi
           echo "version=$VER" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "Release: $TAG (v$VER)"
