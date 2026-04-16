@@ -1,0 +1,4 @@
+#!/bin/bash
+set -e
+echo "Removing ai-cli..."
+echo "Note: Config at ~/.config/ai-cli/ and models at ~/.ai-cli/ are preserved."

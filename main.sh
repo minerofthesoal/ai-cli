@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
 # ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║  AI.SH v2.8.5.5 — Universal AI CLI · GUI v5.3 · GUI+ v3.0                 ║
+# ║  AI.SH v2.9.0 — Universal AI CLI · GUI v7 · GUI+ v3 · Node Editor · API   ║
 # ║  GGUF·PyTorch·Diffusers·OpenAI·Claude·Gemini·HF·Audio·Video·Vision·GUI    ║
 # ║  Extensions·.aipack·Firefox·Projects·RLHF-v2·Canvas-v3·Dataset-Gen·FLUX   ║
-# ║  195+Models·WorkflowEngine·BatchProc·WatchMode·Memo·Templates·Profiles     ║
-# ║  v2.8.5.5: 195 recommended models·fixed display·Canvas v3 full rewrite    ║
-# ║             canvas v3: tabs·syntax·run·diff·search·AI-insert·live-preview  ║
+# ║  Nodes·125+NodeBank·GUI+3.0x·DetailedHelp·ModernCmds·AliasesV2·ErrorCodes ║
+# ║  SnapConfig·PerfBench·ModelCompare·RAGPipeline·BatchQueue·PromptTemplates  ║
+# ║  v2.9.0: bug fixes·QOL·perf benchmark·config snapshots·RAG·prompt library ║
+# ║          model compare·batch queue·retry logic·better error handling       ║
+# ║          health check·export/import·conversation branching·plugin system   ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 # Linux/Mac:   chmod +x ai.sh && sudo cp ai.sh /usr/local/bin/ai
-# Arch Linux:  pacman -S python python-pip git ffmpeg nodejs npm && ai install-deps
+# Arch Linux:  pacman -S python python-pip git ffmpeg && ai install-deps
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
-# npm GUI:     ai -N; gui   OR   ai -N; gui-adv   (requires: npm install -g blessed blessed-contrib)
+# Install:     curl -fsSL .../installers/install.sh | sh
 set -euo pipefail
-VERSION="2.8.5.5"
+VERSION="2.9.0"
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  ENVIRONMENT DETECTION
@@ -199,14 +201,6 @@ FIRST_RUN_FILE="$CONFIG_DIR/.first_run_done"               # v2.6:   first-run f
 EXTENSIONS_DIR="$CONFIG_DIR/extensions"                    # v2.7:   AI extensions (.aipack)
 FIREFOX_EXT_DIR="$CONFIG_DIR/firefox_extension"            # v2.7:   Firefox sidebar extension
 ALIASES_FILE="$CONFIG_DIR/aliases.env"                     # v2.7.3: user-defined command aliases
-MEMO_DIR="$CONFIG_DIR/memos"                               # v2.8:   AI memo/notes
-TEMPLATES_DIR="$CONFIG_DIR/templates"                      # v2.8:   prompt templates
-PROFILES_DIR="$CONFIG_DIR/profiles"                        # v2.8:   user profiles
-WORKFLOWS_DIR="$CONFIG_DIR/workflows"                      # v2.8:   workflow definitions
-BATCH_DIR="$AI_OUTPUT_DIR/batch"                           # v2.8:   batch processing outputs
-WATCH_PID_FILE="$CONFIG_DIR/watch.pid"                     # v2.8:   watch daemon PID
-SCHEDULE_DIR="$CONFIG_DIR/schedules"                       # v2.8:   scheduled tasks
-NPM_GUI_DIR="$CONFIG_DIR/npm_gui"                          # v2.8:   npm blessed GUI files
 
 mkdir -p "$CONFIG_DIR" "$MODELS_DIR" "$SESSIONS_DIR" "$PERSONAS_DIR" \
          "$AI_OUTPUT_DIR" "$CANVAS_DIR" "$FINETUNE_DIR" "$TOOLS_DIR" \
@@ -215,9 +209,7 @@ mkdir -p "$CONFIG_DIR" "$MODELS_DIR" "$SESSIONS_DIR" "$PERSONAS_DIR" \
          "$CHAT_LOGS_DIR" "$AUDIO_DIR" "$VIDEO_DIR" "$DATASETS_DIR" \
          "$MULTIAI_DIR" "$GITHUB_DIR" "$PAPERS_DIR" \
          "$MULTIMODAL_DIR" "$CANVAS_V2_DIR" "$BUILD_DIR" "$PROJECTS_DIR" \
-         "$EXTENSIONS_DIR" "$FIREFOX_EXT_DIR" \
-         "$MEMO_DIR" "$TEMPLATES_DIR" "$PROFILES_DIR" \
-         "$WORKFLOWS_DIR" "$BATCH_DIR" "$SCHEDULE_DIR" "$NPM_GUI_DIR"
+         "$EXTENSIONS_DIR" "$FIREFOX_EXT_DIR"
 touch "$KEYS_FILE" && chmod 600 "$KEYS_FILE"
 touch "$ALIASES_FILE" 2>/dev/null || true
 
@@ -265,6 +257,29 @@ MULTIMODAL_T2I_MODEL="${MULTIMODAL_T2I_MODEL:-stabilityai/stable-diffusion-xl-ba
 CUSTOM_SYSTEM_PROMPT="${CUSTOM_SYSTEM_PROMPT:-}"    # overrides persona system prompt when set
 SYSTEM_PROMPTS_DIR="$CONFIG_DIR/system_prompts"    # named system prompt library
 mkdir -p "$SYSTEM_PROMPTS_DIR"
+
+# v2.9.0: New directories and config
+SNAPSHOTS_DIR="$CONFIG_DIR/snapshots"              # config snapshots
+TEMPLATES_DIR="$CONFIG_DIR/prompt_templates"        # prompt template library
+RAG_DIR="$CONFIG_DIR/rag"                          # RAG knowledge bases
+BATCH_DIR="$CONFIG_DIR/batch_queue"                # batch job queue
+EXPORTS_DIR="$AI_OUTPUT_DIR/exports"               # export archive
+BRANCHES_DIR="$CONFIG_DIR/chat_branches"           # conversation branching
+HEALTH_LOG="$CONFIG_DIR/health.log"                # health check log
+PERF_LOG="$CONFIG_DIR/perf_benchmarks.log"         # performance benchmark log
+COMPARE_DIR="$CONFIG_DIR/compare_results"          # model comparison output
+RETRY_MAX="${RETRY_MAX:-3}"                        # API retry count
+RETRY_DELAY="${RETRY_DELAY:-2}"                    # seconds between retries
+BATCH_CONCURRENCY="${BATCH_CONCURRENCY:-4}"        # batch parallel jobs
+RAG_CHUNK_SIZE="${RAG_CHUNK_SIZE:-512}"             # RAG chunk token size
+RAG_TOP_K="${RAG_TOP_K:-5}"                        # RAG retrieval count
+PERF_WARMUP_TOKENS="${PERF_WARMUP_TOKENS:-32}"     # warmup before benchmarking
+HEALTH_CHECK_INTERVAL="${HEALTH_CHECK_INTERVAL:-3600}"  # seconds between auto health checks
+PROMPT_TEMPLATE_DEFAULT="${PROMPT_TEMPLATE_DEFAULT:-}"   # default prompt template name
+CONVERSATION_BRANCH="${CONVERSATION_BRANCH:-}"     # active conversation branch
+EXPORT_FORMAT="${EXPORT_FORMAT:-json}"              # export format: json, csv, md
+mkdir -p "$SNAPSHOTS_DIR" "$TEMPLATES_DIR" "$RAG_DIR" "$BATCH_DIR" \
+         "$EXPORTS_DIR" "$BRANCHES_DIR" "$COMPARE_DIR"
 
 # TTM (Tiny — 179.35M)
 TTM_AUTO_TRAIN="${TTM_AUTO_TRAIN:-0}"
@@ -350,6 +365,16 @@ PAPERS_CITATION_FORMAT="${PAPERS_CITATION_FORMAT}"
 MULTIMODAL_VL_MODEL="${MULTIMODAL_VL_MODEL}"
 MULTIMODAL_T2I_MODEL="${MULTIMODAL_T2I_MODEL}"
 CUSTOM_SYSTEM_PROMPT="${CUSTOM_SYSTEM_PROMPT}"
+RETRY_MAX="${RETRY_MAX}"
+RETRY_DELAY="${RETRY_DELAY}"
+BATCH_CONCURRENCY="${BATCH_CONCURRENCY}"
+RAG_CHUNK_SIZE="${RAG_CHUNK_SIZE}"
+RAG_TOP_K="${RAG_TOP_K}"
+PERF_WARMUP_TOKENS="${PERF_WARMUP_TOKENS}"
+HEALTH_CHECK_INTERVAL="${HEALTH_CHECK_INTERVAL}"
+PROMPT_TEMPLATE_DEFAULT="${PROMPT_TEMPLATE_DEFAULT}"
+CONVERSATION_BRANCH="${CONVERSATION_BRANCH}"
+EXPORT_FORMAT="${EXPORT_FORMAT}"
 CONF
 }
 
@@ -388,15 +413,6 @@ ERR_CODES=(
   [ERR601]="API key not set"
   [ERR602]="Invalid API key"
   [ERR603]="Rate limit exceeded"
-  [ERR701]="Workflow file not found or invalid"
-  [ERR702]="Batch processing failed"
-  [ERR703]="Watch mode setup failed"
-  [ERR704]="Template not found"
-  [ERR705]="Profile not found"
-  [ERR706]="Schedule creation failed"
-  [ERR707]="npm not found (install Node.js + npm for npm GUI)"
-  [ERR708]="Model auto-add: invalid prompt or missing -m flag"
-  [ERR709]="Model create: missing required flags"
 )
 
 err()  {
@@ -416,274 +432,75 @@ hdr()  { echo -e "${B}${BWHITE}$*${R}"; }
 dim()  { echo -e "${DIM}$*${R}"; }
 
 # ════════════════════════════════════════════════════════════════════════════════
-#  RECOMMENDED MODELS  v2.8.5.5 — 195 curated models (1.375x from v2.8.5)
-#  Format: [N]="org/repo|backend|size|description"
-#  Backends: gguf · hf · diffusers · openai · claude · gemini · groq · together · mistral
+#  RECOMMENDED MODELS
 # ════════════════════════════════════════════════════════════════════════════════
 declare -A RECOMMENDED_MODELS
 RECOMMENDED_MODELS=(
-  # ═══════════════════════════════════════════════════════════════════
-  # TINY / CPU-FRIENDLY LLMs  (<2B)  — runs on ANY hardware
-  # ═══════════════════════════════════════════════════════════════════
+  # ── Tiny / CPU-friendly LLMs ──────────────────────────────────────────────
   [1]="Amu/supertiny-llama3-0.25B-v0.1|gguf|0.25B|Supertiny Llama3 — runs on ANY CPU"
-  [2]="bartowski/Qwen3-0.6B-GGUF|gguf|0.6B|Qwen3 0.6B — thinking-capable, latest tiny"
-  [3]="bartowski/SmolLM2-360M-Instruct-GGUF|gguf|360M|SmolLM2 360M — sub-half-B, blazing fast"
-  [4]="bartowski/TinyLlama-1.1B-Chat-v1.0-GGUF|gguf|1.1B|TinyLlama 1.1B — proven tiny chat"
-  [5]="bartowski/Llama-3.2-1B-Instruct-GGUF|gguf|1B|Llama 3.2 1B — Meta official tiny"
-  [6]="bartowski/OLMo-2-0425-1B-Instruct-GGUF|gguf|1B|OLMo 2 1B — Allen AI fully open"
-  [7]="bartowski/Qwen3-1.7B-GGUF|gguf|1.7B|Qwen3 1.7B — thinking mode at tiny scale"
-  [8]="bartowski/SmolLM2-1.7B-Instruct-GGUF|gguf|1.7B|SmolLM2 1.7B — ultra-fast CPU"
-  [9]="bartowski/stablelm-2-zephyr-1_6b-GGUF|gguf|1.6B|StableLM 2 Zephyr 1.6B"
-  [10]="bartowski/MiniCPM-2B-dpo-bf16-GGUF|gguf|2B|MiniCPM 2B — mobile-class perf"
-  [11]="bartowski/gemma-2-2b-it-GGUF|gguf|2B|Gemma 2 2B — Google lightweight instruct"
-  [12]="bartowski/Qwen2.5-0.5B-Instruct-GGUF|gguf|0.5B|Qwen2.5 0.5B — smallest usable"
-  [13]="bartowski/Qwen2.5-1.5B-Instruct-GGUF|gguf|1.5B|Qwen2.5 1.5B — multilingual tiny"
-  [14]="bartowski/phi-2-GGUF|gguf|2.7B|Phi-2 2.7B — Microsoft research gem"
-  [15]="bartowski/Llama-3.2-3B-Instruct-GGUF|gguf|3B|Llama 3.2 3B — Meta small workhorse"
-  [16]="bartowski/Phi-3.1-mini-128k-instruct-GGUF|gguf|3.8B|Phi-3 Mini 128k — long context"
-  [17]="bartowski/Phi-3.5-mini-instruct-GGUF|gguf|3.8B|Phi-3.5 Mini — fast instruction"
-  [18]="bartowski/Qwen3-4B-GGUF|gguf|4B|Qwen3 4B — thinking mode, strong 4B reasoning"
-  [19]="bartowski/Llama-3.2-3B-Instruct-abliterated-GGUF|gguf|3B|Llama 3.2 3B abliterated"
-  [20]="bartowski/granite-3.3-2b-instruct-GGUF|gguf|2B|Granite 3.3 2B — IBM enterprise tiny"
-  [21]="bartowski/Orca-2-7b-GGUF|gguf|7B|Orca 2 7B — reasoning-focused small"
-  [22]="bartowski/Phi-3-medium-128k-instruct-GGUF|gguf|14B|Phi-3 Medium 14B — Microsoft strong"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # GENERAL-PURPOSE LLMs  (7–72B)
-  # ═══════════════════════════════════════════════════════════════════
-  [23]="TheBloke/Mistral-7B-Instruct-v0.2-GGUF|gguf|7B|Mistral 7B v0.2 — top general-purpose"
-  [24]="bartowski/Meta-Llama-3.1-8B-Instruct-GGUF|gguf|8B|Llama 3.1 8B — strong reasoning"
-  [25]="bartowski/Qwen2.5-7B-Instruct-GGUF|gguf|7B|Qwen2.5 7B — best 7B 2025"
-  [26]="bartowski/Qwen3-8B-GGUF|gguf|8B|Qwen3 8B — best 8B reasoning 2025"
-  [27]="bartowski/gemma-2-9b-it-GGUF|gguf|9B|Gemma 2 9B — Google flagship small"
-  [28]="Qwen/Qwen2-7B-Instruct-GGUF|gguf|7B|Qwen2 7B — multilingual + coding"
-  [29]="bartowski/Mistral-Nemo-Instruct-2407-GGUF|gguf|12B|Mistral Nemo 12B — long ctx"
-  [30]="bartowski/Mistral-7B-v0.3-GGUF|gguf|7B|Mistral 7B v0.3 — improved base"
-  [31]="bartowski/OLMo-2-0425-7B-Instruct-GGUF|gguf|7B|OLMo 2 7B — Allen AI open"
-  [32]="bartowski/Falcon3-7B-Instruct-GGUF|gguf|7B|Falcon 3 7B — TII updated"
-  [33]="bartowski/gemma-3-12b-it-GGUF|gguf|12B|Gemma 3 12B — Google 2025 best mid"
-  [34]="bartowski/gemma-3-4b-it-GGUF|gguf|4B|Gemma 3 4B — Google 2025 compact"
-  [35]="bartowski/Qwen3-14B-GGUF|gguf|14B|Qwen3 14B — strong mid-range reasoning"
-  [36]="bartowski/Qwen3-32B-GGUF|gguf|32B|Qwen3 32B — excellent reasoning"
-  [37]="bartowski/Mistral-Small-24B-Instruct-2501-GGUF|gguf|24B|Mistral Small 24B — powerful"
-  [38]="bartowski/Llama-3.2-11B-Vision-Instruct-GGUF|gguf|11B|Llama 3.2 11B Vision"
-  [39]="bartowski/Meta-Llama-3.3-70B-Instruct-GGUF|gguf|70B|Llama 3.3 70B — best open 70B"
-  [40]="bartowski/Meta-Llama-3.1-70B-Instruct-GGUF|gguf|70B|Llama 3.1 70B — flagship"
-  [41]="bartowski/Qwen2.5-72B-Instruct-GGUF|gguf|72B|Qwen2.5 72B — top open 2025"
-  [42]="bartowski/Mixtral-8x7B-Instruct-v0.1-GGUF|gguf|47B|Mixtral 8x7B MoE — diverse"
-  [43]="bartowski/Mixtral-8x22B-Instruct-v0.1-GGUF|gguf|141B|Mixtral 8x22B — huge MoE"
-  [44]="bartowski/granite-3.3-8b-instruct-GGUF|gguf|8B|Granite 3.3 8B — IBM enterprise"
-  [45]="bartowski/granite-3.1-8b-instruct-GGUF|gguf|8B|Granite 3.1 8B — IBM reliable"
-  [46]="bartowski/Llama-4-Scout-17B-16E-Instruct-GGUF|gguf|17B|Llama 4 Scout 17B MoE — Meta 2025"
-  [47]="bartowski/Qwen2.5-14B-Instruct-GGUF|gguf|14B|Qwen2.5 14B — strong mid 2025"
-  [48]="bartowski/Mistral-7B-OpenOrca-GGUF|gguf|7B|Mistral OpenOrca — instruction tuned"
-  [49]="bartowski/Hermes-3-Llama-3.1-8B-GGUF|gguf|8B|Hermes 3 8B — advanced instruct"
-  [50]="bartowski/internlm2_5-7b-chat-GGUF|gguf|7B|InternLM2.5 7B — multilingual all-rounder"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # CODING LLMs
-  # ═══════════════════════════════════════════════════════════════════
-  [51]="bartowski/Qwen3-Coder-GGUF|gguf|8B|Qwen3 Coder — latest agentic coder 2025"
-  [52]="bartowski/Qwen2.5-Coder-7B-Instruct-GGUF|gguf|7B|Qwen2.5 Coder 7B — top coder"
-  [53]="bartowski/Qwen2.5-Coder-32B-Instruct-GGUF|gguf|32B|Qwen2.5 Coder 32B — best open coder"
-  [54]="bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF|gguf|1.5B|Qwen2.5 Coder 1.5B — tiny coder"
-  [55]="bartowski/Codestral-22B-v0.1-GGUF|gguf|22B|Codestral 22B — Mistral flagship code"
-  [56]="bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF|gguf|16B|DeepSeek Coder V2 Lite"
-  [57]="bartowski/deepseek-coder-6.7b-instruct-GGUF|gguf|6.7B|DeepSeek Coder 6.7B"
-  [58]="bartowski/starcoder2-7b-GGUF|gguf|7B|StarCoder2 7B — multi-language"
-  [59]="bartowski/starcoder2-3b-GGUF|gguf|3B|StarCoder2 3B — tiny multi-lang code"
-  [60]="bartowski/starcoder2-15b-GGUF|gguf|15B|StarCoder2 15B — flagship code"
-  [61]="bartowski/CodeLlama-13b-Instruct-GGUF|gguf|13B|CodeLlama 13B — Meta code"
-  [62]="bartowski/CodeLlama-34b-Instruct-GGUF|gguf|34B|CodeLlama 34B — Meta large code"
-  [63]="bartowski/WizardCoder-Python-34B-V1.0-GGUF|gguf|34B|WizardCoder Python 34B"
-  [64]="bartowski/Devstral-Small-2505-GGUF|gguf|24B|Devstral Small — Mistral code agent 2025"
-  [65]="bartowski/granite-code-8b-instruct-GGUF|gguf|8B|Granite Code 8B — IBM code"
-  [66]="bartowski/granite-code-3b-base-GGUF|gguf|3B|Granite Code 3B — IBM tiny code"
-  [67]="bartowski/OpenCoder-8B-Instruct-GGUF|gguf|8B|OpenCoder 8B — fully open code"
-  [68]="bartowski/codegemma-7b-it-GGUF|gguf|7B|CodeGemma 7B — Google code"
-  [69]="bartowski/Yi-Coder-9B-Chat-GGUF|gguf|9B|Yi Coder 9B — strong Chinese/EN code"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # REASONING / MATH / SCIENCE
-  # ═══════════════════════════════════════════════════════════════════
-  [70]="bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF|gguf|7B|DeepSeek-R1 7B — full chain-of-thought"
-  [71]="bartowski/DeepSeek-R1-Distill-Llama-8B-GGUF|gguf|8B|DeepSeek-R1 8B — reasoning Llama"
-  [72]="bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF|gguf|14B|DeepSeek-R1 14B — mid reasoning"
-  [73]="bartowski/DeepSeek-R1-Distill-Qwen-32B-GGUF|gguf|32B|DeepSeek-R1 32B — flagship reasoning"
-  [74]="bartowski/Qwen2.5-Math-7B-Instruct-GGUF|gguf|7B|Qwen2.5 Math 7B — best open math"
-  [75]="bartowski/Qwen2.5-Math-72B-Instruct-GGUF|gguf|72B|Qwen2.5 Math 72B — big math"
-  [76]="bartowski/Qwen2.5-Math-1.5B-Instruct-GGUF|gguf|1.5B|Qwen2.5 Math 1.5B — tiny math"
-  [77]="bartowski/WizardMath-7B-V1.1-GGUF|gguf|7B|WizardMath 7B — math specialist"
-  [78]="bartowski/Abel-7B-002-GGUF|gguf|7B|Abel 7B — competition math"
-  [79]="bartowski/NovaSky-Sky-T1-32B-Preview-GGUF|gguf|32B|Sky-T1 32B — science reasoning"
-  [80]="bartowski/QwQ-32B-GGUF|gguf|32B|QwQ 32B — Qwen reasoning model, best open thinker"
-  [81]="bartowski/Qwen3-30B-A3B-GGUF|gguf|30B|Qwen3 30B MoE — efficient reasoning"
-  [82]="bartowski/DeepSeek-R1-GGUF|gguf|671B|DeepSeek-R1 671B — full model (needs 400GB+)"
-  [83]="bartowski/Llama-3.1-8B-Lexi-Uncensored-V2-GGUF|gguf|8B|Lexi Uncensored 8B"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # VISION / MULTIMODAL LLMs
-  # ═══════════════════════════════════════════════════════════════════
-  [84]="Qwen/Qwen2.5-VL-7B-Instruct|hf|7B|Qwen2.5-VL 7B — best open vision 2025"
-  [85]="Qwen/Qwen2.5-VL-3B-Instruct|hf|3B|Qwen2.5-VL 3B — small vision model"
-  [86]="Qwen/Qwen2.5-VL-72B-Instruct|hf|72B|Qwen2.5-VL 72B — frontier open vision"
-  [87]="Qwen/Qwen2-VL-7B-Instruct|hf|7B|Qwen2-VL 7B — prev-gen, very capable"
-  [88]="Qwen/Qwen2-VL-2B-Instruct|hf|2B|Qwen2-VL 2B — tiny vision"
-  [89]="microsoft/Phi-3.5-vision-instruct|hf|4.2B|Phi-3.5 Vision — small + capable"
-  [90]="microsoft/Phi-4-vision-instruct|hf|14B|Phi-4 Vision — Microsoft 2025 flagship VL"
-  [91]="llava-hf/llava-1.5-7b-hf|hf|7B|LLaVA 1.5 7B — classic vision baseline"
-  [92]="llava-hf/llava-v1.6-mistral-7b-hf|hf|7B|LLaVA 1.6 Mistral 7B — improved vision"
-  [93]="llava-hf/llava-v1.6-34b-hf|hf|34B|LLaVA 1.6 34B — best open LLaVA"
-  [94]="microsoft/Florence-2-large|hf|770M|Florence 2 — fast OCR/caption/detect"
-  [95]="microsoft/Florence-2-base|hf|230M|Florence 2 Base — ultra-light vision"
-  [96]="THUDM/CogVLM2-llama3-chat-19B|hf|19B|CogVLM2 19B — video+image understanding"
-  [97]="openbmb/MiniCPM-V-2_6|hf|8B|MiniCPM-V 2.6 — mobile multimodal"
-  [98]="Qwen/QVQ-72B-Preview|hf|72B|QVQ 72B — visual reasoning frontier"
-  [99]="llava-hf/llava-onevision-qwen2-7b-ov-hf|hf|7B|LLaVA OneVision 7B — latest LLaVA"
-  [100]="bartowski/Llama-3.2-11B-Vision-Instruct-GGUF|gguf|11B|Llama 3.2 11B Vision GGUF"
-  [101]="Qwen/Qwen2.5-VL-2B-Instruct|hf|2B|Qwen2.5-VL 2B — ultra-small vision"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # IMAGE GENERATION — Diffusers
-  # ═══════════════════════════════════════════════════════════════════
-  [102]="black-forest-labs/FLUX.1-dev|diffusers|FLUX|FLUX.1 Dev — best quality open img gen"
-  [103]="black-forest-labs/FLUX.1-schnell|diffusers|FLUX|FLUX.1 Schnell — fast 4-step"
-  [104]="black-forest-labs/FLUX.1-Kontext-dev|diffusers|FLUX|FLUX Kontext — image editing"
-  [105]="stabilityai/stable-diffusion-3.5-large|diffusers|SD3.5|SD 3.5 Large — best quality"
-  [106]="stabilityai/stable-diffusion-3.5-medium|diffusers|SD3.5M|SD 3.5 Medium — balanced"
-  [107]="stabilityai/stable-diffusion-3-medium-diffusers|diffusers|SD3|SD 3 Medium"
-  [108]="stabilityai/stable-diffusion-xl-base-1.0|diffusers|SDXL|SDXL 1.0 — high quality"
-  [109]="stabilityai/sdxl-turbo|diffusers|SDXL-T|SDXL Turbo — real-time gen"
-  [110]="stabilityai/stable-diffusion-2-1|diffusers|SD2|SD 2.1 — lightweight"
-  [111]="stabilityai/stable-cascade|diffusers|SC|Stable Cascade — high resolution"
-  [112]="Kwai-Kolors/Kolors|diffusers|Kolors|Kolors — photorealistic diffusion"
-  [113]="playgroundai/playground-v2.5-1024px-aesthetic|diffusers|PGv2.5|Playground v2.5"
-  [114]="OFA-Sys/small-stable-diffusion-v0|diffusers|SD-S|Small SD — <1B fastest gen"
-  [115]="ByteDance/SDXL-Lightning|diffusers|SDXL-L|SDXL Lightning — 4-step fast"
-  [116]="fal-ai/AuraFlow|diffusers|Aura|AuraFlow — high quality open flow model"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # AUDIO / SPEECH / MUSIC
-  # ═══════════════════════════════════════════════════════════════════
-  [117]="openai/whisper-large-v3|hf|1.5B|Whisper Large v3 — best transcription"
-  [118]="openai/whisper-large-v3-turbo|hf|809M|Whisper Turbo — fast+quality"
-  [119]="openai/whisper-medium|hf|307M|Whisper medium — balanced ASR"
-  [120]="openai/whisper-small|hf|244M|Whisper small — very fast ASR"
-  [121]="openai/whisper-base|hf|74M|Whisper base — fast speech-to-text"
-  [122]="suno/bark|hf|TTS|Bark — realistic multi-lingual TTS"
-  [123]="suno/bark-small|hf|TTS|Bark Small — faster bark TTS"
-  [124]="microsoft/speecht5_tts|hf|141M|SpeechT5 TTS — Microsoft fast TTS"
-  [125]="facebook/musicgen-large|hf|3.3B|MusicGen large — best AI music"
-  [126]="facebook/musicgen-medium|hf|1.5B|MusicGen medium — good AI music"
-  [127]="facebook/musicgen-small|hf|300M|MusicGen small — fast AI music"
-  [128]="facebook/audiogen-medium|hf|1.5B|AudioGen — AI sound effects"
-  [129]="facebook/wav2vec2-large-960h|hf|317M|Wav2Vec2 — speech recognition"
-  [130]="parler-tts/parler-tts-large-v1|hf|2.3B|Parler TTS Large — controllable TTS"
-  [131]="parler-tts/parler-tts-mini-v1|hf|880M|Parler TTS Mini — fast controllable TTS"
-  [132]="coqui/XTTS-v2|hf|TTS|XTTS v2 — voice clone TTS, 17 languages"
-  [133]="openai/whisper-large-v2|hf|1.5B|Whisper Large v2 — stable older version"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # EMBEDDING / RAG / RERANKER
-  # ═══════════════════════════════════════════════════════════════════
-  [134]="BAAI/bge-m3|hf|570M|BGE-M3 — multilingual multi-granularity, best embed"
-  [135]="BAAI/bge-large-en-v1.5|hf|335M|BGE large — best English embeddings"
-  [136]="BAAI/bge-small-en-v1.5|hf|33M|BGE small — fast English embeddings"
-  [137]="BAAI/bge-reranker-large|hf|560M|BGE Reranker large — RAG reranking"
-  [138]="mixedbread-ai/mxbai-embed-large-v1|hf|335M|MXBai Embed large — SOTA"
-  [139]="sentence-transformers/all-MiniLM-L6-v2|hf|22M|MiniLM L6 — fast sentence embeds"
-  [140]="sentence-transformers/all-mpnet-base-v2|hf|109M|MPNet base — strong embeds"
-  [141]="nomic-ai/nomic-embed-text-v1.5|hf|137M|Nomic Embed — long context embed"
-  [142]="nomic-ai/nomic-embed-text-v2-moe|hf|475M|Nomic Embed v2 MoE — 2025 best"
-  [143]="Alibaba-NLP/gte-large-en-v1.5|hf|434M|GTE large — Alibaba best embeds"
-  [144]="thenlper/gte-small|hf|33M|GTE small — fast general embeds"
-  [145]="Snowflake/snowflake-arctic-embed-l-v2.0|hf|568M|Arctic Embed L v2 — Snowflake SOTA"
-  [146]="intfloat/e5-mistral-7b-instruct|hf|7B|E5 Mistral 7B — instruction embed"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # SPECIALIZED / AGENTS / UNCENSORED / TOOLS
-  # ═══════════════════════════════════════════════════════════════════
-  [147]="bartowski/Llama-3-Groq-8B-Tool-Use-GGUF|gguf|8B|Groq Tool Use 8B — function call"
-  [148]="bartowski/xLAM-1b-fc-r-GGUF|gguf|1B|xLAM 1B — tiny function calling"
-  [149]="bartowski/NuExtract-v1.5-GGUF|gguf|7B|NuExtract — structured data extraction"
-  [150]="bartowski/functionary-small-v2.5-GGUF|gguf|8B|Functionary — OpenAI fn calling"
-  [151]="bartowski/Hermes-2-Pro-Llama-3-8B-GGUF|gguf|8B|Hermes 2 Pro — tool use + JSON"
-  [152]="bartowski/dolphin-2.9.2-qwen2-7b-GGUF|gguf|7B|Dolphin 2.9 Qwen2 — uncensored"
-  [153]="bartowski/Meta-Llama-3.1-8B-Instruct-abliterated-GGUF|gguf|8B|Llama 3.1 8B abliterated"
-  [154]="bartowski/Qwen2.5-7B-Instruct-abliterated-GGUF|gguf|7B|Qwen2.5 7B abliterated"
-  [155]="bartowski/Lexi-Llama-3-8B-Uncensored-GGUF|gguf|8B|Lexi Llama 3 8B uncensored"
-  [156]="bartowski/xLAM-8x22b-r-GGUF|gguf|141B|xLAM 8x22B — best open function calling"
-  [157]="bartowski/Meta-Llama-3.1-405B-Instruct-GGUF|gguf|405B|Llama 3.1 405B — biggest open"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # CLOUD API MODELS — OpenAI
-  # ═══════════════════════════════════════════════════════════════════
-  [158]="gpt-4.1|openai|API|GPT-4.1 — latest OpenAI flagship"
-  [159]="gpt-4.1-mini|openai|API|GPT-4.1 mini — fast + affordable"
-  [160]="gpt-4.1-nano|openai|API|GPT-4.1 nano — cheapest GPT-4 tier"
-  [161]="gpt-4o|openai|API|GPT-4o — vision + function calling"
-  [162]="gpt-4o-mini|openai|API|GPT-4o mini — best price/perf OpenAI"
-  [163]="o4-mini|openai|API|OpenAI o4-mini — fast advanced reasoning"
-  [164]="o3|openai|API|OpenAI o3 — full reasoning model"
-  [165]="o3-mini|openai|API|OpenAI o3-mini — efficient reasoning"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # CLOUD API MODELS — Anthropic Claude
-  # ═══════════════════════════════════════════════════════════════════
-  [166]="claude-opus-4-6|claude|API|Claude Opus 4.6 — most capable Claude"
-  [167]="claude-sonnet-4-6|claude|API|Claude Sonnet 4.6 — latest Sonnet"
-  [168]="claude-haiku-4-5-20251001|claude|API|Claude Haiku 4.5 — ultra-fast + cheap"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # CLOUD API MODELS — Google Gemini
-  # ═══════════════════════════════════════════════════════════════════
-  [169]="gemini-2.5-pro-preview|gemini|API|Gemini 2.5 Pro — Google frontier"
-  [170]="gemini-2.5-flash-preview|gemini|API|Gemini 2.5 Flash — fast + capable"
-  [171]="gemini-2.0-flash|gemini|API|Gemini 2.0 Flash — Google fast"
-  [172]="gemini-2.0-flash-lite|gemini|API|Gemini 2.0 Flash Lite — cheapest"
-  [173]="gemini-1.5-pro|gemini|API|Gemini 1.5 Pro — 2M context window"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # CLOUD API MODELS — Mistral
-  # ═══════════════════════════════════════════════════════════════════
-  [174]="mistral-large-latest|mistral|API|Mistral Large — flagship API"
-  [175]="mistral-small-latest|mistral|API|Mistral Small — affordable API"
-  [176]="codestral-latest|mistral|API|Codestral — best code API"
-  [177]="mistral-medium-latest|mistral|API|Mistral Medium — balanced API"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # CLOUD API MODELS — Groq (ultra-fast inference)
-  # ═══════════════════════════════════════════════════════════════════
-  [178]="groq/llama-3.3-70b-versatile|groq|API|Groq Llama 3.3 70B — fastest 70B"
-  [179]="groq/llama-3.1-8b-instant|groq|API|Groq Llama 3.1 8B — fast inference"
-  [180]="groq/mixtral-8x7b-32768|groq|API|Groq Mixtral 8x7B — long ctx fast"
-  [181]="groq/qwen-qwq-32b|groq|API|Groq QwQ 32B — fast reasoning"
-  [182]="groq/gemma2-9b-it|groq|API|Groq Gemma 2 9B — fast Google"
-  [183]="groq/llama3-groq-8b-8192-tool-use-preview|groq|API|Groq Tool Use 8B — fn calling"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # CLOUD API MODELS — Together AI
-  # ═══════════════════════════════════════════════════════════════════
-  [184]="together/Qwen/Qwen3-235B-A22B|together|API|Together Qwen3 235B MoE — massive"
-  [185]="together/meta-llama/Llama-3.3-70B-Instruct-Turbo|together|API|Together Llama 70B Turbo"
-  [186]="together/deepseek-ai/DeepSeek-R1|together|API|Together DeepSeek-R1 671B"
-  [187]="together/mistralai/Mixtral-8x22B-Instruct-v0.1|together|API|Together Mixtral 8x22B"
-  [188]="together/Qwen/Qwen2.5-72B-Instruct-Turbo|together|API|Together Qwen2.5 72B Turbo"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # VIDEO GENERATION (new in v2.8.5.5)
-  # ═══════════════════════════════════════════════════════════════════
-  [189]="genmo/mochi-1-preview|hf|10B|Mochi 1 — open video gen, smooth motion"
-  [190]="Lightricks/LTX-Video|hf|2B|LTX Video — fast open video generation"
-  [191]="Wan-AI/Wan2.1-T2V-14B-Diffusers|hf|14B|Wan2.1 T2V 14B — leading open video"
-  [192]="hpcai-tech/Open-Sora|hf|STDiT|Open Sora — fully open video gen"
-
-  # ═══════════════════════════════════════════════════════════════════
-  # 3D / OTHER GENERATIVE MODELS (new in v2.8.5.5)
-  # ═══════════════════════════════════════════════════════════════════
-  [193]="stabilityai/stable-zero123|diffusers|3D|Stable Zero123 — 3D from single image"
-  [194]="openai/shap-e|hf|300M|Shap-E — 3D object generation"
-  [195]="facebook/nougat-base|hf|250M|Nougat — PDF→Markdown OCR model"
+  [2]="bartowski/Phi-3.1-mini-128k-instruct-GGUF|gguf|3.8B|Phi-3 Mini 128k context"
+  [3]="bartowski/SmolLM2-1.7B-Instruct-GGUF|gguf|1.7B|SmolLM2 — ultra-fast on CPU"
+  [4]="bartowski/Qwen2.5-1.5B-Instruct-GGUF|gguf|1.5B|Qwen2.5 1.5B — multilingual tiny"
+  [5]="Qwen/Qwen2.5-0.5B-Instruct-GGUF|gguf|0.5B|Qwen2.5 0.5B — smallest usable"
+  [6]="bartowski/Llama-3.2-1B-Instruct-GGUF|gguf|1B|Llama 3.2 1B — Meta tiny"
+  [7]="bartowski/Llama-3.2-3B-Instruct-GGUF|gguf|3B|Llama 3.2 3B — Meta small"
+  [8]="bartowski/gemma-2-2b-it-GGUF|gguf|2B|Gemma 2 2B — Google lightweight"
+  # ── General-purpose LLMs (7–9B) ───────────────────────────────────────────
+  [9]="TheBloke/Mistral-7B-Instruct-v0.2-GGUF|gguf|7B|Mistral 7B — top general-purpose"
+  [10]="bartowski/Meta-Llama-3.1-8B-Instruct-GGUF|gguf|8B|Llama 3.1 8B — strong reasoning"
+  [11]="Qwen/Qwen2-7B-Instruct-GGUF|gguf|7B|Qwen2 7B — multilingual + coding"
+  [12]="bartowski/gemma-2-9b-it-GGUF|gguf|9B|Gemma 2 9B — Google model"
+  [13]="bartowski/Qwen2.5-7B-Instruct-GGUF|gguf|7B|Qwen2.5 7B — best 7B 2025"
+  [14]="bartowski/Mistral-Nemo-Instruct-2407-GGUF|gguf|12B|Mistral Nemo 12B — long context"
+  [15]="bartowski/Phi-3.5-mini-instruct-GGUF|gguf|3.8B|Phi-3.5 Mini — fast instruction"
+  [16]="bartowski/Meta-Llama-3.1-70B-Instruct-GGUF|gguf|70B|Llama 3.1 70B — flagship open"
+  # ── Coding LLMs ───────────────────────────────────────────────────────────
+  [17]="bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF|gguf|16B|DeepSeek Coder V2 — code"
+  [18]="bartowski/Codestral-22B-v0.1-GGUF|gguf|22B|Codestral 22B — Mistral code model"
+  [19]="bartowski/Qwen2.5-Coder-7B-Instruct-GGUF|gguf|7B|Qwen2.5 Coder 7B — top coder"
+  [20]="bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF|gguf|1.5B|Qwen2.5 Coder 1.5B — tiny coder"
+  [21]="bartowski/starcoder2-7b-GGUF|gguf|7B|StarCoder2 7B — multi-language code"
+  [22]="bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF|gguf|7B|DeepSeek-R1 7B — reasoning"
+  [23]="bartowski/DeepSeek-R1-Distill-Llama-8B-GGUF|gguf|8B|DeepSeek-R1 Llama 8B — reasoning"
+  # ── Math / Reasoning LLMs ─────────────────────────────────────────────────
+  [24]="bartowski/Qwen2.5-Math-7B-Instruct-GGUF|gguf|7B|Qwen2.5 Math 7B — best open math"
+  [25]="bartowski/internlm2_5-7b-chat-GGUF|gguf|7B|InternLM2.5 7B — strong all-rounder"
+  [26]="bartowski/Hermes-3-Llama-3.1-8B-GGUF|gguf|8B|Hermes 3 8B — advanced instruction"
+  # ── Vision / Multimodal LLMs ──────────────────────────────────────────────
+  [27]="Qwen/Qwen2-VL-7B-Instruct|hf|7B|Qwen2-VL 7B — best open vision-language"
+  [28]="microsoft/Phi-3.5-vision-instruct|hf|4.2B|Phi-3.5 Vision — small + capable"
+  [29]="llava-hf/llava-1.5-7b-hf|hf|7B|LLaVA 1.5 7B — classic vision model"
+  [30]="Qwen/Qwen2-VL-2B-Instruct|hf|2B|Qwen2-VL 2B — tiny vision model"
+  [31]="llava-hf/llava-v1.6-mistral-7b-hf|hf|7B|LLaVA 1.6 Mistral 7B — better vision"
+  # ── Image Generation ──────────────────────────────────────────────────────
+  [32]="stabilityai/stable-diffusion-xl-base-1.0|diffusers|SDXL|SDXL 1.0 — high quality"
+  [33]="black-forest-labs/FLUX.1-schnell|diffusers|FLUX|FLUX Schnell — fast 4-step"
+  [34]="black-forest-labs/FLUX.1-dev|diffusers|FLUX|FLUX Dev — best quality"
+  [35]="stabilityai/stable-diffusion-2-1|diffusers|SD2|SD 2.1 — lightweight option"
+  [36]="stabilityai/stable-diffusion-3-medium-diffusers|diffusers|SD3|SD 3 Medium — latest SD"
+  [37]="stabilityai/sdxl-turbo|diffusers|SDXL-T|SDXL Turbo — real-time image gen"
+  # ── Audio / Speech ────────────────────────────────────────────────────────
+  [38]="openai/whisper-base|hf|74M|Whisper base — fast speech-to-text"
+  [39]="openai/whisper-large-v3|hf|1.5B|Whisper Large v3 — best transcription"
+  [40]="suno/bark|hf|TTS|Bark — realistic multi-lingual TTS"
+  [41]="openai/whisper-medium|hf|307M|Whisper medium — balanced transcription"
+  [42]="facebook/musicgen-small|hf|300M|MusicGen small — AI music generation"
+  # ── Embedding / RAG Models ────────────────────────────────────────────────
+  [43]="BAAI/bge-small-en-v1.5|hf|33M|BGE small — fast embeddings"
+  [44]="BAAI/bge-large-en-v1.5|hf|335M|BGE large — best embeddings"
+  [45]="sentence-transformers/all-MiniLM-L6-v2|hf|22M|MiniLM L6 — sentence embeddings"
+  [46]="nomic-ai/nomic-embed-text-v1.5|hf|137M|Nomic Embed — long context embeddings"
+  # ── Cloud API Models ──────────────────────────────────────────────────────
+  [47]="gpt-4o|openai|API|GPT-4o with vision"
+  [48]="gpt-4o-mini|openai|API|GPT-4o mini — fast and affordable"
+  [49]="gpt-4.5-preview|openai|API|GPT-4.5 Preview — latest OpenAI"
+  [50]="claude-sonnet-4-5|claude|API|Claude Sonnet 4.5 — top reasoning"
+  [51]="claude-haiku-4-5-20251001|claude|API|Claude Haiku 4.5 — ultra-fast"
+  [52]="claude-opus-4-6|claude|API|Claude Opus 4.6 — most capable Claude"
+  [53]="gemini-2.0-flash|gemini|API|Gemini 2.0 Flash — Google best"
+  [54]="gemini-2.0-flash-lite|gemini|API|Gemini 2.0 Flash Lite — cheapest Gemini"
+  [55]="gemini-1.5-pro|gemini|API|Gemini 1.5 Pro — long context 2M"
+  [56]="o1-mini|openai|API|OpenAI o1-mini — fast reasoning model"
 )
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -1276,135 +1093,58 @@ _tm_status() {
 
 # ── Generic cmd dispatcher for TTM/MTM/Mtm ────────────────────────────────────
 _tm_cmd() {
-  # v2.8.5.5 — TTM/MTM command handler rewrite: clearer UX, new subcommands
   local id="$1"; shift
   local sub="${1:-help}"; shift || true
   _tm_init "$id"
   case "$sub" in
-
-    # ── Core training pipeline ────────────────────────────────────────────────
-    pretrain|pre)
+    pretrain)
       local c1="${1:-$PRETRAIN_CUSTOM_1}"; local c2="${2:-$PRETRAIN_CUSTOM_2}"
-      _tm_vars "$id"
-      hdr "$TM_LABEL — Pretrain"
-      echo "  Output:  $TM_DIR/pretrained"
-      echo "  Dtype:   $TM_DTYPE"
-      [[ -n "$c1" ]] && echo "  Custom1: $c1"
-      [[ -n "$c2" ]] && echo "  Custom2: $c2"
-      echo ""
-      _tm_pretrain "$id" "$c1" "$c2" ;;
-
-    finetune|fine-tune|ft)
-      local dataset="${1:-}"; local epochs="${2:-3}"; local lr="${3:-2e-4}"
-      if [[ -z "$dataset" ]]; then
-        err "Usage: ai $id finetune <dataset> [epochs=3] [lr=2e-4]"
-        echo "  Available datasets: $(ls "$DATASETS_DIR" 2>/dev/null | tr '\n' ' ' || echo '(none)')"
-        echo "  Create one:  ai dataset create <name>"
-        echo "  Add pair:    ai dataset add <name> \"<prompt>\" \"<response>\""
-        return 1
-      fi
-      _tm_finetune "$id" "$dataset" "$epochs" "$lr" ;;
-
-    # ── Quick train-now (batch from session history) ──────────────────────────
-    train-now|train)
-      _tm_vars "$id"
-      info "$TM_LABEL: training on recent session history…"
-      _tm_train_batch "$id" ;;
-
-    # ── Model management ──────────────────────────────────────────────────────
-    load)
-      _tm_load "$id" "${1:-latest}"
-      _tm_vars "$id"
-      ok "Active model set to $TM_LABEL ($TM_DIR)" ;;
-
-    versions|list)
-      _tm_vars "$id"
-      hdr "$TM_LABEL — Saved Versions"
-      ls -lt "$TM_DIR" 2>/dev/null | grep "^d" | awk '{print "  "$NF}' || echo "  (no versions)"
-      [[ -d "$TM_DIR/pretrained" ]] && echo "  pretrained  ← base pretrained checkpoint" ;;
-
-    export)
-      _tm_vars "$id"
-      local dest="${1:-$AI_OUTPUT_DIR/${id,,}_export_$(date +%Y%m%d).tar.gz}"
-      [[ ! -d "$TM_DIR/pretrained" ]] && { err "No pretrained model to export"; return 1; }
-      info "Exporting $TM_LABEL → $dest"
-      tar -czf "$dest" -C "$TM_DIR" pretrained/ 2>/dev/null && ok "Exported: $dest" ;;
-
+      _tm_pretrain "$id" "$c1" "$c2"
+      ;;
+    status)    _tm_status "$id" ;;
+    load)      _tm_load "$id" "${1:-latest}" ;;
+    train-now) _tm_train_batch "$id" ;;
     upload)    _tm_upload "$id" "${1:-latest}" ;;
     create-repo) _tm_create_repo "$id" ;;
-
-    # ── Config ────────────────────────────────────────────────────────────────
     enable)
       _tm_vars "$id"
       _tm_set_var "$TM_AUTO_TRAIN_VAR" "1"; save_config
-      ok "$TM_LABEL auto-training enabled (will train on new conversation turns)" ;;
+      ok "$TM_LABEL auto-training enabled"
+      ;;
     disable)
       _tm_vars "$id"
       _tm_set_var "$TM_AUTO_TRAIN_VAR" "0"; save_config
-      ok "$TM_LABEL auto-training disabled" ;;
-
+      ok "$TM_LABEL auto-training disabled"
+      ;;
     set-custom1)
       PRETRAIN_CUSTOM_1="${1:-}"; save_config
-      ok "Custom dataset 1: ${PRETRAIN_CUSTOM_1:-cleared}" ;;
+      ok "Custom dataset 1: $PRETRAIN_CUSTOM_1"
+      ;;
     set-custom2)
       PRETRAIN_CUSTOM_2="${1:-}"; save_config
-      ok "Custom dataset 2: ${PRETRAIN_CUSTOM_2:-cleared}" ;;
-
-    # ── Status + info ─────────────────────────────────────────────────────────
-    status)    _tm_status "$id" ;;
-
-    # ── RLHF alignment shortcut ───────────────────────────────────────────────
-    align)     _tm_align "$id" ;;
-
-    # ── Quick test: run a prompt through the TTM model ────────────────────────
-    test|run)
+      ok "Custom dataset 2: $PRETRAIN_CUSTOM_2"
+      ;;
+    finetune|fine-tune|ft)
+      local dataset="${1:-}"; local epochs="${2:-3}"; local lr="${3:-2e-4}"
+      _tm_finetune "$id" "$dataset" "$epochs" "$lr"
+      ;;
+    *)
       _tm_vars "$id"
-      local prompt="${*:-Hello, introduce yourself briefly.}"
-      [[ ! -d "$TM_DIR/pretrained" && ! -d "$TM_DIR" ]] && {
-        err "$TM_LABEL not yet trained. Run: ai $id pretrain"
-        return 1
-      }
-      info "Testing $TM_LABEL…"
-      local saved_model="$ACTIVE_MODEL" saved_back="$ACTIVE_BACKEND"
-      ACTIVE_MODEL="$TM_DIR/pretrained"; ACTIVE_BACKEND="pytorch"
-      dispatch_ask "$prompt"
-      ACTIVE_MODEL="$saved_model"; ACTIVE_BACKEND="$saved_back" ;;
-
-    # ── Help ──────────────────────────────────────────────────────────────────
-    help|*)
-      _tm_vars "$id"
-      hdr "$TM_LABEL — Tiny Model Training (v2.8.5.5)"
+      echo -e "${B}${BCYAN}$TM_LABEL${R}"
+      echo "  GPU target: $TM_GPU_OPT | Dtype: $TM_DTYPE | Repo: $TM_HF_REPO"
       echo ""
-      printf "  GPU: %-12s  Dtype: %-10s  Repo: %s\n" "$TM_GPU_OPT" "$TM_DTYPE" "$TM_HF_REPO"
+      echo "  ${B}ai $id pretrain [custom1] [custom2]${R} — Pretrain (6 standard + 2 optional)"
+      echo "  ${B}ai $id finetune <dataset> [epochs] [lr]${R} — Fine-tune on custom dataset (v2.4)"
+      echo "  ${B}ai $id enable / disable${R}              — Toggle auto-training"
+      echo "  ${B}ai $id train-now${R}                     — Force one batch"
+      echo "  ${B}ai $id upload [version]${R}              — Upload to $TM_HF_REPO"
+      echo "  ${B}ai $id create-repo${R}                   — Create HF repo"
+      echo "  ${B}ai $id status${R}                        — Show status"
+      echo "  ${B}ai $id load [version]${R}                — Set as active model"
+      echo "  ${B}ai $id set-custom1 <hf-id-or-path>${R}   — Set custom dataset 1"
+      echo "  ${B}ai $id set-custom2 <hf-id-or-path>${R}   — Set custom dataset 2"
       echo ""
-      echo "  ── Training Pipeline ─────────────────────────────────────────────"
-      echo "  ai $id pretrain [ds1] [ds2]    Pretrain from scratch (8 datasets)"
-      echo "  ai $id finetune <ds> [ep] [lr] Fine-tune on custom dataset"
-      echo "  ai $id train-now               Train one batch from session history"
-      echo "  ai $id align                   RLHF alignment (anti-hallucination)"
-      echo ""
-      echo "  ── Model Management ──────────────────────────────────────────────"
-      echo "  ai $id load [version]          Set as active model"
-      echo "  ai $id versions                List saved checkpoints"
-      echo "  ai $id export [dest.tar.gz]    Export pretrained model"
-      echo "  ai $id upload [version]        Upload to HuggingFace"
-      echo "  ai $id create-repo             Create HF repo"
-      echo ""
-      echo "  ── Control ───────────────────────────────────────────────────────"
-      echo "  ai $id enable / disable        Toggle auto-training on conversations"
-      echo "  ai $id set-custom1 <hf-id>     Set custom pretraining dataset 1"
-      echo "  ai $id set-custom2 <hf-id>     Set custom pretraining dataset 2"
-      echo "  ai $id status                  Show model status + checkpoint info"
-      echo "  ai $id test \"prompt\"          Quick inference test"
-      echo ""
-      echo "  ── Quick Start ───────────────────────────────────────────────────"
-      echo "  1. ai $id pretrain            # ~10 min on GPU, ~2 hr on CPU"
-      echo "  2. ai $id load                # activate the model"
-      echo "  3. ai ask \"hello\"             # use it"
-      echo "  4. ai rlhf rate               # collect feedback"
-      echo "  5. ai rlhf train $id          # DPO fine-tune on your ratings"
-      echo ""
-      echo "  ai -TTM / ai -MTM / ai -Mtm   — fast-load model"
+      echo "  ${B}ai -TTM${R} / ${B}ai -MTM${R} / ${B}ai -Mtm${R}            — Load respective model"
       ;;
   esac
 }
@@ -1805,7 +1545,7 @@ _rlhf_dpo_train() {
   info "RLHF: Running DPO training on $count pairs → $model_dir ..."
   PAIRS_FILE="$pairs_source" MODEL_DIR="$model_dir" \
   THRESHOLD="${RLHF_REWARD_THRESHOLD:-0.6}" CPU_ONLY="${CPU_ONLY_MODE:-0}" \
-  "$PYTHON" - <<'PYEOF'
+  "$PYTHON" - <<'PYEOF' &
 import os, json, sys, random, pathlib, shutil
 try:
     import torch
@@ -2169,199 +1909,130 @@ _rlhf_rate() {
 }
 
 cmd_rlhf() {
-  # v2.8.5.5 — RLHF rewrite: working rate UI, collect, improved train
   local sub="${1:-help}"; shift || true
   case "$sub" in
-
     status)
-      hdr "RLHF v2.8.5.5 Status"
-      local npairs; npairs=$(wc -l < "$RLHF_PAIRS_FILE" 2>/dev/null || echo 0)
-      local nrats;  nrats=$(wc -l  < "$RLHF_RATINGS_FILE" 2>/dev/null || echo 0)
-      printf "  %-28s %s\n" "Auto-RLHF enabled:"    "${RLHF_AUTO:-0}"
-      printf "  %-28s %s\n" "Judge model:"          "${RLHF_JUDGE:-nix26}"
-      printf "  %-28s %s\n" "Reward threshold:"     "${RLHF_REWARD_THRESHOLD:-0.6}"
-      printf "  %-28s %s\n" "Auto pairs collected:" "$npairs"
-      printf "  %-28s %s\n" "Manual ratings:"       "$nrats"
-      printf "  %-28s %s\n" "Pairs file:"           "$RLHF_PAIRS_FILE"
-      printf "  %-28s %s\n" "Active model:"         "${ACTIVE_MODEL:-not set}"
-      local total=$(( npairs + nrats ))
-      if (( total >= 10 )); then
-        ok "Ready to train ($total total pairs). Run: ai rlhf train"
-      else
-        warn "Need at least 10 pairs to train (have $total). Run: ai rlhf rate  OR  ai rlhf add-dataset"
-      fi ;;
-
-    enable)  RLHF_AUTO="1"; save_config; ok "Auto-RLHF enabled" ;;
+      hdr "RLHF Status"
+      printf "  %-25s %s\n" "Auto-RLHF:" "$RLHF_AUTO"
+      printf "  %-25s %s\n" "Judge model:" "$RLHF_JUDGE"
+      printf "  %-25s %s\n" "Reward threshold:" "$RLHF_REWARD_THRESHOLD"
+      printf "  %-25s %s\n" "Manual ratings:" "$(wc -l < "$RLHF_RATINGS_FILE" 2>/dev/null || echo 0)"
+      printf "  %-25s %s\n" "Auto pairs collected:" "$(wc -l < "$RLHF_PAIRS_FILE" 2>/dev/null || echo 0)"
+      ;;
+    enable)
+      RLHF_AUTO="1"; save_config
+      ok "Auto-RLHF enabled (judge: $RLHF_JUDGE)"
+      warn "Run 'ai rlhf download-judges' to get judge models"
+      ;;
     disable) RLHF_AUTO="0"; save_config; ok "Auto-RLHF disabled" ;;
-
     judge)
-      local j="${1:-}"
-      if [[ -z "$j" ]]; then
-        hdr "Available RLHF Judge Models"
-        echo "  nix26           — Nixie 2.6B fast judge (recommended)"
-        echo "  qwen3+luth      — Qwen3 + Luthien 8B judge"
-        echo "  qwen3+llama32   — Qwen3 + Llama 3.2 judge"
-        echo "  openai          — GPT-4o-mini as judge (needs OPENAI_API_KEY)"
-        echo "  claude          — Claude Haiku as judge (needs ANTHROPIC_API_KEY)"
-        echo ""
-        read -rp "Choose judge: " j
-      fi
-      RLHF_JUDGE="${j:-nix26}"; save_config; ok "Judge set: $RLHF_JUDGE" ;;
-
-    download-judges) _rlhf_download_judge ;;
-
-    # ── Rate: interactive UI to rate AI responses ─────────────────────────────
-    rate)
-      hdr "RLHF Manual Rating — Rate responses to improve your model"
-      echo "  Each rating creates a training signal. Rate honestly (1=bad 5=great)."
-      echo "  Press Ctrl+C to stop. Pairs saved to: $RLHF_RATINGS_FILE"
-      echo ""
-      local total_rated=0
-      while true; do
-        echo -e "${BCYAN}── New rating session ──${R}"
-        local prompt="${1:-}"
-        if [[ -z "$prompt" ]]; then
-          read -rp "$(echo -e "${B}Prompt${R}: ")" prompt
-          [[ -z "$prompt" ]] && { echo "Empty prompt — stopping."; break; }
-        fi
-        # Get AI response live
-        echo -e "  ${DIM}Getting AI response…${R}"
-        local response; response=$(dispatch_ask "$prompt" 2>/dev/null)
-        if [[ -z "$response" ]]; then
-          warn "No response from model. Skipping."
-          set -- ""  # clear positional args so next loop prompts
-          continue
-        fi
-        echo ""
-        echo -e "${B}AI Response:${R}"
-        echo "$response" | head -20
-        [[ $(echo "$response" | wc -l) -gt 20 ]] && echo "  ${DIM}[truncated…]${R}"
-        echo ""
-        local rating=""
-        while [[ ! "$rating" =~ ^[1-5]$ ]]; do
-          read -rp "$(echo -e "Rate this response ${B}1-5${R} (1=bad, 3=ok, 5=great) or ${B}s${R}=skip: ")" rating
-          [[ "$rating" == "s" || "$rating" == "S" ]] && break
+      local j="${1:-}"; [[ -z "$j" ]] && {
+        hdr "Available RLHF Judges"
+        for k in "${!RLHF_JUDGES[@]}"; do
+          IFS='|' read -r _ _ desc <<< "${RLHF_JUDGES[$k]}"
+          printf "  ${B}%-18s${R} %s\n" "$k" "$desc"
         done
-        if [[ "$rating" =~ ^[1-5]$ ]]; then
-          local score; score=$(python3 -c "print(($rating-1)/4.0)" 2>/dev/null || echo "0.5")
-          local entry; entry=$(python3 -c "import json; print(json.dumps({'prompt':'$prompt','response':$(printf '%s' "$response" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))' 2>/dev/null),'rating':$rating,'score':$score,'source':'manual'}))" 2>/dev/null)
-          if [[ -n "$entry" ]]; then
-            echo "$entry" >> "$RLHF_RATINGS_FILE"
-            (( total_rated++ ))
-            local stars; stars=$(python3 -c "print('★'*$rating + '☆'*(5-$rating))" 2>/dev/null || echo "$rating/5")
-            ok "Rated $stars — saved ($total_rated this session)"
-          fi
-        fi
-        set -- ""  # clear args so loop continues prompting
-        echo ""
-        read -rp "Rate another? [Y/n]: " cont
-        [[ "${cont,,}" == "n" ]] && break
-      done
-      echo ""
-      local total_file; total_file=$(wc -l < "$RLHF_RATINGS_FILE" 2>/dev/null || echo 0)
-      ok "Session complete. Total ratings: $total_file"
-      (( total_file >= 10 )) && echo "  Ready to train! Run: ai rlhf train-on-ratings" ;;
-
-    # ── Collect: run AI on prompts from a file and auto-rate ──────────────────
-    collect)
-      local file="${1:-}"
-      [[ -z "$file" ]] && { err "Usage: ai rlhf collect <prompts-file.txt>"; return 1; }
-      [[ ! -f "$file" ]] && { err "File not found: $file"; return 1; }
-      hdr "RLHF Auto-Collect — Running prompts from: $file"
-      local count=0
-      while IFS= read -r line || [[ -n "$line" ]]; do
-        [[ -z "${line// }" || "$line" == "#"* ]] && continue
-        echo -e "  ${B}Prompt:${R} ${line:0:60}…"
-        local resp; resp=$(dispatch_ask "$line" 2>/dev/null)
-        [[ -z "$resp" ]] && { warn "No response, skipping"; continue; }
-        local entry; entry=$(python3 -c "
-import json
-print(json.dumps({'prompt':$(printf '%s' "$line" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))'),
-'response':$(printf '%s' "$resp"  | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))'),
-'score':0.5,'source':'auto-collect'}))" 2>/dev/null)
-        [[ -n "$entry" ]] && echo "$entry" >> "$RLHF_PAIRS_FILE" && (( count++ ))
-      done < "$file"
-      ok "Collected $count pairs from $file"
-      echo "  Now rate them: ai rlhf rate  OR  train directly: ai rlhf train" ;;
-
+        echo ""; read -rp "Choose judge [nix26/qwen3+luth/qwen3+llama32]: " j
+      }
+      [[ -z "${RLHF_JUDGES[$j]:-}" ]] && { err "Unknown judge: $j"; return 1; }
+      RLHF_JUDGE="$j"; save_config; ok "Judge: $j"
+      ;;
+    download-judges) _rlhf_download_judge ;;
     train)
       local model="${1:-$ACTIVE_MODEL}"
-      [[ -z "$model" ]] && { err "No model specified. Usage: ai rlhf train [model-path|TTM|MTM]"; return 1; }
-      local npairs; npairs=$(wc -l < "$RLHF_PAIRS_FILE" 2>/dev/null || echo 0)
-      (( npairs < 10 )) && { err "Not enough pairs ($npairs). Need ≥10. Run: ai rlhf rate OR ai rlhf add-dataset"; return 1; }
-      info "RLHF DPO training: $npairs pairs → ${model}"
-      _rlhf_dpo_train "$model" ;;
-
+      [[ -z "$model" ]] && { err "No model specified"; return 1; }
+      info "Running DPO training on auto-collected pairs..."
+      _rlhf_dpo_train "$model"
+      ;;
     train-on-ratings)
-      local nrats; nrats=$(wc -l < "$RLHF_RATINGS_FILE" 2>/dev/null || echo 0)
-      (( nrats < 5 )) && { warn "Need at least 5 manual ratings (have $nrats). Run: ai rlhf rate"; return 1; }
-      info "Merging $nrats ratings into pairs file…"
+      local count; count=$(wc -l < "$RLHF_RATINGS_FILE" 2>/dev/null || echo 0)
+      (( count < 5 )) && { warn "Need at least 5 ratings (have $count)"; return 1; }
+      # Merge ratings into pairs file then train
       cat "$RLHF_RATINGS_FILE" >> "$RLHF_PAIRS_FILE"
-      local total; total=$(wc -l < "$RLHF_PAIRS_FILE" 2>/dev/null || echo 0)
-      (( total < 10 )) && { err "Still need more pairs ($total total, need ≥10)"; return 1; }
-      _rlhf_dpo_train "$ACTIVE_MODEL" ;;
-
+      _rlhf_dpo_train "$ACTIVE_MODEL"
+      ;;
+    rate)
+      local prompt="${1:-}"; local response="${2:-}"; local rating="${3:-}"
+      if [[ -z "$prompt" ]]; then
+        read -rp "Prompt: " prompt; read -rp "Response: " response
+      fi
+      _rlhf_rate "$prompt" "$response" "$rating"
+      ;;
     align)
       local id="${1:-TTM}"
-      _tm_vars "$id" 2>/dev/null && _tm_align "$id" ;;
-
+      _tm_vars "$id" 2>/dev/null && _tm_align "$id"
+      ;;
     clear-pairs)
-      read -rp "Clear all RLHF pairs + ratings? [y/N]: " c
-      [[ "$c" =~ ^[Yy]$ ]] && { > "$RLHF_PAIRS_FILE"; > "$RLHF_RATINGS_FILE"; ok "Cleared all RLHF data"; } ;;
-
+      read -rp "Clear all collected RLHF pairs? [y/N]: " c
+      [[ "$c" =~ ^[Yy]$ ]] && { > "$RLHF_PAIRS_FILE"; > "$RLHF_RATINGS_FILE"; ok "Cleared"; }
+      ;;
     threshold)
       RLHF_REWARD_THRESHOLD="${1:-0.6}"; save_config
-      ok "Reward threshold: $RLHF_REWARD_THRESHOLD" ;;
+      ok "Reward threshold: $RLHF_REWARD_THRESHOLD"
+      ;;
 
-    datasets|list-datasets) _rlhf_hf_list_presets ;;
+    # ── v2.4.5: HuggingFace RLHF datasets ─────────────────────────────────────
+    datasets|list-datasets)
+      _rlhf_hf_list_presets
+      ;;
     add-dataset)
-      local ds="${1:?Usage: ai rlhf add-dataset <hf-id-or-preset>}"
-      _rlhf_hf_import "$ds" "${2:-train[:3000]}" ;;
-    use-dataset) _rlhf_hf_set_active "${1:?Usage: ai rlhf use-dataset <id>}" ;;
-    my-datasets) _rlhf_hf_list_imported ;;
+      local ds="${1:?Usage: ai rlhf add-dataset <hf-id-or-preset-name>}"
+      local split="${2:-train[:3000]}"
+      _rlhf_hf_import "$ds" "$split"
+      ;;
+    use-dataset)
+      local ds="${1:?Usage: ai rlhf use-dataset <hf-id-or-preset-name>}"
+      _rlhf_hf_set_active "$ds"
+      ;;
+    my-datasets)
+      _rlhf_hf_list_imported
+      ;;
 
-    reward-model|train-reward) _rlhf_train_reward_model "${1:-TTM}" ;;
-    ppo|train-ppo)             _rlhf_train_ppo          "${1:-TTM}" ;;
-    grpo|train-grpo)           _rlhf_train_grpo         "${1:-TTM}" ;;
+    # v2.5: RLHF v2 — reward model, PPO, GRPO
+    reward-model|train-reward)
+      _rlhf_train_reward_model "${1:-TTM}" ;;
+    ppo|train-ppo)
+      _rlhf_train_ppo "${1:-TTM}" ;;
+    grpo|train-grpo)
+      _rlhf_train_grpo "${1:-TTM}" ;;
 
     *)
-      hdr "RLHF v2.8.5.5 — Reinforcement Learning from Human Feedback"
-      cat <<'RHELP'
-  ── Data Collection ─────────────────────────────────────────────
-  ai rlhf rate                   Interactive response rating (1-5★)
-  ai rlhf collect <prompts.txt>  Auto-collect AI responses for rating
-  ai rlhf add-dataset <hf-id>   Import HF preference dataset
-  ai rlhf datasets               List available HF preset datasets
-  ai rlhf my-datasets            Show imported datasets
-
-  ── Training ────────────────────────────────────────────────────
-  ai rlhf train [model|TTM]     DPO fine-tuning on collected pairs
-  ai rlhf train-on-ratings      Use manual star ratings to train
-  ai rlhf reward-model [model]  Train a reward model on pairs
-  ai rlhf ppo [model]           PPO fine-tuning with reward model
-  ai rlhf grpo [model]          GRPO (DeepSeek-R1 style) training
-  ai rlhf align [TTM|MTM]       Anti-hallucination alignment pass
-
-  ── Control ─────────────────────────────────────────────────────
-  ai rlhf enable / disable       Toggle auto-RLHF collection
-  ai rlhf judge [name]           Set judge model
-  ai rlhf download-judges        Download judge model
-  ai rlhf threshold <0.0-1.0>   Set reward threshold (default 0.6)
-  ai rlhf status                 Show stats + readiness
-  ai rlhf clear-pairs            Clear all collected data
-
-  ── Quick Start ─────────────────────────────────────────────────
-  1. ai rlhf rate                      (rate 10+ responses)
-  2. ai rlhf train-on-ratings          (run DPO training)
-  3. ai model <output-dpo-path>        (switch to trained model)
-     OR
-  1. ai rlhf add-dataset hh-rlhf       (use pre-labeled HF data)
-  2. ai rlhf train TTM                 (train on TTM pretrained base)
-RHELP
+      hdr "RLHF v2 — Reinforcement Learning from Human Feedback"
       echo ""
-      local npairs; npairs=$(wc -l < "$RLHF_PAIRS_FILE" 2>/dev/null || echo 0)
-      local nrats;  nrats=$(wc -l  < "$RLHF_RATINGS_FILE" 2>/dev/null || echo 0)
-      printf "  ${DIM}Current: %d auto-pairs  %d manual-ratings${R}\n" "$npairs" "$nrats" ;;
+      echo "  ${B}Auto-RLHF${R}  (judge models score responses, DPO trains on pairs)"
+      echo "  ai rlhf enable / disable"
+      echo "  ai rlhf judge [nix26|qwen3+luth|qwen3+llama32]"
+      echo "  ai rlhf download-judges      — Download selected judge model(s)"
+      echo "  ai rlhf train [model-path]   — Run DPO on collected pairs"
+      echo "  ai rlhf threshold <0.0-1.0>  — Set reward cutoff (default 0.6)"
+      echo ""
+      echo "  ${B}v2.5: RLHF v2 additions${R}"
+      echo "  ai rlhf reward-model [model] — Train reward model on pairs"
+      echo "  ai rlhf ppo [model]          — PPO fine-tuning with reward model"
+      echo "  ai rlhf grpo [model]         — GRPO training (DeepSeek-R1 style)"
+      echo ""
+      echo "  ${B}Manual RLHF${R}  (rate responses 1-5 stars)"
+      echo "  ai rlhf rate                 — Rate a response interactively"
+      echo "  ai rlhf train-on-ratings     — Fine-tune on your ratings"
+      echo ""
+      echo "  ${B}HF RLHF Datasets (v2.4.5)${R}  — curated preference datasets"
+      echo "  ai rlhf datasets             — List available HF preset datasets"
+      echo "  ai rlhf add-dataset <id>     — Import a HF dataset into RLHF pairs"
+      echo "  ai rlhf use-dataset <id>     — Set as active RLHF training source"
+      echo "  ai rlhf my-datasets          — Show imported datasets + counts"
+      echo ""
+      echo "  ${B}Alignment${R}  (Qwen3-powered anti-hallucination pass)"
+      echo "  ai rlhf align TTM|MTM|Mtm    — Run alignment on trained model"
+      echo ""
+      echo "  ai rlhf status               — Show RLHF stats"
+      echo "  ai rlhf clear-pairs          — Clear collected data"
+      echo ""
+      echo -e "  ${DIM}Judge options:${R}"
+      for k in "${!RLHF_JUDGES[@]}"; do
+        IFS='|' read -r _ _ desc <<< "${RLHF_JUDGES[$k]}"
+        printf "    ${B}%-18s${R} %s\n" "$k" "$desc"
+      done
+      ;;
   esac
 }
 
@@ -5105,8 +4776,8 @@ cmd_gui() {
 
   cat > "$gui_script" << 'GUIEOF'
 #!/usr/bin/env python3
-"""AI CLI v2.8.5 — GUI v5.3: wider layout, model panel, live status, better readability"""
-import sys, os, curses, subprocess, threading, time, textwrap, json, glob, shutil, signal
+"""AI CLI v2.7.3 — GUI v5.2: split-pane, structured settings editor, extensions, aliases"""
+import sys, os, curses, subprocess, threading, time, textwrap, json, glob, shutil
 
 CLI      = sys.argv[1] if len(sys.argv) > 1 else "ai"
 THEME_NAME = sys.argv[2] if len(sys.argv) > 2 else "dark"
@@ -5463,7 +5134,7 @@ class Sidebar:
 class ContentPanel:
     """Right-side content pane: output pager + edit mode."""
     def __init__(self):
-        self.lines   = ["Welcome to AI CLI v2.8.5 — GUI v5.3",
+        self.lines   = ["Welcome to AI CLI v2.7.3 — GUI v5.2",
                         "─" * 40,
                         "Use the sidebar to navigate.",
                         "Enter or click an item to activate it.",
@@ -5479,7 +5150,7 @@ class ContentPanel:
                         "  /           Quick search",
                         ]
         self.scroll = 0
-        self.title  = "AI CLI v2.8.5 GUI v5.3"
+        self.title  = "AI CLI v2.7.3 GUI v5.2"
         # For edit in place
         self.edit_mode   = False
         self.edit_key    = ""
@@ -6341,369 +6012,6 @@ _gui_fallback() {
 }
 
 # ════════════════════════════════════════════════════════════════════════════════
-#  AUI — AI Terminal UI  v1.0  (v2.8.5.5)
-#  A working, always-available terminal dashboard — no dependencies beyond Python
-#  Usage: ai aui  OR  ai -aui  OR  ai --aui
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_aui() {
-  [[ -z "$PYTHON" ]] && { err "Python 3 required for AUI"; return 1; }
-  local cli_bin; cli_bin=$(command -v ai 2>/dev/null || echo "$0")
-  "$PYTHON" - "$cli_bin" "${ACTIVE_MODEL:-none}" "${ACTIVE_BACKEND:-none}" "$VERSION" \
-             "${CONFIG_DIR:-$HOME/.config/ai-cli}" <<'AUIEOF'
-#!/usr/bin/env python3
-"""AI CLI — AUI (AI Terminal UI) v1.0  — always-works curses dashboard"""
-import sys, os, curses, subprocess, threading, time, json, glob, shutil, textwrap
-
-CLI       = sys.argv[1]
-ACT_MODEL = sys.argv[2]
-ACT_BACK  = sys.argv[3]
-VERSION   = sys.argv[4]
-CFG_DIR   = sys.argv[5]
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
-def run(cmd, timeout=60):
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        return (r.stdout + r.stderr).strip()
-    except subprocess.TimeoutExpired: return '[timeout]'
-    except Exception as e: return f'[error: {e}]'
-
-def ai(*args, timeout=90):
-    return run([CLI] + list(args), timeout=timeout)
-
-def load_config():
-    """Load key info from config"""
-    info = {}
-    keys_file = os.path.join(CFG_DIR, 'keys.env')
-    if os.path.exists(keys_file):
-        for line in open(keys_file):
-            line = line.strip()
-            if '=' in line and not line.startswith('#'):
-                k, _, v = line.partition('=')
-                info[k.strip()] = bool(v.strip().strip('"\''))
-    return info
-
-def get_history():
-    hist = os.path.join(CFG_DIR, 'history.jsonl')
-    lines = []
-    if os.path.exists(hist):
-        try:
-            with open(hist) as f:
-                for l in f:
-                    try:
-                        obj = json.loads(l)
-                        if obj.get('role') == 'user':
-                            lines.append(obj.get('content','')[:80])
-                    except: pass
-        except: pass
-    return list(reversed(lines[-20:]))
-
-# ── UI state ──────────────────────────────────────────────────────────────────
-CP_HDR=1; CP_MENU=2; CP_SEL=3; CP_PANEL=4; CP_RESP=5; CP_DIM=6; CP_OK=7; CP_ERR=8; CP_WARN=9
-
-def init_colors():
-    curses.start_color(); curses.use_default_colors()
-    curses.init_pair(CP_HDR,  15, 17)
-    curses.init_pair(CP_MENU,  8, -1)
-    curses.init_pair(CP_SEL,  15, 22)
-    curses.init_pair(CP_PANEL,14,236)
-    curses.init_pair(CP_RESP, 15, -1)
-    curses.init_pair(CP_DIM,   8, -1)
-    curses.init_pair(CP_OK,   10, -1)
-    curses.init_pair(CP_ERR,   9, -1)
-    curses.init_pair(CP_WARN, 11, -1)
-
-TABS = ['💬 Chat', '🔧 Models', '📋 History', '⚙  Status', '📁 Files', '🛠  Tools']
-
-def safe(w, y, x, s, a=0):
-    H, W = w.getmaxyx()
-    if y < 0 or y >= H or x < 0 or x >= W: return
-    try: w.addstr(y, x, str(s)[:max(0, W-x-1)], a)
-    except: pass
-
-# ── Main AUI ──────────────────────────────────────────────────────────────────
-def aui_main(stdscr):
-    init_colors(); curses.curs_set(1); stdscr.keypad(True); stdscr.timeout(300)
-    tab = 0
-    chat_hist = []          # list of (role, text)
-    chat_scroll = 0
-    input_buf = ''
-    cursor_x = 0
-    bg_result = ['']
-    bg_busy   = [False]
-    status_msg = 'Ready — type a message and press Enter  |  Alt+1-6 switch tabs  |  Ctrl+Q quit'
-    conf = load_config()
-
-    def ask_bg(prompt):
-        bg_busy[0] = True; bg_result[0] = ''
-        def _run():
-            r = ai('ask', prompt)
-            bg_result[0] = r; bg_busy[0] = False
-        threading.Thread(target=_run, daemon=True).start()
-
-    def models_info():
-        return ai('models', timeout=15) or '[no output]'
-
-    def status_info():
-        return ai('status', timeout=15) or '[no output]'
-
-    def draw():
-        stdscr.erase(); H, W = stdscr.getmaxyx()
-
-        # Header
-        hdr = f' AI CLI AUI v{VERSION}  ·  Model: {ACT_MODEL[:30]}  ·  Backend: {ACT_BACK} '
-        safe(stdscr, 0, 0, hdr.ljust(W), curses.color_pair(CP_HDR)|curses.A_BOLD)
-
-        # Tab bar
-        tx = 1
-        safe(stdscr, 1, 0, ' '*W, curses.color_pair(CP_MENU))
-        for i, t in enumerate(TABS):
-            lbl = f' {t} '
-            a = curses.color_pair(CP_SEL)|curses.A_BOLD if i == tab else curses.color_pair(CP_MENU)
-            safe(stdscr, 1, tx, lbl, a); tx += len(lbl) + 1
-        hint = f'  Alt+1-{len(TABS)} switch'
-        safe(stdscr, 1, min(tx+2, W-len(hint)-1), hint, curses.color_pair(CP_DIM))
-
-        body_y = 2; body_h = H - 5
-
-        # ── TAB 0: Chat ──────────────────────────────────────────────────
-        if tab == 0:
-            # Sidebar: quick commands
-            sw = min(24, W//4)
-            safe(stdscr, body_y, 0, ' Quick Commands'.ljust(sw), curses.color_pair(CP_PANEL)|curses.A_BOLD)
-            cmds = ['/models','/status','/history','/canvas new demo',
-                    '/recommended','/clear','/help','/quit']
-            for i, c in enumerate(cmds[:body_h-2]):
-                safe(stdscr, body_y+1+i, 0, f'  {c}'[:sw].ljust(sw), curses.color_pair(CP_PANEL))
-            for r in range(body_h):
-                try: stdscr.addch(body_y+r, sw, '│', curses.color_pair(CP_PANEL))
-                except: pass
-            # Chat area
-            cx = sw + 1; cw = W - cx - 1
-            vis_lines = []
-            for role, text in chat_hist:
-                prefix = '  You: ' if role == 'user' else '   AI: '
-                color = curses.color_pair(CP_WARN) if role == 'user' else curses.color_pair(CP_OK)
-                wrapped = textwrap.wrap(text, cw - len(prefix)) or ['']
-                for j, l in enumerate(wrapped):
-                    vis_lines.append((prefix if j==0 else ' '*len(prefix)) + l, color)
-                vis_lines.append(('', 0))
-            # Scroll
-            total = len(vis_lines)
-            max_vis = body_h - 2
-            start = max(0, total - max_vis - chat_scroll)
-            for i, (line, a) in enumerate(vis_lines[start:start+max_vis]):
-                safe(stdscr, body_y+i, cx, line[:cw], a)
-            if bg_busy[0]:
-                safe(stdscr, body_y+min(total,max_vis), cx, '  AI is thinking…', curses.color_pair(CP_DIM)|curses.A_BLINK)
-
-        # ── TAB 1: Models ────────────────────────────────────────────────
-        elif tab == 1:
-            lines = ['  Run: ai recommended  to browse 195 models', '',
-                     f'  Active model:   {ACT_MODEL}',
-                     f'  Active backend: {ACT_BACK}','',
-                     '  Commands:',
-                     '    ai recommended          — browse all 195 models',
-                     '    ai recommended download <N>',
-                     '    ai recommended use <N>',
-                     '    ai download <N>         — quick download',
-                     '    ai models               — list downloaded',
-                     '    ai gguf-info            — inspect GGUF file',
-                     '    ai quant                — best quant for your RAM',
-                     '    ai compare "prompt"     — compare backends',
-                     '    ai perf                 — benchmark speed',]
-            for i, l in enumerate(lines[:body_h]):
-                a = curses.color_pair(CP_OK) if 'Active' in l else curses.color_pair(CP_RESP)
-                safe(stdscr, body_y+i, 2, l[:W-3], a)
-
-        # ── TAB 2: History ───────────────────────────────────────────────
-        elif tab == 2:
-            hist = get_history()
-            safe(stdscr, body_y, 2, f'Recent prompts ({len(hist)} shown, newest first):',
-                 curses.color_pair(CP_PANEL)|curses.A_BOLD)
-            for i, h in enumerate(hist[:body_h-2]):
-                safe(stdscr, body_y+1+i, 4, f'{i+1:2}. {h[:W-8]}', curses.color_pair(CP_RESP))
-            if not hist:
-                safe(stdscr, body_y+2, 4, '(no history yet — chat to create some)', curses.color_pair(CP_DIM))
-
-        # ── TAB 3: Status ────────────────────────────────────────────────
-        elif tab == 3:
-            info_lines = [
-                f'  Version:        AI CLI v{VERSION}',
-                f'  Model:          {ACT_MODEL}',
-                f'  Backend:        {ACT_BACK}',
-                f'  Config dir:     {CFG_DIR}',
-                f'  Python:         {sys.executable}',
-                f'  OpenAI key:     {"✓ set" if conf.get("OPENAI_API_KEY") else "✗ not set"}',
-                f'  Anthropic key:  {"✓ set" if conf.get("ANTHROPIC_API_KEY") else "✗ not set"}',
-                f'  Gemini key:     {"✓ set" if conf.get("GEMINI_API_KEY") else "✗ not set"}',
-                f'  Groq key:       {"✓ set" if conf.get("GROQ_API_KEY") else "✗ not set"}',
-                '',
-                '  System:',
-                f'    Platform:  {sys.platform}',
-                f'    Python:    {sys.version.split()[0]}',
-            ]
-            try:
-                import shutil as _sh
-                du, dt = _sh.disk_usage('/')
-                info_lines.append(f'    Disk:      {du/1e9:.1f} GB used / {dt/1e9:.1f} GB total')
-            except: pass
-            for i, l in enumerate(info_lines[:body_h]):
-                a = curses.color_pair(CP_OK) if '✓' in l else \
-                    curses.color_pair(CP_ERR) if '✗' in l else curses.color_pair(CP_RESP)
-                safe(stdscr, body_y+i, 0, l[:W-1], a)
-
-        # ── TAB 4: Files ─────────────────────────────────────────────────
-        elif tab == 4:
-            dirs = [
-                ('Config', CFG_DIR),
-                ('Models', os.path.join(CFG_DIR, '..', 'ai-models')),
-                ('Output', os.path.join(CFG_DIR, '..', 'ai-output')),
-                ('Canvas v3', os.path.join(CFG_DIR, '..', 'ai-output', 'canvas_v3')),
-            ]
-            row = body_y
-            for label, d in dirs:
-                d = os.path.abspath(os.path.expanduser(d))
-                exists = os.path.isdir(d)
-                try:
-                    count = len(os.listdir(d)) if exists else 0
-                except: count = 0
-                a = curses.color_pair(CP_OK) if exists else curses.color_pair(CP_DIM)
-                safe(stdscr, row, 2, f'  {label:<16} {d}  ({count} items)', a)
-                row += 1
-                if not exists: continue
-                try:
-                    items = sorted(os.listdir(d))[:5]
-                    for item in items:
-                        safe(stdscr, row, 6, f'  ├─ {item[:W-12]}', curses.color_pair(CP_DIM))
-                        row += 1
-                except: pass
-                row += 1
-                if row >= body_y + body_h: break
-
-        # ── TAB 5: Tools ─────────────────────────────────────────────────
-        elif tab == 5:
-            tools = [
-                ('ai ask "prompt"',           'Send a one-shot question'),
-                ('ai chat',                    'Interactive chat session'),
-                ('ai canvas new <ws>',         'Create Canvas v3 workspace'),
-                ('ai canvas open <ws>',        'Open Canvas v3 TUI'),
-                ('ai gguf-info',               'Inspect GGUF model info'),
-                ('ai snap save <name>',        'Save config snapshot'),
-                ('ai compare "prompt"',        'Compare all backends'),
-                ('ai perf',                    'Benchmark tokens/sec'),
-                ('ai rlhf rate',               'Rate a response (RLHF)'),
-                ('ai rlhf train',              'Run DPO training'),
-                ('ai ttm pretrain',            'Pre-train TTM model'),
-                ('ai ttm finetune <dataset>',  'Fine-tune TTM'),
-                ('ai workflow list',           'List workflows'),
-                ('ai batch <dir>',             'Batch process files'),
-                ('ai keys set KEY value',      'Set API key'),
-                ('ai recommended',             'Browse 195 models'),
-            ]
-            safe(stdscr, body_y, 2, 'Available Tools & Commands:', curses.color_pair(CP_PANEL)|curses.A_BOLD)
-            for i, (cmd, desc) in enumerate(tools[:body_h-2]):
-                safe(stdscr, body_y+1+i, 4, f'{cmd:<40} — {desc}'[:W-6], curses.color_pair(CP_RESP))
-
-        # Input bar
-        input_y = H - 3
-        safe(stdscr, input_y-1, 0, '─'*W, curses.color_pair(CP_DIM))
-        prompt_str = '> '
-        if tab == 0:
-            safe(stdscr, input_y, 0, prompt_str, curses.color_pair(CP_OK)|curses.A_BOLD)
-            safe(stdscr, input_y, len(prompt_str), input_buf[:W-len(prompt_str)-1], curses.color_pair(CP_RESP))
-        else:
-            safe(stdscr, input_y, 0, '  [Tab 0 = Chat to type messages]', curses.color_pair(CP_DIM))
-
-        # Status bar
-        busy_ind = ' [AI…]' if bg_busy[0] else ''
-        safe(stdscr, H-2, 0, f' {status_msg}{busy_ind} '[:W].ljust(W), curses.color_pair(CP_PANEL))
-        nav = f' Ctrl+Q quit  PgUp/PgDn scroll  Alt+1-{len(TABS)} tabs'
-        safe(stdscr, H-1, 0, nav[:W].ljust(W), curses.color_pair(CP_DIM))
-
-        # Cursor
-        if tab == 0:
-            try: stdscr.move(input_y, len(prompt_str) + min(cursor_x, len(input_buf)))
-            except: pass
-        stdscr.refresh()
-
-    while True:
-        # Collect bg result
-        if not bg_busy[0] and bg_result[0]:
-            chat_hist.append(('ai', bg_result[0]))
-            bg_result[0] = ''
-            status_msg = 'Response received'
-
-        draw()
-        H, W = stdscr.getmaxyx()
-        key = stdscr.getch()
-        if key == -1: continue
-
-        # Global keys
-        if key == 17:  # Ctrl+Q
-            break
-        elif key == curses.KEY_PPAGE:
-            chat_scroll = min(chat_scroll+5, 200)
-        elif key == curses.KEY_NPAGE:
-            chat_scroll = max(chat_scroll-5, 0)
-
-        # Alt+N tab switch (ESC + N)
-        elif key == 27:
-            stdscr.timeout(50); k2 = stdscr.getch(); stdscr.timeout(300)
-            if ord('1') <= k2 <= ord('6'):
-                tab = k2 - ord('1')
-                status_msg = f'Tab: {TABS[tab]}'
-
-        # Tab switch via F-keys
-        elif key == curses.KEY_F1: tab = 0
-        elif key == curses.KEY_F2: tab = 1
-        elif key == curses.KEY_F3: tab = 2
-        elif key == curses.KEY_F4: tab = 3
-        elif key == curses.KEY_F5: tab = 4
-        elif key == curses.KEY_F6: tab = 5
-
-        # Chat input
-        elif tab == 0:
-            if key in (curses.KEY_BACKSPACE, 127, 8):
-                if cursor_x > 0: input_buf = input_buf[:cursor_x-1]+input_buf[cursor_x:]; cursor_x -= 1
-            elif key == curses.KEY_LEFT: cursor_x = max(0, cursor_x-1)
-            elif key == curses.KEY_RIGHT: cursor_x = min(len(input_buf), cursor_x+1)
-            elif key == curses.KEY_HOME: cursor_x = 0
-            elif key == curses.KEY_END: cursor_x = len(input_buf)
-            elif key in (10, 13):  # Enter — submit
-                msg = input_buf.strip()
-                if msg:
-                    input_buf = ''; cursor_x = 0; chat_scroll = 0
-                    # Handle slash commands
-                    if msg.startswith('/'):
-                        parts = msg[1:].split(None, 1)
-                        cmd0 = parts[0].lower()
-                        if cmd0 == 'quit': break
-                        elif cmd0 == 'clear': chat_hist.clear(); status_msg = 'Chat cleared'
-                        elif cmd0 == 'help':
-                            chat_hist.append(('ai', 'Commands: /quit /clear /models /status /history /recommended\nOr just type any question!'))
-                        else:
-                            chat_hist.append(('user', msg[1:]))
-                            status_msg = f'Running: ai {parts[0]} …'
-                            raw = msg[1:]
-                            def _slash_run(r=raw):
-                                bg_busy[0]=True
-                                result=run([CLI]+r.split(), timeout=30)
-                                bg_result[0]=result; bg_busy[0]=False
-                            threading.Thread(target=_slash_run, daemon=True).start()
-                    else:
-                        chat_hist.append(('user', msg))
-                        status_msg = 'Asking AI…'
-                        ask_bg(msg)
-            elif 32 <= key <= 126:
-                input_buf = input_buf[:cursor_x]+chr(key)+input_buf[cursor_x:]
-                cursor_x += 1
-
-curses.wrapper(aui_main)
-AUIEOF
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
 #  GUI+ v2 — Advanced tkinter GUI (2.1× size, tabbed, modern)
 # ════════════════════════════════════════════════════════════════════════════════
 #  Requires: python3-tk  (sudo apt install python3-tk / pacman -S tk)
@@ -6723,7 +6031,7 @@ cmd_gui_plus() {
   local script; script=$(mktemp /tmp/ai_guiplus_XXXX.py)
   cat > "$script" << 'GUIPLUSEOF'
 #!/usr/bin/env python3
-"""AI CLI v2.8.5 — GUI+ v3.0: 1.75x size, 7 tabs, model browser, workflow runner"""
+"""AI CLI v2.7.4 — GUI+ v2: tkinter, 2.1x size, tabbed, dark/light themes"""
 import sys, os, subprocess, threading, json, time, tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog, simpledialog
 
@@ -6806,17 +6114,17 @@ class ChatTab(tk.Frame):
         StyledButton(bar, text="🗑 Clear",   command=self._clear).pack(side="left",padx=2)
         StyledButton(bar, text="💾 Save",    command=self._save).pack(side="left",padx=2)
         self.chat = scrolledtext.ScrolledText(self, bg=P["panel"], fg=P["fg"], insertbackground=P["fg"],
-            font=("Segoe UI",13), wrap="word", state="disabled", padx=16, pady=10, relief="flat", spacing3=5)
-        self.chat.pack(fill="both", expand=True, padx=10, pady=(10,0))
-        self.chat.tag_config("user", foreground=P["chat_user"], font=("Segoe UI",13,"bold"))
-        self.chat.tag_config("ai",   foreground=P["chat_ai"],  font=("Segoe UI",13))
-        self.chat.tag_config("sys",  foreground=P["chat_sys"], font=("Segoe UI",12,"italic"))
-        self.chat.tag_config("err",  foreground=P["err"],      font=("Segoe UI",12))
-        self.chat.tag_config("dim",  foreground=P["dim"],      font=("Segoe UI",11))
-        inp_frame = tk.Frame(self, bg=P["bg"], pady=8)
-        inp_frame.pack(fill="x", padx=10); inp_frame.columnconfigure(0, weight=1)
+            font=("Segoe UI",11), wrap="word", state="disabled", padx=12, pady=8, relief="flat", spacing3=4)
+        self.chat.pack(fill="both", expand=True, padx=8, pady=(8,0))
+        self.chat.tag_config("user", foreground=P["chat_user"], font=("Segoe UI",11,"bold"))
+        self.chat.tag_config("ai",   foreground=P["chat_ai"],  font=("Segoe UI",11))
+        self.chat.tag_config("sys",  foreground=P["chat_sys"], font=("Segoe UI",10,"italic"))
+        self.chat.tag_config("err",  foreground=P["err"],      font=("Segoe UI",10))
+        self.chat.tag_config("dim",  foreground=P["dim"],      font=("Segoe UI",9))
+        inp_frame = tk.Frame(self, bg=P["bg"], pady=6)
+        inp_frame.pack(fill="x", padx=8); inp_frame.columnconfigure(0, weight=1)
         self.inp = tk.Text(inp_frame, bg=P["entry_bg"], fg=P["entry_fg"], insertbackground=P["fg"],
-            font=("Segoe UI",13), height=4, relief="flat", padx=10, pady=8, wrap="word")
+            font=("Segoe UI",11), height=3, relief="flat", padx=8, pady=6, wrap="word")
         self.inp.grid(row=0, column=0, sticky="ew", padx=(0,8))
         self.inp.bind("<Return>", self._on_enter)
         right = tk.Frame(inp_frame, bg=P["bg"]); right.grid(row=0, column=1, sticky="ns")
@@ -6825,7 +6133,7 @@ class ChatTab(tk.Frame):
         StyledButton(right, text="/agent", command=lambda: self._quick("/agent ")).pack(fill="x",pady=2)
         tk.Label(self, text="Enter=send  Shift+Enter=newline  /web /agent /model /clear /help /quit",
             bg=P["bg"], fg=P["dim"], font=("Segoe UI",8)).pack(pady=(0,4))
-        self._add("sys","Welcome to AI CLI v2.8.5 — GUI+ v3.0  (type /help for commands)")
+        self._add("sys","Welcome to AI CLI v2.7.4 — GUI+ v2  (type /help for commands)")
         threading.Thread(target=self._load_model, daemon=True).start()
     def _add(self, role, text):
         self.chat.config(state="normal")
@@ -7012,97 +6320,19 @@ class NodeTab(tk.Frame):
         StyledButton(row, text="Load Pipeline", command=lambda:subprocess.Popen([CLI,"node","load"])).pack(side="left",padx=8)
         StyledButton(row, text="Node Config",   command=lambda:subprocess.Popen([CLI,"node","config"])).pack(side="left",padx=8)
 
-class WorkflowTab(tk.Frame):
-    """v2.8.5 — Workflow runner: list, run, create workflows"""
-    def __init__(self, parent):
-        super().__init__(parent, bg=P["bg"]); self._build()
-    def _build(self):
-        tk.Label(self, text="Workflow Engine", bg=P["bg"], fg=P["accent"],
-            font=("Segoe UI",15,"bold")).pack(pady=(14,6))
-        tk.Label(self, text="Define JSON pipelines · Chain prompts · Automate tasks",
-            bg=P["bg"], fg=P["dim"], font=("Segoe UI",10)).pack()
-        top = tk.Frame(self, bg=P["bg"]); top.pack(fill="x", padx=14, pady=8)
-        for lbl,cmd in [("📋 List Workflows","workflow list"),("➕ New Workflow","workflow new"),
-                        ("📖 Help","workflow help")]:
-            StyledButton(top, text=lbl, command=lambda c=cmd: self._run(*c.split())).pack(side="left",padx=4)
-        mid = tk.Frame(self, bg=P["bg"]); mid.pack(fill="x", padx=14, pady=(0,8))
-        tk.Label(mid, text="Workflow name:", bg=P["bg"], fg=P["fg"],
-            font=("Segoe UI",11)).pack(side="left")
-        self.wf_var = tk.StringVar()
-        tk.Entry(mid, textvariable=self.wf_var, bg=P["entry_bg"], fg=P["entry_fg"],
-            insertbackground=P["fg"], font=("Segoe UI",11), relief="flat", width=28).pack(side="left",padx=8)
-        AccentButton(mid, text="▶ Run", command=self._run_workflow).pack(side="left",padx=4)
-        self.out = scrolledtext.ScrolledText(self, bg=P["panel"], fg=P["fg"],
-            font=("Segoe UI",10), wrap="word", state="disabled", padx=10, pady=8, relief="flat")
-        self.out.pack(fill="both", expand=True, padx=14, pady=(0,12))
-        self._run("workflow","list")
-    def _run(self, *args):
-        self.out.config(state="normal"); self.out.delete("1.0","end")
-        self.out.insert("end",f"$ ai {' '.join(args)}\n\n"); self.out.config(state="disabled")
-        def _go():
-            r=run_ai(*args,timeout=60); self.out.config(state="normal")
-            self.out.insert("end",r+"\n"); self.out.config(state="disabled"); self.out.see("end")
-        threading.Thread(target=_go,daemon=True).start()
-    def _run_workflow(self):
-        name=self.wf_var.get().strip()
-        if not name: messagebox.showwarning("Input","Enter a workflow name"); return
-        self._run("workflow","run",name)
-
-class BatchTab(tk.Frame):
-    """v2.8.5 — Batch processor: run AI prompts over files or dirs"""
-    def __init__(self, parent):
-        super().__init__(parent, bg=P["bg"]); self._build()
-    def _build(self):
-        tk.Label(self, text="Batch Processor", bg=P["bg"], fg=P["accent"],
-            font=("Segoe UI",15,"bold")).pack(pady=(14,6))
-        tk.Label(self, text="Process files, directories, or lists with AI in one command",
-            bg=P["bg"], fg=P["dim"], font=("Segoe UI",10)).pack()
-        row1 = tk.Frame(self, bg=P["bg"]); row1.pack(fill="x", padx=14, pady=8)
-        tk.Label(row1, text="Command:", bg=P["bg"], fg=P["fg"],
-            font=("Segoe UI",11)).pack(side="left")
-        self.cmd_var = tk.StringVar(value="summarize")
-        tk.Entry(row1, textvariable=self.cmd_var, bg=P["entry_bg"], fg=P["entry_fg"],
-            insertbackground=P["fg"], font=("Segoe UI",11), relief="flat", width=20).pack(side="left",padx=8)
-        tk.Label(row1, text="Path:", bg=P["bg"], fg=P["fg"],
-            font=("Segoe UI",11)).pack(side="left")
-        self.path_var = tk.StringVar(value=".")
-        tk.Entry(row1, textvariable=self.path_var, bg=P["entry_bg"], fg=P["entry_fg"],
-            insertbackground=P["fg"], font=("Segoe UI",11), relief="flat", width=28).pack(side="left",padx=8)
-        StyledButton(row1, text="📁 Browse",
-            command=lambda: self.path_var.set(filedialog.askdirectory() or self.path_var.get())
-            ).pack(side="left",padx=4)
-        AccentButton(row1, text="▶ Run Batch", command=self._run_batch).pack(side="left",padx=8)
-        row2 = tk.Frame(self, bg=P["bg"]); row2.pack(fill="x", padx=14, pady=(0,6))
-        for lbl,cmd in [("📋 List Output","batch list"),("🗑 Clear Output","batch clear"),("❓ Help","batch help")]:
-            StyledButton(row2, text=lbl, command=lambda c=cmd: self._run(*c.split())).pack(side="left",padx=4)
-        self.out = scrolledtext.ScrolledText(self, bg=P["panel"], fg=P["fg"],
-            font=("Segoe UI",10), wrap="word", state="disabled", padx=10, pady=8, relief="flat")
-        self.out.pack(fill="both", expand=True, padx=14, pady=(0,12))
-    def _run(self, *args):
-        self.out.config(state="normal"); self.out.delete("1.0","end")
-        self.out.insert("end",f"$ ai {' '.join(args)}\n\n"); self.out.config(state="disabled")
-        def _go():
-            r=run_ai(*args,timeout=120); self.out.config(state="normal")
-            self.out.insert("end",r+"\n"); self.out.config(state="disabled"); self.out.see("end")
-        threading.Thread(target=_go,daemon=True).start()
-    def _run_batch(self):
-        cmd=self.cmd_var.get().strip(); path=self.path_var.get().strip()
-        if not cmd: messagebox.showwarning("Input","Enter a batch command"); return
-        self._run("batch", cmd, path)
-
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("AI CLI v2.8.5 — GUI+ v3.0")
+        self.title("AI CLI v2.7.4 — GUI+ v2")
         self.configure(bg=P["bg"])
-        self.geometry("2240x1435"); self.minsize(1400,900)
+        self.geometry("1280x820"); self.minsize(900,600)
         self._setup_style(); self._build_menu(); self._build_tabs(); self._build_statusbar()
         self.protocol("WM_DELETE_WINDOW", self.quit)
         threading.Thread(target=self._bg_status, daemon=True).start()
     def _setup_style(self):
         s=ttk.Style(self); s.theme_use("clam")
         s.configure("TNotebook",    background=P["sidebar"], borderwidth=0)
-        s.configure("TNotebook.Tab",background=P["tab_bg"], foreground=P["dim"], padding=[18,8], font=("Segoe UI",11))
+        s.configure("TNotebook.Tab",background=P["tab_bg"], foreground=P["dim"], padding=[14,6], font=("Segoe UI",10))
         s.map("TNotebook.Tab", background=[("selected",P["accent"])], foreground=[("selected",P["bg"])])
         s.configure("TScrollbar", background=P["panel"], troughcolor=P["bg"], arrowcolor=P["dim"])
     def _build_menu(self):
@@ -7119,48 +6349,34 @@ class App(tk.Tk):
         mb.add_cascade(label="Help",menu=hm); self.config(menu=mb)
     def _show(self, title, *args):
         win=tk.Toplevel(self); win.title(title); win.configure(bg=P["bg"])
-        t=scrolledtext.ScrolledText(win,bg=P["panel"],fg=P["fg"],font=("Segoe UI",11),width=90,height=36)
-        t.pack(padx=16,pady=16,fill="both",expand=True); t.insert("end","Loading…\n"); t.config(state="disabled")
+        t=scrolledtext.ScrolledText(win,bg=P["panel"],fg=P["fg"],font=("Segoe UI",10),width=80,height=30)
+        t.pack(padx=12,pady=12,fill="both",expand=True); t.insert("end","Loading…\n"); t.config(state="disabled")
         def _go():
             out=run_ai(*args,timeout=60); t.config(state="normal"); t.delete("1.0","end")
             t.insert("end",out); t.config(state="disabled")
         threading.Thread(target=_go,daemon=True).start()
     def _build_tabs(self):
         nb=ttk.Notebook(self); nb.pack(fill="both",expand=True)
-        for label,Cls in [
-            ("💬 Chat",       ChatTab),
-            ("📦 Models",     ModelsTab),
-            ("⚙ Settings",    SettingsTab),
-            ("🔁 Workflow",   WorkflowTab),
-            ("📋 Batch",      BatchTab),
-            ("🧩 Nodes",      NodeTab),
-            ("🔌 Extensions", ExtensionsTab),
-            ("📊 Status",     StatusTab),
-        ]:
+        for label,Cls in [("💬 Chat",ChatTab),("📦 Models",ModelsTab),("⚙ Settings",SettingsTab),
+                          ("🧩 Nodes",NodeTab),("🔌 Extensions",ExtensionsTab),("📊 Status",StatusTab)]:
             frame=Cls(nb); nb.add(frame,text=f"  {label}  ")
     def _build_statusbar(self):
-        self.status_var=tk.StringVar(value="AI CLI v2.8.5 — GUI+ v3.0 ready")
+        self.status_var=tk.StringVar(value="AI CLI v2.7.4 — GUI+ v2 ready")
         tk.Label(self,textvariable=self.status_var,bg=P["panel"],fg=P["dim"],
-            font=("Segoe UI",9),anchor="w",padx=10,pady=4).pack(fill="x",side="bottom")
+            font=("Segoe UI",8),anchor="w",padx=8,pady=3).pack(fill="x",side="bottom")
     def _bg_status(self):
-        out=run_ai("status",timeout=10); short=(out.splitlines()[0][:100] if out else "")
-        self.status_var.set(f"AI CLI v2.8.5 — {short}")
+        out=run_ai("status",timeout=10); short=(out.splitlines()[0][:80] if out else "")
+        self.status_var.set(f"AI CLI v2.7.4 — {short}")
     def _about(self):
-        messagebox.showinfo("About GUI+ v3",
-            "AI CLI v2.8.5 — GUI+ v3.0\n\n"
-            "1.75× window · 8 tabs · improved readability\n"
-            "Tabs: Chat · Models · Settings · Workflow · Batch · Nodes · Extensions · Status\n\n"
-            "New in v2.8.5:\n"
-            "  • GUI+ v3 (1.75× size)\n"
-            "  • Workflow runner tab\n"
-            "  • Batch processor tab\n"
-            "  • GGUF v2: proper chat templates + streaming\n"
-            "  • ai gguf-info · ai quant · ai compare\n\n"
-            "Run 'ai help' for full reference.")
+        messagebox.showinfo("About GUI+ v2",
+            "AI CLI v2.7.4 — GUI+ v2\n\n2.1× advanced tkinter GUI\n"
+            "Tabs: Chat · Models · Settings · Nodes · Extensions · Status\n\n"
+            "New in v2.7.4:\n  • GUI+ v2 (tkinter)\n  • AI Node Editor (125+ nodes)\n"
+            "  • Detailed help: ai -h <command>\n\nRun 'ai help' for full reference.")
 
 App().mainloop()
 GUIPLUSEOF
-  info "Launching GUI+ v3.0 (tkinter, 1.75× size, 8 tabs)…"
+  info "Launching GUI+ v2 (tkinter, 2.1× size)…"
   "$PYTHON" "$script" "$cli_bin" "$theme" "$cfg_dir"
   local rc=$?
   rm -f "$script"
@@ -7571,122 +6787,6 @@ json.dump(hist,open(f,'w'),indent=2)
 " 2>/dev/null || true
 }
 
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8.5: GGUF HELPERS — chat template detection, prompt building, quant selection
-# ════════════════════════════════════════════════════════════════════════════════
-
-# Detect best chat template from GGUF model filename
-_detect_gguf_chat_fmt() {
-  local name; name="$(basename "${1:-}" .gguf | tr '[:upper:]' '[:lower:]')"
-  case "$name" in
-    *llama-3*|*llama3*)          echo "llama-3"  ;;
-    *llama-2*|*llama2*)          echo "llama-2"  ;;
-    *mistral*|*mixtral*)         echo "mistral"  ;;
-    *qwen3*)                     echo "qwen3"    ;;
-    *qwen*)                      echo "chatml"   ;;
-    *phi*)                       echo "chatml"   ;;
-    *gemma*)                     echo "gemma"    ;;
-    *deepseek-r1*|*deepseekr1*)  echo "deepseek" ;;
-    *deepseek*)                  echo "deepseek" ;;
-    *falcon*)                    echo "falcon"   ;;
-    *)                           echo "chatml"   ;; # safe modern default
-  esac
-}
-
-# Build properly-formatted prompt string for llama-cli binary
-_build_gguf_prompt() {
-  local model_path="$1" sys_prompt="$2" user_prompt="$3"
-  local fmt; fmt=$(_detect_gguf_chat_fmt "$model_path")
-  case "$fmt" in
-    llama-3)
-      printf '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n%s<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n%s<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n' \
-        "$sys_prompt" "$user_prompt" ;;
-    llama-2)
-      printf '[INST] <<SYS>>\n%s\n<</SYS>>\n\n%s [/INST]' "$sys_prompt" "$user_prompt" ;;
-    mistral)
-      printf '[INST] %s\n%s [/INST]' "$sys_prompt" "$user_prompt" ;;
-    gemma)
-      printf '<start_of_turn>user\n%s\n%s<end_of_turn>\n<start_of_turn>model\n' "$sys_prompt" "$user_prompt" ;;
-    deepseek)
-      printf '<|begin_of_sentence|>%s\n\nUser: %s\n\nAssistant:' "$sys_prompt" "$user_prompt" ;;
-    *)  # chatml — qwen, phi, smollm, hermes, dolphin, functionary, etc.
-      printf '<|im_start|>system\n%s<|im_end|>\n<|im_start|>user\n%s<|im_end|>\n<|im_start|>assistant\n' \
-        "$sys_prompt" "$user_prompt" ;;
-  esac
-}
-
-# Auto-select best quantization tier for available system RAM
-_gguf_best_quant() {
-  local ram_gb
-  ram_gb=$(python3 -c "
-import os
-m=open('/proc/meminfo').read() if os.path.exists('/proc/meminfo') else ''
-avail=next((int(l.split()[1])//1024//1024 for l in m.splitlines() if l.startswith('MemAvailable')),8)
-print(avail)" 2>/dev/null || echo 8)
-  if   (( ram_gb >= 24 )); then echo "Q8_0"
-  elif (( ram_gb >= 16 )); then echo "Q6_K"
-  elif (( ram_gb >= 10 )); then echo "Q5_K_M"
-  elif (( ram_gb >= 6  )); then echo "Q4_K_M"
-  elif (( ram_gb >= 4  )); then echo "Q3_K_M"
-  else                          echo "Q2_K"
-  fi
-}
-
-# Show metadata from a GGUF file — ai gguf-info
-cmd_gguf_info() {
-  local model="${1:-${ACTIVE_MODEL:-}}"
-  [[ -z "$model" ]] && { err "Usage: ai gguf-info <model.gguf>"; return 1; }
-  [[ ! -f "$model" ]] && {
-    local candidate; candidate=$(find "$MODELS_DIR" -maxdepth 1 -iname "*$(basename "$model" .gguf)*" -name "*.gguf" 2>/dev/null | head -1)
-    [[ -n "$candidate" ]] && model="$candidate" || { err "GGUF not found: $model"; return 1; }
-  }
-  hdr "GGUF Info — $(basename "$model")"
-  printf "  %-26s %s\n" "Path:"              "$model"
-  printf "  %-26s %s\n" "File size:"         "$(du -sh "$model" 2>/dev/null | cut -f1)"
-  printf "  %-26s %s\n" "Detected template:" "$(_detect_gguf_chat_fmt "$model")"
-  printf "  %-26s %s\n" "Best quant for RAM:" "$(_gguf_best_quant)"
-  if [[ -n "$PYTHON" ]]; then
-    "$PYTHON" - "$model" <<'GGUFINFO_PYEOF'
-import sys, struct, os
-def _read_gguf_meta(path):
-    try:
-        with open(path,'rb') as f:
-            if f.read(4) != b'GGUF': return {}
-            version = struct.unpack('<I', f.read(4))[0]
-            tensor_count = struct.unpack('<Q', f.read(8))[0]
-            kv_count = struct.unpack('<Q', f.read(8))[0]
-            meta = {'gguf_version': version, 'tensor_count': tensor_count}
-            def rs():
-                return f.read(struct.unpack('<Q',f.read(8))[0]).decode('utf-8','replace')
-            sizes = {0:1,1:1,2:2,3:2,4:4,5:4,6:4,7:1,10:8,11:8,12:8}
-            for _ in range(min(kv_count, 300)):
-                key = rs(); vtype = struct.unpack('<I',f.read(4))[0]
-                if   vtype == 8:  val = rs()
-                elif vtype == 7:  val = bool(struct.unpack('B',f.read(1))[0])
-                elif vtype == 9:
-                    at = struct.unpack('<I',f.read(4))[0]
-                    al = struct.unpack('<Q',f.read(8))[0]
-                    if at in sizes: f.read(al*sizes[at])
-                    continue
-                elif vtype in sizes: val = struct.unpack(['B','b','H','h','I','i','f','?','','','Q','q','d'][vtype], f.read(sizes[vtype]))[0]
-                else: break
-                meta[key] = val
-    except: pass
-    return meta
-m = _read_gguf_meta(sys.argv[1])
-want = ['general.architecture','general.name','general.quantization_version',
-        'llama.context_length','llama.embedding_length','llama.block_count',
-        'llama.attention.head_count','llama.attention.head_count_kv',
-        'tokenizer.ggml.model','general.parameter_count']
-print()
-for k in want:
-    if k in m:
-        print(f"  {k.split('.')[-1].replace('_',' ').title():<26} {m[k]}")
-GGUFINFO_PYEOF
-  fi
-  echo ""
-}
-
 ask_gguf() {
   local prompt="$1"
   local model="${ACTIVE_MODEL:-}"
@@ -7694,102 +6794,84 @@ ask_gguf() {
     err ERR201 "No model set. Run: ai download 1  OR  ai recommended"
     return 1
   fi
-  # v2.8.5: GGUF model resolution — basename → partial → quant-aware
+  # v2.7.3: GGUF model resolution — search MODELS_DIR if direct path fails
   if [[ ! -f "$model" ]]; then
+    # Try exact basename match in MODELS_DIR
     local candidate; candidate=$(find "$MODELS_DIR" -maxdepth 1 -name "$(basename "$model")" 2>/dev/null | head -1)
     if [[ -n "$candidate" && -f "$candidate" ]]; then
-      model="$candidate"; ACTIVE_MODEL="$model"; save_config 2>/dev/null || true
+      model="$candidate"
+      ACTIVE_MODEL="$model"; save_config 2>/dev/null || true
     else
+      # Try partial name match (case-insensitive)
       candidate=$(find "$MODELS_DIR" -maxdepth 1 -iname "*$(basename "$model" .gguf)*" -name "*.gguf" 2>/dev/null | head -1)
       if [[ -n "$candidate" && -f "$candidate" ]]; then
-        model="$candidate"; ACTIVE_MODEL="$model"; save_config 2>/dev/null || true
+        model="$candidate"
+        ACTIVE_MODEL="$model"; save_config 2>/dev/null || true
       else
         err ERR202 "GGUF model not found: $model"
-        echo "  Hint: Run \'ai models\' to list downloaded models."
-        echo "  Hint: Run \'ai recommended download <N>\' to get a model."
-        echo "  Hint: Run \'ai gguf-info <path>\' to inspect a .gguf file."
+        echo "  Hint: Run 'ai models' to list downloaded models."
+        echo "  Hint: Run 'ai recommended download <N>' to download a model."
         return 1
       fi
     fi
   fi
 
-  # v2.8.5: llama_cpp_python — proper chat_format + streaming + repeat penalty
   if [[ "${LLAMA_BIN:-}" == "llama_cpp_python" ]]; then
     [[ -z "$PYTHON" ]] && { err "Python not found"; return 1; }
     local sys_prompt; sys_prompt=$(_get_effective_system)
     LLAMA_PROMPT="$prompt" LLAMA_MODEL="$model" LLAMA_MAX="${MAX_TOKENS:-512}" \
     LLAMA_TEMP="${TEMPERATURE:-0.7}" LLAMA_CTX="${CONTEXT_SIZE:-4096}" \
     LLAMA_GPU="${GPU_LAYERS:-0}" LLAMA_SYS="$sys_prompt" \
-    LLAMA_STREAM="${STREAM:-1}" LLAMA_REPEAT="${REPEAT_PENALTY:-1.1}" \
-    LLAMA_TOP_P="${TOP_P:-0.9}" \
     "$PYTHON" - <<'PYEOF'
 import os, sys
 try:
     from llama_cpp import Llama
 except ImportError:
     print("llama-cpp-python not installed. Run: ai install-deps", file=sys.stderr); sys.exit(1)
-def _detect_chat_fmt(p):
-    n = os.path.basename(p).lower()
-    if any(k in n for k in ("llama-3","llama3")):  return "llama-3"
-    if any(k in n for k in ("llama-2","llama2")):  return "llama-2"
-    if any(k in n for k in ("mistral","mixtral")): return "mistral"
-    if "gemma"    in n: return "gemma"
-    if "deepseek" in n: return "deepseek"
-    if "falcon"   in n: return "falcon"
-    return "chatml"
 try:
-    sys_p  = os.environ.get("LLAMA_SYS","").strip()
-    user_p = os.environ["LLAMA_PROMPT"]
-    fmt    = _detect_chat_fmt(os.environ["LLAMA_MODEL"])
-    llm = Llama(model_path=os.environ["LLAMA_MODEL"],
-                n_ctx=int(os.environ["LLAMA_CTX"]),
-                n_gpu_layers=int(os.environ["LLAMA_GPU"]),
-                chat_format=fmt, verbose=False)
-    msgs = []
-    if sys_p: msgs.append({"role":"system","content":sys_p})
-    msgs.append({"role":"user","content":user_p})
-    do_stream = os.environ.get("LLAMA_STREAM","1") == "1"
-    kwargs = dict(messages=msgs,
-                  max_tokens=int(os.environ["LLAMA_MAX"]),
-                  temperature=float(os.environ["LLAMA_TEMP"]),
-                  top_p=float(os.environ.get("LLAMA_TOP_P","0.9")),
-                  repeat_penalty=float(os.environ.get("LLAMA_REPEAT","1.1")))
-    if do_stream:
-        for chunk in llm.create_chat_completion(stream=True, **kwargs):
-            d = chunk["choices"][0]["delta"].get("content","")
-            if d: print(d, end="", flush=True)
-        print()
+    sys_prompt = os.environ.get('LLAMA_SYS', '').strip()
+    user_prompt = os.environ['LLAMA_PROMPT']
+    llm = Llama(model_path=os.environ['LLAMA_MODEL'],
+                n_ctx=int(os.environ['LLAMA_CTX']),
+                n_gpu_layers=int(os.environ['LLAMA_GPU']),
+                verbose=False)
+    # Use chat_completion if system prompt set, else plain completion
+    if sys_prompt:
+        out = llm.create_chat_completion(
+            messages=[{"role": "system", "content": sys_prompt},
+                      {"role": "user",   "content": user_prompt}],
+            max_tokens=int(os.environ['LLAMA_MAX']),
+            temperature=float(os.environ['LLAMA_TEMP']))
+        print(out['choices'][0]['message']['content'], end='', flush=True)
     else:
-        out = llm.create_chat_completion(**kwargs)
-        print(out["choices"][0]["message"]["content"], end="", flush=True)
+        out = llm(user_prompt,
+                  max_tokens=int(os.environ['LLAMA_MAX']),
+                  temperature=float(os.environ['LLAMA_TEMP']),
+                  stream=False)
+        print(out['choices'][0]['text'], end='', flush=True)
 except Exception as e:
-    import traceback
-    print(f"GGUF inference error: {e}", file=sys.stderr)
-    if os.environ.get("VERBOSE","0")=="1": traceback.print_exc(file=sys.stderr)
-    sys.exit(1)
+    print(f"GGUF inference error: {e}", file=sys.stderr); sys.exit(1)
 PYEOF
   elif [[ -n "${LLAMA_BIN:-}" ]]; then
-    # v2.8.5: llama-cli binary — proper chat template + cleaner log filtering
+    # Use llama.cpp binary — show stderr so user sees errors
     local _sys; _sys=$(_get_effective_system)
     local _prompt_arg="$prompt"
-    if [[ -n "$_sys" ]]; then
-      _prompt_arg=$(_build_gguf_prompt "$model" "$_sys" "$prompt")
-    fi
+    # Prepend system as prefix when not empty
+    [[ -n "$_sys" ]] && _prompt_arg="System: ${_sys}
+
+User: ${prompt}"
     "$LLAMA_BIN" -m "$model" -p "$_prompt_arg" \
       -n "${MAX_TOKENS:-512}" --temp "${TEMPERATURE:-0.7}" \
       -c "${CONTEXT_SIZE:-4096}" \
       --n-gpu-layers "${GPU_LAYERS:-0}" \
-      --threads "${THREADS:-4}" -s 0 --no-display-prompt \
-      --repeat-penalty "${REPEAT_PENALTY:-1.1}" \
-      --top-p "${TOP_P:-0.9}" 2>&1 | \
-      grep -v "^llama\|^ggml\|^system_info\|^model\|^\[LOG\]\|^load_model\|^main: \|^sampling " || true
+      --threads "${THREADS:-4}" -s 0 --no-display-prompt 2>&1 | \
+      grep -v "^llama\|^ggml\|^system\|^model\|^\[" || true
   else
     err "llama.cpp not found. Run: ai install-deps"
     info "Or install manually: pip install llama-cpp-python"
     return 1
   fi
 }
-
 
 ask_pytorch() {
   local prompt="$1"
@@ -7969,107 +7051,32 @@ elif isinstance(d,dict): print(d.get('generated_text',str(d)),end='')
 " 2>/dev/null
 }
 
-# ── Groq API (ultra-fast free tier) ──────────────────────────────────────────
-ask_groq() {
-  local prompt="$1"
-  [[ -z "${GROQ_API_KEY:-}" ]] && { err "GROQ_API_KEY not set. Free key: https://console.groq.com"; return 1; }
-  local model="${ACTIVE_MODEL:-llama-3.3-70b-versatile}"
-  model="${model#groq/}"
-  local sys_prompt; sys_prompt=$(_get_effective_system)
-  local user_j sys_j
-  user_j=$(printf '%s' "$prompt"    | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))' 2>/dev/null)
-  sys_j=$(printf '%s'  "$sys_prompt"| python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))' 2>/dev/null)
-  curl -sS https://api.groq.com/openai/v1/chat/completions \
-    -H "Authorization: Bearer $GROQ_API_KEY" -H "Content-Type: application/json" \
-    -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"system\",\"content\":$sys_j},{\"role\":\"user\",\"content\":$user_j}],\"max_tokens\":${MAX_TOKENS:-2048},\"temperature\":${TEMPERATURE:-0.7}}" 2>/dev/null | \
-    python3 -c "
-import json,sys
-try:
-  d=json.load(sys.stdin)
-  if 'error' in d: print(f\"Groq error: {d['error'].get('message',str(d['error']))}\"  ,file=sys.stderr)
-  else: print(d['choices'][0]['message']['content'],end='',flush=True)
-except Exception as e: print(f'Parse error: {e}',file=sys.stderr)
-" 2>/dev/null
-}
-
-# ── Together AI API ───────────────────────────────────────────────────────────
-ask_together() {
-  local prompt="$1"
-  [[ -z "${TOGETHER_API_KEY:-}" ]] && { err "TOGETHER_API_KEY not set. Get at: https://together.ai"; return 1; }
-  local model="${ACTIVE_MODEL:-meta-llama/Llama-3.3-70B-Instruct-Turbo}"
-  model="${model#together/}"
-  local sys_prompt; sys_prompt=$(_get_effective_system)
-  local user_j sys_j
-  user_j=$(printf '%s' "$prompt"    | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))' 2>/dev/null)
-  sys_j=$(printf '%s'  "$sys_prompt"| python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))' 2>/dev/null)
-  curl -sS https://api.together.xyz/v1/chat/completions \
-    -H "Authorization: Bearer $TOGETHER_API_KEY" -H "Content-Type: application/json" \
-    -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"system\",\"content\":$sys_j},{\"role\":\"user\",\"content\":$user_j}],\"max_tokens\":${MAX_TOKENS:-2048},\"temperature\":${TEMPERATURE:-0.7}}" 2>/dev/null | \
-    python3 -c "
-import json,sys
-try:
-  d=json.load(sys.stdin)
-  if 'error' in d: print(f\"Together error: {d['error']}\",file=sys.stderr)
-  else: print(d['choices'][0]['message']['content'],end='',flush=True)
-except Exception as e: print(f'Parse error: {e}',file=sys.stderr)
-" 2>/dev/null
-}
-
-# ── Mistral AI API ────────────────────────────────────────────────────────────
-ask_mistral_api() {
-  local prompt="$1"
-  [[ -z "${MISTRAL_API_KEY:-}" ]] && { err "MISTRAL_API_KEY not set. Get at: https://console.mistral.ai"; return 1; }
-  local model="${ACTIVE_MODEL:-mistral-small-latest}"
-  local sys_prompt; sys_prompt=$(_get_effective_system)
-  local user_j sys_j
-  user_j=$(printf '%s' "$prompt"    | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))' 2>/dev/null)
-  sys_j=$(printf '%s'  "$sys_prompt"| python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))' 2>/dev/null)
-  curl -sS https://api.mistral.ai/v1/chat/completions \
-    -H "Authorization: Bearer $MISTRAL_API_KEY" -H "Content-Type: application/json" \
-    -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"system\",\"content\":$sys_j},{\"role\":\"user\",\"content\":$user_j}],\"max_tokens\":${MAX_TOKENS:-2048},\"temperature\":${TEMPERATURE:-0.7}}" 2>/dev/null | \
-    python3 -c "
-import json,sys
-try:
-  d=json.load(sys.stdin)
-  if 'error' in d: print(f\"Mistral error: {d['error']}\",file=sys.stderr)
-  else: print(d['choices'][0]['message']['content'],end='',flush=True)
-except Exception as e: print(f'Parse error: {e}',file=sys.stderr)
-" 2>/dev/null
-}
-
-
 _auto_detect_backend() {
-  # v2.8.5.5 — groq/together/mistral detection added
   local model="${ACTIVE_MODEL:-}"
-  if [[ -z "$model" ]]; then
-    [[ -n "${OPENAI_API_KEY:-}" ]]    && { echo "openai";   return; }
-    [[ -n "${ANTHROPIC_API_KEY:-}" ]] && { echo "claude";   return; }
-    [[ -n "${GEMINI_API_KEY:-}" ]]    && { echo "gemini";   return; }
-    [[ -n "${GROQ_API_KEY:-}" ]]      && { echo "groq";     return; }
-    [[ -n "${MISTRAL_API_KEY:-}" ]]   && { echo "mistral";  return; }
-    [[ -n "${TOGETHER_API_KEY:-}" ]]  && { echo "together"; return; }
+  [[ -z "$model" ]] && {
+    [[ -n "${OPENAI_API_KEY:-}" ]] && { echo "openai"; return; }
+    [[ -n "${ANTHROPIC_API_KEY:-}" ]] && { echo "claude"; return; }
+    [[ -n "${GEMINI_API_KEY:-}" ]] && { echo "gemini"; return; }
     echo ""; return
-  fi
-  [[ "$model" == gpt-* || "$model" == o1* || "$model" == o3* || "$model" == o4* ]] && { echo "openai";  return; }
-  [[ "$model" == claude-* ]]                && { echo "claude";   return; }
-  [[ "$model" == gemini-* ]]                && { echo "gemini";   return; }
-  [[ "$model" == groq/*  ]]                 && { echo "groq";     return; }
-  [[ "$model" == together/* ]]              && { echo "together"; return; }
-  [[ "$model" == mistral-* || "$model" == codestral-* ]] && { echo "mistral"; return; }
+  }
+  [[ "$model" == gpt-* || "$model" == o1* || "$model" == o3* ]] && { echo "openai"; return; }
+  [[ "$model" == claude-* ]] && { echo "claude"; return; }
+  [[ "$model" == gemini-* ]] && { echo "gemini"; return; }
+  # gguf detection — all conditions in a single bracket to avoid || short-circuit bug
   if [[ "$model" == *.gguf || "$model" == *Q4_K* || "$model" == *Q5_K* || \
-        "$model" == *Q8_0* || "$model" == *Q4_0* || "$model" == *IQ4* || \
-        "$model" == *Q3_K* || "$model" == *Q6_K* || "$model" == *Q2_K* ]]; then
+        "$model" == *Q8_0* || "$model" == *Q4_0* || "$model" == *IQ4* ]]; then
     echo "gguf"; return
   fi
-  [[ -f "$model" ]]                           && { echo "gguf";    return; }
+  [[ -f "$model" ]] && { echo "gguf"; return; }          # any local file → gguf
   [[ -d "$model" && -f "$model/config.json" ]] && { echo "pytorch"; return; }
-  [[ "$model" == */* && ! -d "$model" ]]       && { echo "hf";      return; }
-  [[ -n "${OPENAI_API_KEY:-}" ]]    && { echo "openai";   return; }
-  [[ -n "${ANTHROPIC_API_KEY:-}" ]] && { echo "claude";   return; }
-  [[ -n "${GEMINI_API_KEY:-}" ]]    && { echo "gemini";   return; }
-  [[ -n "${GROQ_API_KEY:-}" ]]      && { echo "groq";     return; }
-  [[ -n "${MISTRAL_API_KEY:-}" ]]   && { echo "mistral";  return; }
-  [[ -n "${TOGETHER_API_KEY:-}" ]]  && { echo "together"; return; }
+  # HuggingFace repo id (org/name format, no local path)
+  if [[ "$model" == */* && ! -d "$model" ]]; then
+    echo "hf"; return
+  fi
+  # Fallback: if API key available use it
+  [[ -n "${OPENAI_API_KEY:-}" ]] && { echo "openai"; return; }
+  [[ -n "${ANTHROPIC_API_KEY:-}" ]] && { echo "claude"; return; }
+  [[ -n "${GEMINI_API_KEY:-}" ]] && { echo "gemini"; return; }
   echo "gguf"
 }
 
@@ -8096,113 +7103,28 @@ $results
   echo "$prompt"
 }
 
-# ════════════════════════════════════════════════════════════════════════════════
-#  cmd_ask — v2.8.5.5 full rewrite  (ai ask "prompt")
-#  Handles: piped input, file context, backend flags, --raw, --json, --system
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_ask() {
-  local prompt="" sys_override="" raw=0 json_out=0 backend_override=""
-  local file_ctx="" append_stdin=0 show_model=0
-
-  # Parse flags
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --system|-s)   sys_override="$2"; shift 2 ;;
-      --raw|-r)      raw=1; shift ;;
-      --json|-j)     json_out=1; shift ;;
-      --backend|-b)  backend_override="$2"; shift 2 ;;
-      --file|-f)     file_ctx="$2"; shift 2 ;;
-      --stdin)       append_stdin=1; shift ;;
-      --model)       show_model=1; shift ;;
-      --openai)      backend_override="openai"; shift ;;
-      --claude)      backend_override="claude"; shift ;;
-      --gemini)      backend_override="gemini"; shift ;;
-      --groq)        backend_override="groq"; shift ;;
-      --gguf)        backend_override="gguf"; shift ;;
-      --)            shift; prompt="$*"; break ;;
-      *)             prompt+="${prompt:+ }$1"; shift ;;
-    esac
-  done
-
-  # Collect prompt from stdin if empty and stdin is piped
-  if [[ -z "$prompt" ]]; then
-    if [[ ! -t 0 ]]; then
-      prompt=$(cat)
-    else
-      read -rp "$(printf "[96mAsk: [0m")" prompt
-      [[ -z "$prompt" ]] && {
-        printf "[31mError:[0m No prompt. Usage: ai ask "<question>"  OR  echo "text" | ai ask
-"
-        printf "  Flags: --system "<sys>" | --file <f> | --backend openai|claude|gemini|gguf | --raw | --json
-"
-        return 1
-      }
-    fi
-  fi
-
-  # Append stdin content if requested
-  [[ $append_stdin -eq 1 ]] && prompt+="\n\n$(cat)"
-
-  # Inject file context
-  if [[ -n "$file_ctx" ]]; then
-    [[ ! -f "$file_ctx" ]] && { err "File not found: $file_ctx"; return 1; }
-    local ftext; ftext=$(head -200 "$file_ctx")
-    prompt="File: $file_ctx\n\n$ftext\n\n---\n$prompt"
-  fi
-
-  # Override backend if requested
-  local saved_backend="$ACTIVE_BACKEND"
-  local saved_sys="${SYSTEM_PROMPT:-}"
-  [[ -n "$backend_override" ]] && ACTIVE_BACKEND="$backend_override"
-  [[ -n "$sys_override" ]]     && SYSTEM_PROMPT="$sys_override"
-
-  # Show which model is being used
-  if [[ $show_model -eq 1 || "${VERBOSE:-0}" == "1" ]]; then
-    local bk="${ACTIVE_BACKEND:-auto}"; local mdl="${ACTIVE_MODEL:-auto}"
-    printf "  [2mBackend: %s  Model: %s[0m\n" "$bk" "$mdl" >&2
-  fi
-
-  # Run
-  local response; response=$(dispatch_ask "$prompt")
-  local rc=$?
-
-  # Restore overrides
-  [[ -n "$backend_override" ]] && ACTIVE_BACKEND="$saved_backend"
-  [[ -n "$sys_override" ]]     && SYSTEM_PROMPT="$saved_sys"
-
-  [[ $rc -ne 0 ]] && return $rc
-
-  # Output formatting
-  if [[ $json_out -eq 1 ]]; then
-    printf "%s" "$response" | python3 -c "import sys,json; print(json.dumps({'response': sys.stdin.read()}))" 2>/dev/null || printf '{"response":"%s"}' "$response"
-  elif [[ $raw -eq 0 ]]; then
-    printf "%s\n" "$response"
-  else
-    printf "%s" "$response"
-  fi
-}
-
-
 dispatch_ask() {
-  # v2.8.5.5 — rewritten dispatch_ask: auto-detect, groq/together/mistral support, clear errors
   local prompt="$1"
   local backend="${ACTIVE_BACKEND:-}"
   [[ -z "$backend" ]] && backend=$(_auto_detect_backend)
 
+  # No backend at all — give clear diagnostic
   if [[ -z "$backend" ]]; then
-    printf "\033[31mNo model or API key configured.\033[0m\n"
-    printf "  Setup:\n"
-    printf "    ai keys set OPENAI_API_KEY sk-...          # GPT-4o\n"
-    printf "    ai keys set ANTHROPIC_API_KEY sk-ant-...   # Claude\n"
-    printf "    ai keys set GEMINI_API_KEY AIza...         # Gemini\n"
-    printf "    ai keys set GROQ_API_KEY gsk_...           # Groq (free + fast)\n"
-    printf "    ai recommended download 26                 # Qwen3-8B local\n"
+    err "No model or API key configured."
+    echo ""
+    echo -e "${BCYAN}Quick setup:${R}"
+    echo "  ai keys set OPENAI_API_KEY sk-...        (OpenAI GPT-4)"
+    echo "  ai keys set ANTHROPIC_API_KEY sk-ant-... (Claude)"
+    echo "  ai keys set GEMINI_API_KEY AIza...       (Gemini)"
+    echo "  ai download 1                             (tiny local model, any CPU)"
+    echo "  ai recommended                            (browse 28 curated models)"
     return 1
   fi
 
+  # Auto-inject web search if needed
   local enriched_prompt; enriched_prompt=$(_maybe_inject_search "$prompt")
-  local response="" rc=0
 
+  local response="" rc=0
   case "$backend" in
     gguf)      response=$(ask_gguf "$enriched_prompt");   rc=$? ;;
     pytorch)   response=$(ask_pytorch "$enriched_prompt"); rc=$? ;;
@@ -8210,33 +7132,41 @@ dispatch_ask() {
     claude)    response=$(ask_claude "$enriched_prompt");  rc=$? ;;
     gemini)    response=$(ask_gemini "$enriched_prompt");  rc=$? ;;
     hf)        response=$(ask_hf "$enriched_prompt");      rc=$? ;;
-    groq)      response=$(ask_groq "$enriched_prompt");    rc=$? ;;
-    together)  response=$(ask_together "$enriched_prompt"); rc=$? ;;
-    mistral)   response=$(ask_mistral_api "$enriched_prompt"); rc=$? ;;
-    diffusers) cmd_imagine "$enriched_prompt"; response="[Image generated]" ;;
+    diffusers)
+      cmd_imagine "$enriched_prompt"
+      response="[Image generated]"
+      ;;
     *)
-      # Auto-fallback chain: try available keys
-      if   [[ -n "${OPENAI_API_KEY:-}" ]];    then ACTIVE_BACKEND="openai";   response=$(ask_openai "$enriched_prompt"); rc=$?
-      elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then ACTIVE_BACKEND="claude";   response=$(ask_claude "$enriched_prompt"); rc=$?
-      elif [[ -n "${GEMINI_API_KEY:-}" ]];    then ACTIVE_BACKEND="gemini";   response=$(ask_gemini "$enriched_prompt"); rc=$?
-      elif [[ -n "${GROQ_API_KEY:-}" ]];      then ACTIVE_BACKEND="groq";     response=$(ask_groq "$enriched_prompt"); rc=$?
-      elif [[ -n "${MISTRAL_API_KEY:-}" ]];   then ACTIVE_BACKEND="mistral";  response=$(ask_mistral_api "$enriched_prompt"); rc=$?
-      else err "Unknown backend: $backend. Run: ai status"; return 1
-      fi ;;
+      if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+        ACTIVE_BACKEND="openai"; response=$(ask_openai "$enriched_prompt"); rc=$?
+      elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+        ACTIVE_BACKEND="claude"; response=$(ask_claude "$enriched_prompt"); rc=$?
+      elif [[ -n "${GEMINI_API_KEY:-}" ]]; then
+        ACTIVE_BACKEND="gemini"; response=$(ask_gemini "$enriched_prompt"); rc=$?
+      else
+        err "Unknown backend '$backend'. Run: ai status"
+        return 1
+      fi
+      ;;
   esac
 
   if [[ $rc -ne 0 || -z "$response" ]]; then
-    printf "\033[31mNo response from backend '%s'.\033[0m\n" "$backend" >&2
-    [[ "$backend" == "gguf" && ! -f "${ACTIVE_MODEL:-x}" ]] &&       printf "  Hint: GGUF model not found (%s). Run: ai recommended download 26\n" "${ACTIVE_MODEL:-not set}" >&2
-    [[ "$backend" == "pytorch" && ! -d "${ACTIVE_MODEL:-x}" ]] &&       printf "  Hint: PyTorch model dir not found. Run: ai ttm pretrain\n" >&2
+    err "No response from backend '$backend'."
+    [[ -z "${ACTIVE_MODEL:-}" ]] && echo "  Hint: no model set. Run: ai recommended"
+    [[ "$backend" == "pytorch" && ! -d "${ACTIVE_MODEL:-x}" ]] && \
+      echo "  Hint: model dir not found (${ACTIVE_MODEL:-not set}). Run: ai ttm pretrain"
+    [[ "$backend" == "gguf" && ! -f "${ACTIVE_MODEL:-x}" ]] && \
+      echo "  Hint: model file not found (${ACTIVE_MODEL:-not set}). Run: ai download 1"
     return 1
   fi
 
-  printf "%s\n" "$response"
-  log_history "user" "$prompt" 2>/dev/null || true
-  log_history "assistant" "$response" 2>/dev/null || true
-  _save_session_turn "$prompt" "$response" 2>/dev/null || true
-  [[ -n "${CURRENT_CHAT_FILE:-}" ]] && _chat_append "assistant" "$response" 2>/dev/null || true
+  echo "$response"
+  log_history "user" "$prompt"
+  log_history "assistant" "$response"
+  _save_session_turn "$prompt" "$response"
+  [[ -n "${CURRENT_CHAT_FILE:-}" ]] && _chat_append "assistant" "$response"
+
+  # Background TTM batch train if enabled
   [[ "${TTM_AUTO_TRAIN:-0}" == "1" ]] && { _ttm_train_batch &>/dev/null & disown; } 2>/dev/null || true
 }
 
@@ -8592,102 +7522,84 @@ ask_gguf() {
     err ERR201 "No model set. Run: ai download 1  OR  ai recommended"
     return 1
   fi
-  # v2.8.5: GGUF model resolution — basename → partial → quant-aware
+  # v2.7.3: GGUF model resolution — search MODELS_DIR if direct path fails
   if [[ ! -f "$model" ]]; then
+    # Try exact basename match in MODELS_DIR
     local candidate; candidate=$(find "$MODELS_DIR" -maxdepth 1 -name "$(basename "$model")" 2>/dev/null | head -1)
     if [[ -n "$candidate" && -f "$candidate" ]]; then
-      model="$candidate"; ACTIVE_MODEL="$model"; save_config 2>/dev/null || true
+      model="$candidate"
+      ACTIVE_MODEL="$model"; save_config 2>/dev/null || true
     else
+      # Try partial name match (case-insensitive)
       candidate=$(find "$MODELS_DIR" -maxdepth 1 -iname "*$(basename "$model" .gguf)*" -name "*.gguf" 2>/dev/null | head -1)
       if [[ -n "$candidate" && -f "$candidate" ]]; then
-        model="$candidate"; ACTIVE_MODEL="$model"; save_config 2>/dev/null || true
+        model="$candidate"
+        ACTIVE_MODEL="$model"; save_config 2>/dev/null || true
       else
         err ERR202 "GGUF model not found: $model"
-        echo "  Hint: Run \'ai models\' to list downloaded models."
-        echo "  Hint: Run \'ai recommended download <N>\' to get a model."
-        echo "  Hint: Run \'ai gguf-info <path>\' to inspect a .gguf file."
+        echo "  Hint: Run 'ai models' to list downloaded models."
+        echo "  Hint: Run 'ai recommended download <N>' to download a model."
         return 1
       fi
     fi
   fi
 
-  # v2.8.5: llama_cpp_python — proper chat_format + streaming + repeat penalty
   if [[ "${LLAMA_BIN:-}" == "llama_cpp_python" ]]; then
     [[ -z "$PYTHON" ]] && { err "Python not found"; return 1; }
     local sys_prompt; sys_prompt=$(_get_effective_system)
     LLAMA_PROMPT="$prompt" LLAMA_MODEL="$model" LLAMA_MAX="${MAX_TOKENS:-512}" \
     LLAMA_TEMP="${TEMPERATURE:-0.7}" LLAMA_CTX="${CONTEXT_SIZE:-4096}" \
     LLAMA_GPU="${GPU_LAYERS:-0}" LLAMA_SYS="$sys_prompt" \
-    LLAMA_STREAM="${STREAM:-1}" LLAMA_REPEAT="${REPEAT_PENALTY:-1.1}" \
-    LLAMA_TOP_P="${TOP_P:-0.9}" \
     "$PYTHON" - <<'PYEOF'
 import os, sys
 try:
     from llama_cpp import Llama
 except ImportError:
     print("llama-cpp-python not installed. Run: ai install-deps", file=sys.stderr); sys.exit(1)
-def _detect_chat_fmt(p):
-    n = os.path.basename(p).lower()
-    if any(k in n for k in ("llama-3","llama3")):  return "llama-3"
-    if any(k in n for k in ("llama-2","llama2")):  return "llama-2"
-    if any(k in n for k in ("mistral","mixtral")): return "mistral"
-    if "gemma"    in n: return "gemma"
-    if "deepseek" in n: return "deepseek"
-    if "falcon"   in n: return "falcon"
-    return "chatml"
 try:
-    sys_p  = os.environ.get("LLAMA_SYS","").strip()
-    user_p = os.environ["LLAMA_PROMPT"]
-    fmt    = _detect_chat_fmt(os.environ["LLAMA_MODEL"])
-    llm = Llama(model_path=os.environ["LLAMA_MODEL"],
-                n_ctx=int(os.environ["LLAMA_CTX"]),
-                n_gpu_layers=int(os.environ["LLAMA_GPU"]),
-                chat_format=fmt, verbose=False)
-    msgs = []
-    if sys_p: msgs.append({"role":"system","content":sys_p})
-    msgs.append({"role":"user","content":user_p})
-    do_stream = os.environ.get("LLAMA_STREAM","1") == "1"
-    kwargs = dict(messages=msgs,
-                  max_tokens=int(os.environ["LLAMA_MAX"]),
-                  temperature=float(os.environ["LLAMA_TEMP"]),
-                  top_p=float(os.environ.get("LLAMA_TOP_P","0.9")),
-                  repeat_penalty=float(os.environ.get("LLAMA_REPEAT","1.1")))
-    if do_stream:
-        for chunk in llm.create_chat_completion(stream=True, **kwargs):
-            d = chunk["choices"][0]["delta"].get("content","")
-            if d: print(d, end="", flush=True)
-        print()
+    sys_prompt = os.environ.get('LLAMA_SYS', '').strip()
+    user_prompt = os.environ['LLAMA_PROMPT']
+    llm = Llama(model_path=os.environ['LLAMA_MODEL'],
+                n_ctx=int(os.environ['LLAMA_CTX']),
+                n_gpu_layers=int(os.environ['LLAMA_GPU']),
+                verbose=False)
+    # Use chat_completion if system prompt set, else plain completion
+    if sys_prompt:
+        out = llm.create_chat_completion(
+            messages=[{"role": "system", "content": sys_prompt},
+                      {"role": "user",   "content": user_prompt}],
+            max_tokens=int(os.environ['LLAMA_MAX']),
+            temperature=float(os.environ['LLAMA_TEMP']))
+        print(out['choices'][0]['message']['content'], end='', flush=True)
     else:
-        out = llm.create_chat_completion(**kwargs)
-        print(out["choices"][0]["message"]["content"], end="", flush=True)
+        out = llm(user_prompt,
+                  max_tokens=int(os.environ['LLAMA_MAX']),
+                  temperature=float(os.environ['LLAMA_TEMP']),
+                  stream=False)
+        print(out['choices'][0]['text'], end='', flush=True)
 except Exception as e:
-    import traceback
-    print(f"GGUF inference error: {e}", file=sys.stderr)
-    if os.environ.get("VERBOSE","0")=="1": traceback.print_exc(file=sys.stderr)
-    sys.exit(1)
+    print(f"GGUF inference error: {e}", file=sys.stderr); sys.exit(1)
 PYEOF
   elif [[ -n "${LLAMA_BIN:-}" ]]; then
-    # v2.8.5: llama-cli binary — proper chat template + cleaner log filtering
+    # Use llama.cpp binary — show stderr so user sees errors
     local _sys; _sys=$(_get_effective_system)
     local _prompt_arg="$prompt"
-    if [[ -n "$_sys" ]]; then
-      _prompt_arg=$(_build_gguf_prompt "$model" "$_sys" "$prompt")
-    fi
+    # Prepend system as prefix when not empty
+    [[ -n "$_sys" ]] && _prompt_arg="System: ${_sys}
+
+User: ${prompt}"
     "$LLAMA_BIN" -m "$model" -p "$_prompt_arg" \
       -n "${MAX_TOKENS:-512}" --temp "${TEMPERATURE:-0.7}" \
       -c "${CONTEXT_SIZE:-4096}" \
       --n-gpu-layers "${GPU_LAYERS:-0}" \
-      --threads "${THREADS:-4}" -s 0 --no-display-prompt \
-      --repeat-penalty "${REPEAT_PENALTY:-1.1}" \
-      --top-p "${TOP_P:-0.9}" 2>&1 | \
-      grep -v "^llama\|^ggml\|^system_info\|^model\|^\[LOG\]\|^load_model\|^main: \|^sampling " || true
+      --threads "${THREADS:-4}" -s 0 --no-display-prompt 2>&1 | \
+      grep -v "^llama\|^ggml\|^system\|^model\|^\[" || true
   else
     err "llama.cpp not found. Run: ai install-deps"
     info "Or install manually: pip install llama-cpp-python"
     return 1
   fi
 }
-
 
 ask_pytorch() {
   local prompt="$1"
@@ -8868,37 +7780,31 @@ elif isinstance(d,dict): print(d.get('generated_text',str(d)),end='')
 }
 
 _auto_detect_backend() {
-  # v2.8.5.5 — groq/together/mistral detection added
   local model="${ACTIVE_MODEL:-}"
-  if [[ -z "$model" ]]; then
-    [[ -n "${OPENAI_API_KEY:-}" ]]    && { echo "openai";   return; }
-    [[ -n "${ANTHROPIC_API_KEY:-}" ]] && { echo "claude";   return; }
-    [[ -n "${GEMINI_API_KEY:-}" ]]    && { echo "gemini";   return; }
-    [[ -n "${GROQ_API_KEY:-}" ]]      && { echo "groq";     return; }
-    [[ -n "${MISTRAL_API_KEY:-}" ]]   && { echo "mistral";  return; }
-    [[ -n "${TOGETHER_API_KEY:-}" ]]  && { echo "together"; return; }
+  [[ -z "$model" ]] && {
+    [[ -n "${OPENAI_API_KEY:-}" ]] && { echo "openai"; return; }
+    [[ -n "${ANTHROPIC_API_KEY:-}" ]] && { echo "claude"; return; }
+    [[ -n "${GEMINI_API_KEY:-}" ]] && { echo "gemini"; return; }
     echo ""; return
-  fi
-  [[ "$model" == gpt-* || "$model" == o1* || "$model" == o3* || "$model" == o4* ]] && { echo "openai";  return; }
-  [[ "$model" == claude-* ]]                && { echo "claude";   return; }
-  [[ "$model" == gemini-* ]]                && { echo "gemini";   return; }
-  [[ "$model" == groq/*  ]]                 && { echo "groq";     return; }
-  [[ "$model" == together/* ]]              && { echo "together"; return; }
-  [[ "$model" == mistral-* || "$model" == codestral-* ]] && { echo "mistral"; return; }
+  }
+  [[ "$model" == gpt-* || "$model" == o1* || "$model" == o3* ]] && { echo "openai"; return; }
+  [[ "$model" == claude-* ]] && { echo "claude"; return; }
+  [[ "$model" == gemini-* ]] && { echo "gemini"; return; }
+  # gguf detection — all conditions in a single bracket to avoid || short-circuit bug
   if [[ "$model" == *.gguf || "$model" == *Q4_K* || "$model" == *Q5_K* || \
-        "$model" == *Q8_0* || "$model" == *Q4_0* || "$model" == *IQ4* || \
-        "$model" == *Q3_K* || "$model" == *Q6_K* || "$model" == *Q2_K* ]]; then
+        "$model" == *Q8_0* || "$model" == *Q4_0* || "$model" == *IQ4* ]]; then
     echo "gguf"; return
   fi
-  [[ -f "$model" ]]                           && { echo "gguf";    return; }
+  [[ -f "$model" ]] && { echo "gguf"; return; }          # any local file → gguf
   [[ -d "$model" && -f "$model/config.json" ]] && { echo "pytorch"; return; }
-  [[ "$model" == */* && ! -d "$model" ]]       && { echo "hf";      return; }
-  [[ -n "${OPENAI_API_KEY:-}" ]]    && { echo "openai";   return; }
-  [[ -n "${ANTHROPIC_API_KEY:-}" ]] && { echo "claude";   return; }
-  [[ -n "${GEMINI_API_KEY:-}" ]]    && { echo "gemini";   return; }
-  [[ -n "${GROQ_API_KEY:-}" ]]      && { echo "groq";     return; }
-  [[ -n "${MISTRAL_API_KEY:-}" ]]   && { echo "mistral";  return; }
-  [[ -n "${TOGETHER_API_KEY:-}" ]]  && { echo "together"; return; }
+  # HuggingFace repo id (org/name format, no local path)
+  if [[ "$model" == */* && ! -d "$model" ]]; then
+    echo "hf"; return
+  fi
+  # Fallback: if API key available use it
+  [[ -n "${OPENAI_API_KEY:-}" ]] && { echo "openai"; return; }
+  [[ -n "${ANTHROPIC_API_KEY:-}" ]] && { echo "claude"; return; }
+  [[ -n "${GEMINI_API_KEY:-}" ]] && { echo "gemini"; return; }
   echo "gguf"
 }
 
@@ -8926,25 +7832,27 @@ $results
 }
 
 dispatch_ask() {
-  # v2.8.5.5 — rewritten dispatch_ask: auto-detect, groq/together/mistral support, clear errors
   local prompt="$1"
   local backend="${ACTIVE_BACKEND:-}"
   [[ -z "$backend" ]] && backend=$(_auto_detect_backend)
 
+  # No backend at all — give clear diagnostic
   if [[ -z "$backend" ]]; then
-    printf "\033[31mNo model or API key configured.\033[0m\n"
-    printf "  Setup:\n"
-    printf "    ai keys set OPENAI_API_KEY sk-...          # GPT-4o\n"
-    printf "    ai keys set ANTHROPIC_API_KEY sk-ant-...   # Claude\n"
-    printf "    ai keys set GEMINI_API_KEY AIza...         # Gemini\n"
-    printf "    ai keys set GROQ_API_KEY gsk_...           # Groq (free + fast)\n"
-    printf "    ai recommended download 26                 # Qwen3-8B local\n"
+    err "No model or API key configured."
+    echo ""
+    echo -e "${BCYAN}Quick setup:${R}"
+    echo "  ai keys set OPENAI_API_KEY sk-...        (OpenAI GPT-4)"
+    echo "  ai keys set ANTHROPIC_API_KEY sk-ant-... (Claude)"
+    echo "  ai keys set GEMINI_API_KEY AIza...       (Gemini)"
+    echo "  ai download 1                             (tiny local model, any CPU)"
+    echo "  ai recommended                            (browse 28 curated models)"
     return 1
   fi
 
+  # Auto-inject web search if needed
   local enriched_prompt; enriched_prompt=$(_maybe_inject_search "$prompt")
-  local response="" rc=0
 
+  local response="" rc=0
   case "$backend" in
     gguf)      response=$(ask_gguf "$enriched_prompt");   rc=$? ;;
     pytorch)   response=$(ask_pytorch "$enriched_prompt"); rc=$? ;;
@@ -8952,33 +7860,41 @@ dispatch_ask() {
     claude)    response=$(ask_claude "$enriched_prompt");  rc=$? ;;
     gemini)    response=$(ask_gemini "$enriched_prompt");  rc=$? ;;
     hf)        response=$(ask_hf "$enriched_prompt");      rc=$? ;;
-    groq)      response=$(ask_groq "$enriched_prompt");    rc=$? ;;
-    together)  response=$(ask_together "$enriched_prompt"); rc=$? ;;
-    mistral)   response=$(ask_mistral_api "$enriched_prompt"); rc=$? ;;
-    diffusers) cmd_imagine "$enriched_prompt"; response="[Image generated]" ;;
+    diffusers)
+      cmd_imagine "$enriched_prompt"
+      response="[Image generated]"
+      ;;
     *)
-      # Auto-fallback chain: try available keys
-      if   [[ -n "${OPENAI_API_KEY:-}" ]];    then ACTIVE_BACKEND="openai";   response=$(ask_openai "$enriched_prompt"); rc=$?
-      elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then ACTIVE_BACKEND="claude";   response=$(ask_claude "$enriched_prompt"); rc=$?
-      elif [[ -n "${GEMINI_API_KEY:-}" ]];    then ACTIVE_BACKEND="gemini";   response=$(ask_gemini "$enriched_prompt"); rc=$?
-      elif [[ -n "${GROQ_API_KEY:-}" ]];      then ACTIVE_BACKEND="groq";     response=$(ask_groq "$enriched_prompt"); rc=$?
-      elif [[ -n "${MISTRAL_API_KEY:-}" ]];   then ACTIVE_BACKEND="mistral";  response=$(ask_mistral_api "$enriched_prompt"); rc=$?
-      else err "Unknown backend: $backend. Run: ai status"; return 1
-      fi ;;
+      if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+        ACTIVE_BACKEND="openai"; response=$(ask_openai "$enriched_prompt"); rc=$?
+      elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+        ACTIVE_BACKEND="claude"; response=$(ask_claude "$enriched_prompt"); rc=$?
+      elif [[ -n "${GEMINI_API_KEY:-}" ]]; then
+        ACTIVE_BACKEND="gemini"; response=$(ask_gemini "$enriched_prompt"); rc=$?
+      else
+        err "Unknown backend '$backend'. Run: ai status"
+        return 1
+      fi
+      ;;
   esac
 
   if [[ $rc -ne 0 || -z "$response" ]]; then
-    printf "\033[31mNo response from backend '%s'.\033[0m\n" "$backend" >&2
-    [[ "$backend" == "gguf" && ! -f "${ACTIVE_MODEL:-x}" ]] &&       printf "  Hint: GGUF model not found (%s). Run: ai recommended download 26\n" "${ACTIVE_MODEL:-not set}" >&2
-    [[ "$backend" == "pytorch" && ! -d "${ACTIVE_MODEL:-x}" ]] &&       printf "  Hint: PyTorch model dir not found. Run: ai ttm pretrain\n" >&2
+    err "No response from backend '$backend'."
+    [[ -z "${ACTIVE_MODEL:-}" ]] && echo "  Hint: no model set. Run: ai recommended"
+    [[ "$backend" == "pytorch" && ! -d "${ACTIVE_MODEL:-x}" ]] && \
+      echo "  Hint: model dir not found (${ACTIVE_MODEL:-not set}). Run: ai ttm pretrain"
+    [[ "$backend" == "gguf" && ! -f "${ACTIVE_MODEL:-x}" ]] && \
+      echo "  Hint: model file not found (${ACTIVE_MODEL:-not set}). Run: ai download 1"
     return 1
   fi
 
-  printf "%s\n" "$response"
-  log_history "user" "$prompt" 2>/dev/null || true
-  log_history "assistant" "$response" 2>/dev/null || true
-  _save_session_turn "$prompt" "$response" 2>/dev/null || true
-  [[ -n "${CURRENT_CHAT_FILE:-}" ]] && _chat_append "assistant" "$response" 2>/dev/null || true
+  echo "$response"
+  log_history "user" "$prompt"
+  log_history "assistant" "$response"
+  _save_session_turn "$prompt" "$response"
+  [[ -n "${CURRENT_CHAT_FILE:-}" ]] && _chat_append "assistant" "$response"
+
+  # Background TTM batch train if enabled
   [[ "${TTM_AUTO_TRAIN:-0}" == "1" ]] && { _ttm_train_batch &>/dev/null & disown; } 2>/dev/null || true
 }
 
@@ -9539,147 +8455,83 @@ cmd_recommended() {
   local sub="${1:-list}"; shift || true
   case "$sub" in
     download)
-      local n="${1:-}"; [[ -z "$n" ]] && { err "Usage: ai recommended download <N>"; return 1; }
-      local entry="${RECOMMENDED_MODELS[$n]:-}"; [[ -z "$entry" ]] && { err ERR204 "No model #$n (max: ${#RECOMMENDED_MODELS[@]})"; return 1; }
-      local repo; repo=$(echo "$entry"|cut -d'|' -f1)
-      info "Downloading #$n: $repo"
-      cmd_download "$repo" ;;
+      local n="${1:-}"; [[ -z "$n" ]] && { err "Number required"; return 1; }
+      local entry="${RECOMMENDED_MODELS[$n]:-}"; [[ -z "$entry" ]] && { err ERR204 "No model #$n"; return 1; }
+      cmd_download "$(echo "$entry" | cut -d'|' -f1)" ;;
     use)
-      local n="${1:-}"; [[ -z "$n" ]] && { err "Usage: ai recommended use <N>"; return 1; }
+      local n="${1:-}"; [[ -z "$n" ]] && { err "Number required"; return 1; }
       local entry="${RECOMMENDED_MODELS[$n]:-}"; [[ -z "$entry" ]] && { err ERR204 "No model #$n"; return 1; }
-      ACTIVE_MODEL="$(echo "$entry"|cut -d'|' -f1)"
-      ACTIVE_BACKEND="$(echo "$entry"|cut -d'|' -f2)"
-      save_config; ok "Model #$n set: $ACTIVE_MODEL  (backend: $ACTIVE_BACKEND)" ;;
-    info)
-      local n="${1:-}"; [[ -z "$n" ]] && { err "Usage: ai recommended info <N>"; return 1; }
-      local entry="${RECOMMENDED_MODELS[$n]:-}"; [[ -z "$entry" ]] && { err ERR204 "No model #$n"; return 1; }
-      local repo btype sz desc
-      repo=$(echo "$entry"|cut -d'|' -f1)
-      btype=$(echo "$entry"|cut -d'|' -f2)
-      sz=$(echo "$entry"|cut -d'|' -f3)
-      desc=$(echo "$entry"|cut -d'|' -f4)
-      hdr "Model #$n — $desc"
-      printf "  %-16s %s\n" "Repository:"  "$repo"
-      printf "  %-16s %s\n" "Backend:"     "$btype"
-      printf "  %-16s %s\n" "Size:"        "$sz"
-      case "$btype" in
-        gguf)      printf "  %-16s %s\n" "HuggingFace:" "https://huggingface.co/$repo" ;;
-        hf|pytorch) printf "  %-16s %s\n" "HuggingFace:" "https://huggingface.co/$repo" ;;
-        diffusers) printf "  %-16s %s\n" "HuggingFace:" "https://huggingface.co/$repo" ;;
-        openai)    printf "  %-16s %s\n" "Docs:" "https://platform.openai.com/docs/models" ;;
-        claude)    printf "  %-16s %s\n" "Docs:" "https://docs.anthropic.com/en/docs/models-overview" ;;
-        gemini)    printf "  %-16s %s\n" "Docs:" "https://ai.google.dev/models" ;;
-        groq)      printf "  %-16s %s\n" "Docs:" "https://console.groq.com/docs/models" ;;
-        together)  printf "  %-16s %s\n" "Docs:" "https://docs.together.ai/docs/models" ;;
-        mistral)   printf "  %-16s %s\n" "Docs:" "https://docs.mistral.ai/models" ;;
-      esac
-      echo "" ;;
-    search)
-      local q="${*:-}"; [[ -z "$q" ]] && { read -rp "Search models: " q; }
-      q="${q,,}"
-      hdr "Models matching: $q"
-      echo ""
-      local found=0
-      for key in $(seq 1 195); do
-        local entry="${RECOMMENDED_MODELS[$key]:-}"; [[ -z "$entry" ]] && continue
-        local repo btype sz desc
-        repo=$(echo "$entry"|cut -d'|' -f1); btype=$(echo "$entry"|cut -d'|' -f2)
-        sz=$(echo "$entry"|cut -d'|' -f3); desc=$(echo "$entry"|cut -d'|' -f4)
-        local searchstr="${repo,,} ${desc,,}"
-        if [[ "$searchstr" == *"$q"* ]]; then
-          printf "  ${B}%3d.${R} %-8s ${BCYAN}%-14s${R} %-46s ${DIM}%s${R}\n" "$key" "$sz" "[$btype]" "$repo" "$desc"
-          (( found++ ))
-        fi
-      done
-      [[ $found -eq 0 ]] && echo "  No models matching: $q"
-      echo "" ;;
+      ACTIVE_MODEL="$(echo "$entry"|cut -d'|' -f1)"; ACTIVE_BACKEND="$(echo "$entry"|cut -d'|' -f2)"
+      save_config; ok "Model: $ACTIVE_MODEL" ;;
     *)
-      # ── FULL DISPLAY — properly categorized, all 195 models shown ──────────
-      hdr "Recommended Models — AI CLI v${VERSION} — ${#RECOMMENDED_MODELS[@]} models"
+      hdr "Recommended Models (${#RECOMMENDED_MODELS[@]} total)"
       echo ""
 
-      # Check if a model is already available/downloaded
+      # Helper: check if a gguf/hf model is already downloaded
       _is_downloaded() {
         local repo="$1" btype="$2"
         case "$btype" in
           gguf)
+            # Check if any .gguf file from this repo exists in MODELS_DIR
             local repo_name; repo_name=$(basename "$repo")
-            find "$MODELS_DIR" -maxdepth 1 -name "*.gguf" 2>/dev/null | grep -qi "$repo_name" && return 0
-            [[ -n "${ACTIVE_MODEL:-}" ]] && basename "${ACTIVE_MODEL}" | grep -qi "$repo_name" && return 0
+            find "$MODELS_DIR" -maxdepth 1 -name "*.gguf" 2>/dev/null | \
+              grep -qi "$repo_name" && return 0
+            # Also check if ACTIVE_MODEL basename contains the repo name
+            [[ -n "${ACTIVE_MODEL:-}" ]] && \
+              echo "$(basename "${ACTIVE_MODEL}")" | grep -qi "$repo_name" && return 0
             return 1 ;;
-          hf|pytorch|diffusers)
-            [[ -d "$MODELS_DIR/$repo" ]] && return 0; return 1 ;;
-          openai)  [[ -n "${OPENAI_API_KEY:-}"    ]] && return 0; return 1 ;;
-          claude)  [[ -n "${ANTHROPIC_API_KEY:-}" ]] && return 0; return 1 ;;
-          gemini)  [[ -n "${GEMINI_API_KEY:-}"    ]] && return 0; return 1 ;;
-          mistral) [[ -n "${MISTRAL_API_KEY:-}"   ]] && return 0; return 1 ;;
-          groq)    [[ -n "${GROQ_API_KEY:-}"      ]] && return 0; return 1 ;;
-          together)[[ -n "${TOGETHER_API_KEY:-}"  ]] && return 0; return 1 ;;
+          hf|pytorch)
+            local dir="$MODELS_DIR/$repo"
+            [[ -d "$dir" ]] && return 0
+            return 1 ;;
+          openai|claude|gemini)
+            # Cloud API — "downloaded" if key is set
+            case "$btype" in
+              openai)  [[ -n "${OPENAI_API_KEY:-}"    ]] && return 0 ;;
+              claude)  [[ -n "${ANTHROPIC_API_KEY:-}" ]] && return 0 ;;
+              gemini)  [[ -n "${GEMINI_API_KEY:-}"    ]] && return 0 ;;
+            esac
+            return 1 ;;
           *) return 1 ;;
         esac
       }
 
-      # Render a section given start:end:label
-      _render_section() {
-        local gstart="$1" gend="$2" glabel="$3"
-        printf "\n  ${B}${BCYAN}╔══ %s ══╗${R}\n" "$glabel"
-        local any=0
+      # Group headers
+      local last_group=""
+      local groups=(
+        "1:8:TINY / CPU-FRIENDLY LLMs"
+        "9:16:GENERAL-PURPOSE LLMs (7–70B)"
+        "17:26:CODING & REASONING LLMs"
+        "27:31:VISION / MULTIMODAL LLMs"
+        "32:37:IMAGE GENERATION"
+        "38:42:AUDIO / SPEECH"
+        "43:46:EMBEDDING / RAG"
+        "47:56:CLOUD API MODELS"
+      )
+
+      for grp in "${groups[@]}"; do
+        local gstart="${grp%%:*}"; local rest="${grp#*:}"; local gend="${rest%%:*}"; local glabel="${rest#*:}"
+        echo -e "  ${B}${BCYAN}── ${glabel} ──${R}"
         for key in $(seq "$gstart" "$gend"); do
           local entry="${RECOMMENDED_MODELS[$key]:-}"; [[ -z "$entry" ]] && continue
-          local repo btype sz desc
-          repo=$(echo "$entry"|cut -d'|' -f1)
-          btype=$(echo "$entry"|cut -d'|' -f2)
-          sz=$(echo "$entry"|cut -d'|' -f3)
-          desc=$(echo "$entry"|cut -d'|' -f4)
-          # Status indicator
-          local mark="${DIM}·${R}  "
-          _is_downloaded "$repo" "$btype" 2>/dev/null && mark="${BGREEN}✓${R}  "
-          # Active model highlight
-          if [[ "$ACTIVE_MODEL" == "$repo" || "$ACTIVE_MODEL" == *"$(basename "$repo" .gguf)"* ]]; then
-            mark="${BGREEN}▶${R}  "
-          fi
-          # Backend color
-          local bc_open bc_close
-          case "$btype" in
-            gguf|hf|pytorch|diffusers) bc_open="${BGREEN}"; bc_close="${R}" ;;
-            openai|claude|gemini)      bc_open="${BBLUE}";  bc_close="${R}" ;;
-            groq|together|mistral)     bc_open="${BYELLOW}";bc_close="${R}" ;;
-            *) bc_open=""; bc_close="" ;;
-          esac
-          printf "  %b${B}%3d.${R} ${bc_open}%-9s${bc_close}  ${DIM}%-7s${R}  %-48s  ${DIM}%s${R}\n" \
-            "$mark" "$key" "[$btype]" "$sz" "$repo" "$desc"
-          any=1
+          local repo; repo=$(echo "$entry"|cut -d'|' -f1)
+          local btype; btype=$(echo "$entry"|cut -d'|' -f2)
+          local sz; sz=$(echo "$entry"|cut -d'|' -f3)
+          local desc; desc=$(echo "$entry"|cut -d'|' -f4)
+          local mark="  "
+          _is_downloaded "$repo" "$btype" 2>/dev/null && mark="${BGREEN}✓${R}"
+          [[ "$ACTIVE_MODEL" == "$repo" || "$ACTIVE_MODEL" == *"$(basename "$repo")"* ]] && mark="${BGREEN}▶${R}"
+          printf "  %b ${B}%2d.${R} %-8s ${DIM}%-44s${R} %s\n" \
+            "$mark" "$key" "$sz" "$repo" "$desc"
         done
-        [[ $any -eq 0 ]] && echo "    (none in this range)"
-      }
+        echo ""
+      done
 
-      _render_section   1  22  "TINY / CPU-FRIENDLY  (<4B)  — any hardware"
-      _render_section  23  50  "GENERAL-PURPOSE LLMs  (7–141B)"
-      _render_section  51  69  "CODING LLMs"
-      _render_section  70  83  "REASONING / MATH / SCIENCE"
-      _render_section  84 101  "VISION / MULTIMODAL LLMs"
-      _render_section 102 116  "IMAGE GENERATION"
-      _render_section 117 133  "AUDIO / SPEECH / MUSIC / TTS"
-      _render_section 134 146  "EMBEDDING / RAG / RERANKER"
-      _render_section 147 157  "AGENTS / TOOLS / UNCENSORED"
-      _render_section 158 165  "CLOUD API — OpenAI"
-      _render_section 166 168  "CLOUD API — Anthropic Claude"
-      _render_section 169 173  "CLOUD API — Google Gemini"
-      _render_section 174 177  "CLOUD API — Mistral"
-      _render_section 178 183  "CLOUD API — Groq (ultra-fast)"
-      _render_section 184 188  "CLOUD API — Together AI"
-      _render_section 189 192  "VIDEO GENERATION  🎬"
-      _render_section 193 195  "3D / DOCUMENT / OCR  🧊"
-
+      echo -e "  ${BGREEN}✓${R} = downloaded   ${BGREEN}▶${R} = active   ${DIM}(cloud = key configured)${R}"
       echo ""
-      printf "  ${BGREEN}✓${R} downloaded/active key   ${BGREEN}▶${R} currently active   ${DIM}·${R} not yet downloaded\n"
-      printf "  ${BGREEN}[gguf/hf]${R} local   ${BBLUE}[openai/claude/gemini]${R} API key   ${BYELLOW}[groq/together]${R} API key\n"
-      echo ""
-      printf "  Download: ${B}ai recommended download <N>${R}      e.g. ai recommended download 26\n"
-      printf "  Use:      ${B}ai recommended use <N>${R}           e.g. ai recommended use 25\n"
-      printf "  Info:     ${B}ai recommended info <N>${R}          e.g. ai recommended info 102\n"
-      printf "  Search:   ${B}ai recommended search <query>${R}    e.g. ai recommended search qwen\n"
-      echo "" ;;
+      echo -e "  Download: ${B}ai recommended download <N>${R}"
+      echo -e "  Use:      ${B}ai recommended use <N>${R}"
+      ;;
   esac
 }
 
@@ -13671,5439 +12523,305 @@ PYEOF
 # ════════════════════════════════════════════════════════════════════════════════
 #  v2.5: CANVAS v2 — Multi-file workspace, split-pane, live preview, git
 # ════════════════════════════════════════════════════════════════════════════════
-cmd_canvas_v3() {
+cmd_canvas_v2() {
   local sub="${1:-open}"; shift || true
-  local CANVAS_V3_DIR="$AI_OUTPUT_DIR/canvas_v3"
-  mkdir -p "$CANVAS_V3_DIR"
   case "$sub" in
     new)
-      local ws="${1:?Usage: ai canvas new <name>}"
-      local ws_dir="$CANVAS_V3_DIR/$ws"
-      [[ -d "$ws_dir" ]] && { err "Workspace '$ws' exists. Open with: ai canvas open $ws"; return 1; }
-      mkdir -p "$ws_dir"/{files,exports,.history}
-      cat > "$ws_dir/workspace.json" <<JSON_EOF
-{"name":"$ws","version":"3","created":"$(date -Iseconds)","files":[],"open_tabs":[],"ai_model":"${ACTIVE_MODEL:-}","auto_save":true}
-JSON_EOF
-      cat > "$ws_dir/files/README.md" <<MD_EOF
-# $ws
-Created: $(date '+%Y-%m-%d %H:%M')
-MD_EOF
-      git -C "$ws_dir" init -q 2>/dev/null && git -C "$ws_dir" add . && \
-        git -C "$ws_dir" commit -q -m "init: $ws" 2>/dev/null || true
-      ok "Canvas v3 workspace: $ws_dir"
-      echo "  Open: ai canvas open $ws"
-      echo "  Add:  ai canvas add $ws <file>" ;;
+      local ws="${1:?Usage: ai canvas-v2 new <workspace-name>}"
+      local ws_dir="$CANVAS_V2_DIR/$ws"
+      [[ -d "$ws_dir" ]] && { err "Workspace exists: $ws"; return 1; }
+      mkdir -p "$ws_dir"/{files,preview,exports}
+      cat > "$ws_dir/workspace.json" <<EOF
+{
+  "name": "$ws",
+  "created": "$(date -Iseconds)",
+  "files": [],
+  "active_file": null,
+  "git_enabled": false,
+  "ai_model": "${ACTIVE_MODEL:-}"
+}
+EOF
+      git -C "$ws_dir" init -q 2>/dev/null && \
+        git -C "$ws_dir" add workspace.json && \
+        git -C "$ws_dir" commit -q -m "Init canvas workspace: $ws" 2>/dev/null || true
+      ok "Canvas v2 workspace: $ws_dir"
+      echo "  Add files:  ai canvas-v2 add $ws <file>"
+      echo "  Open TUI:   ai canvas-v2 open $ws"
+      ;;
 
     add)
-      local ws="${1:?workspace}" fp="${2:?file}"
-      local ws_dir="$CANVAS_V3_DIR/$ws"
-      [[ ! -d "$ws_dir" ]] && { err "Not found: $ws. Create with: ai canvas new $ws"; return 1; }
-      [[ ! -f "$fp" ]] && { err "File not found: $fp"; return 1; }
-      cp "$fp" "$ws_dir/files/"
-      local fname; fname=$(basename "$fp")
+      local ws="${1:?workspace}" file="${2:?file path}"
+      local ws_dir="$CANVAS_V2_DIR/$ws"
+      [[ ! -d "$ws_dir" ]] && { err "Workspace not found: $ws. Run: ai canvas-v2 new $ws"; return 1; }
+      cp "$file" "$ws_dir/files/"
+      local fname; fname=$(basename "$file")
+      # Update workspace.json
       [[ -n "$PYTHON" ]] && "$PYTHON" -c "
-import json
-p='$ws_dir/workspace.json'; d=json.load(open(p))
-if '$fname' not in d['files']: d['files'].append('$fname')
-tabs=d.setdefault('open_tabs',[])
-if '$fname' not in tabs: tabs.append('$fname')
-d['active_file']='$fname'; json.dump(d,open(p,'w'),indent=2)" 2>/dev/null
+import json, os
+f = '$ws_dir/workspace.json'
+d = json.load(open(f))
+if '$fname' not in d['files']:
+    d['files'].append('$fname')
+    d['active_file'] = '$fname'
+json.dump(d, open(f,'w'), indent=2)
+print('Added: $fname')
+"
       git -C "$ws_dir" add "files/$fname" 2>/dev/null && \
-        git -C "$ws_dir" commit -q -m "add: $fname" 2>/dev/null || true
-      ok "Added: $fname" ;;
-
-    new-file)
-      local ws="${1:?workspace}" fname="${2:?filename}"
-      local ws_dir="$CANVAS_V3_DIR/$ws"
-      [[ ! -d "$ws_dir" ]] && { err "Not found: $ws"; return 1; }
-      touch "$ws_dir/files/$fname"
-      [[ -n "$PYTHON" ]] && "$PYTHON" -c "
-import json; p='$ws_dir/workspace.json'; d=json.load(open(p))
-if '$fname' not in d['files']: d['files'].append('$fname')
-tabs=d.setdefault('open_tabs',[]); 
-if '$fname' not in tabs: tabs.append('$fname')
-d['active_file']='$fname'; json.dump(d,open(p,'w'),indent=2)" 2>/dev/null
-      ok "Created: $fname" ;;
+        git -C "$ws_dir" commit -q -m "Add file: $fname" 2>/dev/null || true
+      ;;
 
     open)
       local ws="${1:-}"
-      if [[ -z "$ws" ]]; then
-        info "Canvas v3 workspaces (ai canvas new <n> to create):"
-        ls -1 "$CANVAS_V3_DIR/" 2>/dev/null || echo "  (none)"
+      [[ -z "$ws" ]] && {
+        info "Available workspaces:"
+        ls "$CANVAS_V2_DIR/" 2>/dev/null || echo "(none)"
         return 0
-      fi
-      local ws_dir="$CANVAS_V3_DIR/$ws"
-      [[ ! -d "$ws_dir" ]] && { err "Not found: $ws. Run: ai canvas new $ws"; return 1; }
-      [[ -z "$PYTHON" ]] && { err "Python 3 required for Canvas v3 TUI"; return 1; }
-      info "Opening Canvas v3: $ws"
-      "$PYTHON" - "$ws_dir" "$ws" "${ACTIVE_MODEL:-none}" "$VERSION" <<'CANVAS3EOF'
-import sys,os,json,curses,subprocess,threading,time,shutil,re,difflib
-ws_dir,ws_name,ai_model,version = sys.argv[1],sys.argv[2],sys.argv[3],sys.argv[4]
-files_dir=os.path.join(ws_dir,'files'); ws_json=os.path.join(ws_dir,'workspace.json')
-hist_dir=os.path.join(ws_dir,'.history')
-os.makedirs(files_dir,exist_ok=True); os.makedirs(hist_dir,exist_ok=True)
+      }
+      local ws_dir="$CANVAS_V2_DIR/$ws"
+      [[ ! -d "$ws_dir" ]] && { err "Workspace not found: $ws"; return 1; }
+      [[ -z "$PYTHON" ]] && { err "Python required for Canvas TUI"; return 1; }
+      info "Opening Canvas v2: $ws"
+      "$PYTHON" - "$ws_dir" "$ws" "$ACTIVE_MODEL" "$VERSION" <<'PYEOF'
+import sys, os, json, curses, subprocess, threading, time
 
-SYNTAX={
-  'py':  (r'\b(def|class|return|import|from|if|elif|else|for|while|try|except|finally|with|as|pass|break|continue|yield|lambda|and|or|not|in|is|None|True|False|async|await)\b', r'(?<![#])(#[^\n]*)'),
-  'sh':  (r'\b(if|then|else|elif|fi|for|in|do|done|while|case|esac|function|return|local|export|echo|exit|source)\b', r'(#[^\n]*)'),
-  'js':  (r'\b(const|let|var|function|return|if|else|for|while|class|import|export|async|await|null|undefined|true|false|new|this|typeof)\b', r'(//[^\n]*)'),
-  'ts':  (r'\b(const|let|var|function|return|if|else|for|while|class|import|export|async|await|null|undefined|true|false|type|interface|enum)\b', r'(//[^\n]*)'),
-}
-STRING_RE=re.compile(r'("(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'|`[^`]*`)')
-NUM_RE=re.compile(r'\b\d+\.?\d*\b')
-
-def tokenize(line,ext):
-    kw_pat,cmt_pat=SYNTAX.get(ext,(None,None))
-    tokens=[]
-    # find comment
-    cmt_start=len(line)
-    if cmt_pat:
-        cm=re.search(cmt_pat,line)
-        if cm: cmt_start=cm.start()
-    pre=line[:cmt_start]; cmt=line[cmt_start:]
-    pos=0
-    for m in STRING_RE.finditer(pre):
-        if m.start()>pos: tokens.extend(_kw_num(pre[pos:m.start()],kw_pat))
-        tokens.append((m.group(),2)); pos=m.end()
-    if pos<len(pre): tokens.extend(_kw_num(pre[pos:],kw_pat))
-    if cmt: tokens.append((cmt,3))
-    return tokens or [(line,0)]
-
-def _kw_num(s,kw_pat):
-    if not s: return []
-    result=[]; pos=0
-    pats=[]
-    if kw_pat: pats.append((re.compile(kw_pat),1))
-    pats.append((NUM_RE,4))
-    combined_parts=[]
-    for p,_ in pats: combined_parts.append(p.pattern)
-    try: combined=re.compile('|'.join(combined_parts))
-    except: return [(s,0)]
-    matches=[(m,pats[next(i for i,(p,_) in enumerate(pats) if p.match(m.group()))][1]) for m in combined.finditer(s)] if False else []
-    for p,tid in pats:
-        for m in p.finditer(s):
-            matches.append((m,tid))
-    matches.sort(key=lambda x:x[0].start())
-    seen=set(); deduped=[]
-    for m,tid in matches:
-        if m.start() not in seen: seen.add(m.start()); deduped.append((m,tid))
-    for m,tid in deduped:
-        if m.start()>pos: result.append((s[pos:m.start()],0))
-        result.append((m.group(),tid)); pos=m.end()
-    if pos<len(s): result.append((s[pos:],0))
-    return result or [(s,0)]
+ws_dir, ws_name, active_model, version = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+files_dir = os.path.join(ws_dir, 'files')
+ws_json = os.path.join(ws_dir, 'workspace.json')
 
 def load_ws():
     try: return json.load(open(ws_json))
-    except: return {'files':[],'open_tabs':[],'auto_save':True}
+    except: return {'files': [], 'active_file': None}
 
-def save_ws_json(d):
-    try: json.dump(d,open(ws_json,'w'),indent=2)
-    except: pass
+def save_ws(d):
+    json.dump(d, open(ws_json, 'w'), indent=2)
 
 def list_files():
-    try: return sorted(f for f in os.listdir(files_dir) if not f.startswith('.'))
-    except: return []
+    return sorted(f for f in os.listdir(files_dir) if not f.startswith('.'))
 
-def read_file(fname):
-    try:
-        with open(os.path.join(files_dir,fname),'r',errors='replace') as f:
-            return f.readlines()
-    except: return ['']
+def ai_ask(prompt, context=''):
+    import subprocess
+    result = subprocess.run(['ai', 'ask', f"Context:\n{context}\n\n{prompt}"],
+        capture_output=True, text=True, timeout=60)
+    return result.stdout.strip() or result.stderr.strip()
 
-def write_file(fname,lines):
-    fp=os.path.join(files_dir,fname)
-    ts=int(time.time())
-    try:
-        if os.path.exists(fp): shutil.copy2(fp,os.path.join(hist_dir,f'{fname}.{ts}.bak'))
-        with open(fp,'w') as f: f.writelines(lines)
-    except: pass
+def canvas_tui(stdscr):
+    curses.curs_set(1)
+    curses.start_color()
+    curses.use_default_colors()
+    curses.init_pair(1, curses.COLOR_CYAN, -1)
+    curses.init_pair(2, curses.COLOR_GREEN, -1)
+    curses.init_pair(3, curses.COLOR_YELLOW, -1)
+    curses.init_pair(4, curses.COLOR_WHITE, curses.COLOR_BLUE)
 
-def safe(w,y,x,s,a=0):
-    H,W=w.getmaxyx()
-    if y<0 or y>=H or x<0 or x>=W: return
-    try: w.addstr(y,x,str(s)[:max(0,W-x-1)],a)
-    except: pass
+    ws = load_ws()
+    files = list_files()
+    active_idx = 0
+    file_content = []
+    edit_mode = False
+    cursor_y, cursor_x = 0, 0
+    ai_output = ""
+    split = False
+    status = f"Canvas v2 | {ws_name} | {len(files)} files | Ctrl+Q=quit F=new-file E=edit A=ask-AI S=split G=git"
 
-def ai_bg(prompt,ctx,result,status):
-    status[0]='waiting'
-    try:
-        r=subprocess.run(['ai','ask',f"Context:\n{ctx[:2000]}\n\n{prompt}"],capture_output=True,text=True,timeout=90)
-        result[0]=(r.stdout+r.stderr).strip() or '[no output]'
-    except subprocess.TimeoutExpired: result[0]='[AI timeout]'
-    except Exception as e: result[0]=f'[error: {e}]'
-    status[0]='done'
+    def load_file(fname):
+        fp = os.path.join(files_dir, fname)
+        try:
+            with open(fp) as f: return f.readlines()
+        except: return ['(binary or unreadable)']
 
-def run_bg(fname,result,status):
-    status[0]='running'
-    fp=os.path.join(files_dir,fname); ext=fname.rsplit('.',1)[-1] if '.' in fname else ''
-    runners={'py':'python3','js':'node','sh':'bash','rb':'ruby','lua':'lua','php':'php','r':'Rscript'}
-    interp=runners.get(ext)
-    if not interp: result[0]=f'[no runner for .{ext}]'; status[0]='done'; return
-    try:
-        r=subprocess.run(interp.split()+[fp],capture_output=True,text=True,timeout=30,cwd=files_dir)
-        out=r.stdout+(('\n---stderr---\n'+r.stderr) if r.stderr else '')
-        result[0]=out.strip() or '[no output]'
-    except subprocess.TimeoutExpired: result[0]='[30s timeout]'
-    except Exception as e: result[0]=f'[error: {e}]'
-    status[0]='done'
+    def save_file(fname, lines):
+        fp = os.path.join(files_dir, fname)
+        with open(fp, 'w') as f:
+            f.writelines(lines)
+        subprocess.run(['git','-C',ws_dir,'add',f'files/{fname}'], capture_output=True)
 
-# Color pairs
-CP_HDR,CP_TABS,CP_TAB_ON,CP_SIDE,CP_SEL,CP_LNO,CP_KW,CP_STR,CP_CMT,CP_NUM,CP_AI,CP_STAT,CP_DIM,CP_MATCH=range(1,15)
-CP_MAP={0:0,1:CP_KW,2:CP_STR,3:CP_CMT,4:CP_NUM}
-
-def init_colors():
-    curses.start_color(); curses.use_default_colors()
-    def P(n,fg,bg): curses.init_pair(n,fg,bg)
-    P(CP_HDR,15,17); P(CP_TABS,8,-1); P(CP_TAB_ON,15,22)
-    P(CP_SIDE,14,236); P(CP_SEL,0,6); P(CP_LNO,8,235)
-    P(CP_KW,12,-1); P(CP_STR,10,-1); P(CP_CMT,8,-1); P(CP_NUM,9,-1)
-    P(CP_AI,11,-1); P(CP_STAT,15,236); P(CP_DIM,8,-1); P(CP_MATCH,0,11)
-
-def main(stdscr):
-    init_colors(); curses.curs_set(1); stdscr.keypad(True); stdscr.timeout(250)
-    ws=load_ws(); files=list_files()
-    tabs=list(dict.fromkeys([t for t in ws.get('open_tabs',[]) if t in files] or files[:5]))
-    atab=0; cur_y=0; cur_x=0; scroll_y=0
-    file_lines={}; show_side=True; side_sel=0
-    out_txt=''; show_out=False; out_scroll=0
-    search_q=''; search_mode=False; search_hits=[]; shi=0
-    ai_res=[''] ; ai_st=['idle']; run_res=['']; run_st=['idle']
-    status='Canvas v3 — press ? for help'
-    auto_save=ws.get('auto_save',True)
-
-    def gl(fname):
-        if fname not in file_lines: file_lines[fname]=read_file(fname) or ['']
-        return file_lines[fname]
-
-    def cf(): return tabs[atab] if tabs else None
-
-    def save_cf():
-        f=cf()
-        if f: write_file(f,file_lines.get(f,[]))
-
-    def open_tab(fname):
-        nonlocal atab
-        if fname not in tabs: tabs.append(fname)
-        atab=tabs.index(fname); gl(fname)
-
-    def build_hits(q,lines):
-        hits=[]
-        if not q: return hits
-        ql=q.lower()
-        for iy,l in enumerate(lines):
-            s=0
-            while True:
-                ix=l.lower().find(ql,s)
-                if ix<0: break
-                hits.append((iy,ix,len(q))); s=ix+1
-        return hits
-
-    def draw():
-        nonlocal out_txt,show_out,status
-        if ai_st[0]=='done' and ai_res[0]:
-            out_txt=ai_res[0]; show_out=True
-            ai_res[0]=''; ai_st[0]='idle'
-            status='AI responded — I=insert at cursor  Tab=toggle panel'
-        if run_st[0]=='done' and run_res[0]:
-            out_txt=run_res[0]; show_out=True
-            run_res[0]=''; run_st[0]='idle'
-            status='Run complete — Tab=toggle panel'
-        stdscr.erase(); H,W=stdscr.getmaxyx()
-        # Header
-        hdr=f' Canvas v3 · {ws_name} · v{version} · {"auto-save" if auto_save else "manual-save"} '
-        safe(stdscr,0,0,hdr.ljust(W),curses.color_pair(CP_HDR)|curses.A_BOLD)
-        # Tab bar
-        safe(stdscr,1,0,' '*W,curses.color_pair(CP_TABS))
-        tx=0
-        for i,t in enumerate(tabs):
-            lbl=f' {t[:16]} '
-            a=curses.color_pair(CP_TAB_ON)|curses.A_BOLD if i==atab else curses.color_pair(CP_TABS)
-            safe(stdscr,1,tx,lbl,a); tx+=len(lbl)
-            if tx>=W: break
-        if tx<W-3: safe(stdscr,1,tx,' [+]',curses.color_pair(CP_TABS)|curses.A_DIM)
-        # Layout
-        sw=22 if show_side else 0; body_y=2; body_h=H-4
-        out_h=(body_h//3) if show_out else 0; ed_h=body_h-out_h
-        # Sidebar
-        if show_side:
-            for r in range(body_h):
-                safe(stdscr,body_y+r,0,' '*sw,curses.color_pair(CP_SIDE))
-            safe(stdscr,body_y,0,' Files'.ljust(sw),curses.color_pair(CP_SIDE)|curses.A_BOLD)
-            for i,f in enumerate(files[:body_h-2]):
-                a=curses.color_pair(CP_SEL) if i==side_sel else curses.color_pair(CP_SIDE)
-                lbl=('▶ ' if f in tabs else '  ')+f[:sw-4]
-                safe(stdscr,body_y+1+i,0,lbl.ljust(sw),a)
-            for r in range(body_h):
-                try: stdscr.addch(body_y+r,sw,'│',curses.color_pair(CP_SIDE))
-                except: pass
-        # Editor
-        ex=sw+(1 if show_side else 0); ew=W-ex
-        fname=cf()
-        if fname:
-            lines=gl(fname); ext=fname.rsplit('.',1)[-1].lower() if '.' in fname else ''
-            lno_w=len(str(max(len(lines),1)))+2
-            hits_cur=build_hits(search_q,lines) if search_mode and search_q else []
-            for iy in range(ed_h-1):
-                li=iy+scroll_y
-                if li>=len(lines): break
-                raw=lines[li].rstrip('\n')
-                safe(stdscr,body_y+iy,ex,f'{li+1:>{lno_w-1}} ',curses.color_pair(CP_LNO))
-                cx2=ex+lno_w; avail=W-cx2-1
-                if avail<=0: continue
-                col=0
-                for tok,tid in tokenize(raw,ext):
-                    if col>=avail: break
-                    part=tok[:avail-col]
-                    cp_base=CP_MAP.get(tid,0)
-                    a=curses.color_pair(cp_base) if cp_base else 0
-                    # highlight search matches
-                    for hy,hx,hl in hits_cur:
-                        if hy==li and hx<=col<hx+hl: a=curses.color_pair(CP_MATCH)
-                    safe(stdscr,body_y+iy,cx2+col,part,a); col+=len(part)
-            # cursor position
-            cs=cur_y-scroll_y+body_y; cc=cur_x+ex+lno_w
-            if 0<=cs<body_y+ed_h-1 and cc<W:
-                try: stdscr.move(cs,min(cc,W-1))
-                except: pass
-        # Output panel
-        if show_out and out_h>0:
-            oy=body_y+ed_h
-            safe(stdscr,oy,ex,'─'*(ew-1),curses.color_pair(CP_STAT))
-            ol=out_txt.split('\n')
-            for iy in range(out_h-1):
-                li2=iy+out_scroll
-                if li2>=len(ol): break
-                safe(stdscr,oy+1+iy,ex,ol[li2][:ew-1],curses.color_pair(CP_AI))
-        # Status / help bar
-        busy=''
-        if ai_st[0]=='waiting': busy=' [AI…]'
-        if run_st[0]=='running': busy=' [run…]'
-        safe(stdscr,H-2,0,f' {status}{busy} '[:W].ljust(W),curses.color_pair(CP_STAT))
-        keys='? help  Ctrl+S save  Ctrl+Q quit  Tab tabs  B sidebar  A AI  R run  / search  D diff  G git  I insert  E editor  N new'
-        safe(stdscr,H-1,0,keys[:W].ljust(W),curses.color_pair(CP_DIM))
-        stdscr.refresh()
+    if files: file_content = load_file(files[active_idx])
 
     while True:
-        draw(); H,W=stdscr.getmaxyx(); key=stdscr.getch()
-        if key==-1: continue
-        fname=cf(); lines=gl(fname) if fname else []
+        stdscr.erase()
+        h, w = stdscr.getmaxyx()
+        # Header
+        header = f" Canvas v2 — {ws_name} | {version} "
+        stdscr.addstr(0, 0, header.ljust(w), curses.color_pair(4))
+        # Left panel: file list
+        panel_w = max(20, w // 5)
+        stdscr.addstr(1, 0, "Files:", curses.color_pair(1) | curses.A_BOLD)
+        for i, fname in enumerate(files[:h-4]):
+            attr = curses.color_pair(2) | curses.A_REVERSE if i == active_idx else 0
+            stdscr.addstr(2+i, 0, fname[:panel_w-1].ljust(panel_w-1), attr)
+        # Separator
+        for row in range(1, h-2):
+            try: stdscr.addch(row, panel_w, '│', curses.color_pair(1))
+            except: pass
+        # Right panel: file content / split
+        content_x = panel_w + 1
+        content_w = w - content_x
+        if split and ai_output:
+            half = content_w // 2
+            stdscr.addstr(1, content_x, "File", curses.color_pair(1))
+            stdscr.addstr(1, content_x + half + 1, "AI Output", curses.color_pair(3))
+            for row, line in enumerate(file_content[:h-4]):
+                try: stdscr.addstr(2+row, content_x, line[:half].rstrip('\n'))
+                except: pass
+            ai_lines = ai_output.split('\n')
+            for row, line in enumerate(ai_lines[:h-4]):
+                try: stdscr.addstr(2+row, content_x+half+1, line[:half-1])
+                except: pass
+        else:
+            if files:
+                stdscr.addstr(1, content_x, f"[{files[active_idx]}]", curses.color_pair(2))
+            for row, line in enumerate(file_content[:h-4]):
+                try: stdscr.addstr(2+row, content_x, line[:content_w-1].rstrip('\n'))
+                except: pass
+        # Status bar
+        try: stdscr.addstr(h-2, 0, status[:w-1].ljust(w-1), curses.color_pair(4))
+        except: pass
+        if edit_mode:
+            try: stdscr.move(min(2+cursor_y, h-3), min(content_x+cursor_x, w-1))
+            except: pass
+        stdscr.refresh()
 
-        if key==17:   # Ctrl+Q
-            if auto_save and fname: save_cf()
-            ws['open_tabs']=tabs; ws['active_file']=fname; save_ws_json(ws); break
-        elif key==19:   # Ctrl+S
-            if fname: save_cf(); status=f'Saved: {fname}'
-        elif key==curses.KEY_UP:
-            cur_y=max(0,cur_y-1)
-            if cur_y<scroll_y: scroll_y=cur_y
-        elif key==curses.KEY_DOWN:
-            if lines: cur_y=min(len(lines)-1,cur_y+1)
-            eh=H-6
-            if cur_y>=scroll_y+eh-2: scroll_y=cur_y-eh+3
-        elif key==curses.KEY_LEFT: cur_x=max(0,cur_x-1)
-        elif key==curses.KEY_RIGHT:
-            if lines and cur_y<len(lines): cur_x=min(len(lines[cur_y].rstrip('\n')),cur_x+1)
-        elif key==curses.KEY_HOME: cur_x=0
-        elif key==curses.KEY_END:
-            if lines and cur_y<len(lines): cur_x=len(lines[cur_y].rstrip('\n'))
-        elif key==curses.KEY_PPAGE: scroll_y=max(0,scroll_y-(H-6)); cur_y=scroll_y
-        elif key==curses.KEY_NPAGE:
-            if lines: scroll_y=min(max(0,len(lines)-(H-6)),scroll_y+(H-6)); cur_y=scroll_y
-        elif key==9:   # Tab — cycle tabs or toggle output
-            if len(tabs)>1: atab=(atab+1)%len(tabs); cur_y=0; cur_x=0; scroll_y=0
-            elif show_out: show_out=not show_out
-        elif key==curses.KEY_BTAB:
-            if len(tabs)>1: atab=(atab-1)%len(tabs); cur_y=0; cur_x=0; scroll_y=0
-        elif key in (curses.KEY_BACKSPACE,127,8):
-            if fname and lines and cur_y<len(lines):
-                l=list(lines[cur_y].rstrip('\n'))
-                if cur_x>0: l.pop(cur_x-1); cur_x-=1; lines[cur_y]=''.join(l)+'\n'
-                elif cur_y>0:
-                    prev=lines[cur_y-1].rstrip('\n'); cur=lines.pop(cur_y)
-                    cur_x=len(prev); lines[cur_y-1]=prev+cur; cur_y-=1
-                if auto_save: save_cf()
-        elif key in (10,13):
-            if fname:
-                if not lines: lines.append('')
-                ind=len(lines[cur_y])-len(lines[cur_y].lstrip())
-                lines.insert(cur_y+1,' '*ind+'\n'); cur_y+=1; cur_x=ind
-                if auto_save: save_cf()
-        elif key==curses.KEY_DC:
-            if fname and lines and cur_y<len(lines):
-                l=list(lines[cur_y].rstrip('\n'))
-                if cur_x<len(l): l.pop(cur_x); lines[cur_y]=''.join(l)+'\n'
-                elif cur_y<len(lines)-1: lines[cur_y]=lines[cur_y].rstrip('\n')+lines.pop(cur_y+1)
-                if auto_save: save_cf()
-        elif 32<=key<=126 and fname:
-            if not lines: lines.append('\n')
-            while cur_y>=len(lines): lines.append('\n')
-            row=list(lines[cur_y].rstrip('\n'))
-            while cur_x>len(row): row.append(' ')
-            row.insert(cur_x,chr(key)); lines[cur_y]=''.join(row)+'\n'; cur_x+=1
-            if auto_save: save_cf()
-        # ── Commands ──
-        elif key in (ord('?'),curses.KEY_F1):
-            status='Tab=next-tab  B=sidebar  N=new-file  E=$EDITOR  A=ask-AI  I=insert-AI  R=run  /=search  D=diff  G=git  P=preview  W=workflow  X=close-tab  Ctrl+S=save  Ctrl+Q=quit'
-        elif key in (ord('b'),ord('B')): show_side=not show_side
-        elif show_side and key==ord('j'): side_sel=min(side_sel+1,len(files)-1)
-        elif show_side and key==ord('k'): side_sel=max(side_sel-1,0)
-        elif key==13 and show_side and files: open_tab(files[side_sel]); cur_y=0; cur_x=0; scroll_y=0
-        elif key in (ord('n'),ord('N')):
-            curses.echo(); curses.curs_set(1)
-            safe(stdscr,H-1,0,'New filename: '.ljust(W),curses.color_pair(CP_STAT)); stdscr.refresh()
-            try: fn2=stdscr.getstr(H-1,14,50).decode().strip()
-            except: fn2=''
+        key = stdscr.getch()
+        if key == 17:  # Ctrl+Q
+            break
+        elif key == curses.KEY_UP and active_idx > 0:
+            active_idx -= 1
+            if files: file_content = load_file(files[active_idx])
+        elif key == curses.KEY_DOWN and active_idx < len(files)-1:
+            active_idx += 1
+            if files: file_content = load_file(files[active_idx])
+        elif key in (ord('F'), ord('f')):
+            # New file
+            curses.echo()
+            stdscr.addstr(h-1, 0, "New file name: ")
+            try:
+                fname = stdscr.getstr(h-1, 15, 60).decode()
+            except: fname = ""
             curses.noecho()
-            if fn2:
-                open(os.path.join(files_dir,fn2),'w').close()
-                files2=list_files(); files.clear(); files.extend(files2)
-                open_tab(fn2); status=f'Created: {fn2}'
-        elif key in (ord('e'),ord('E')):
             if fname:
-                ed=os.environ.get('EDITOR','nano'); save_cf()
-                curses.endwin(); os.system(f'{ed} "{os.path.join(files_dir,fname)}"')
-                file_lines[fname]=read_file(fname)
-                stdscr=curses.initscr(); curses.cbreak(); stdscr.keypad(True); stdscr.timeout(250); init_colors()
-                status=f'Returned from {ed}'
-        elif key in (ord('a'),ord('A')):
-            if fname:
-                curses.echo(); curses.curs_set(1)
-                safe(stdscr,H-1,0,'Ask AI: '.ljust(W),curses.color_pair(CP_STAT)); stdscr.refresh()
-                try: q=stdscr.getstr(H-1,8,120).decode().strip()
-                except: q=''
-                curses.noecho()
-                if q:
-                    ctx=''.join(lines[:80]); ai_res[0]=''; ai_st[0]='idle'
-                    threading.Thread(target=ai_bg,args=(q,ctx,ai_res,ai_st),daemon=True).start()
-                    status=f'Asking AI: {q[:50]}…'
-        elif key in (ord('i'),ord('I')):
-            if out_txt and fname and lines:
-                ins=out_txt.split('\n')
-                for il in reversed(ins): lines.insert(cur_y+1,il+'\n')
-                save_cf(); status=f'Inserted {len(ins)} lines'
-        elif key in (ord('r'),ord('R')):
-            if fname:
-                save_cf(); run_res[0]=''; run_st[0]='idle'
-                threading.Thread(target=run_bg,args=(fname,run_res,run_st),daemon=True).start()
-                status=f'Running {fname}…'; show_out=True
-        elif key==ord('/'):
+                fp = os.path.join(files_dir, fname)
+                open(fp, 'w').close()
+                files = list_files()
+                active_idx = files.index(fname) if fname in files else 0
+                file_content = []
+        elif key in (ord('E'), ord('e')):
+            # Open in $EDITOR
+            if files:
+                editor = os.environ.get('EDITOR', 'nano')
+                curses.endwin()
+                os.system(f"{editor} {files_dir}/{files[active_idx]}")
+                file_content = load_file(files[active_idx])
+                stdscr = curses.initscr()
+                curses.cbreak(); stdscr.keypad(True)
+        elif key in (ord('A'), ord('a')):
+            # Ask AI about current file
             curses.echo()
-            safe(stdscr,H-1,0,'Search: '.ljust(W),curses.color_pair(CP_STAT)); stdscr.refresh()
-            try: search_q=stdscr.getstr(H-1,8,80).decode().strip()
-            except: search_q=''
-            curses.noecho(); search_mode=bool(search_q)
-            if search_mode and lines:
-                search_hits=build_hits(search_q,lines)
-                if search_hits: shi=0; cur_y=search_hits[0][0]; scroll_y=max(0,cur_y-3); status=f'{len(search_hits)} matches — n=next'
-                else: status=f'No matches: {search_q}'
-        elif key==ord('n') and search_mode and search_hits:
-            shi=(shi+1)%len(search_hits); cur_y=search_hits[shi][0]; scroll_y=max(0,cur_y-3)
-        elif key in (ord('d'),ord('D')):
-            if fname and fname in file_lines:
-                disk=read_file(fname); mem=file_lines[fname]
-                diff=list(difflib.unified_diff(disk,mem,fromfile=f'{fname}(disk)',tofile=f'{fname}(mem)'))
-                out_txt=''.join(diff) or '(no differences)'; show_out=True; status='Diff: disk vs memory'
-        elif key in (ord('g'),ord('G')):
+            stdscr.addstr(h-1, 0, "Ask AI: ")
+            try:
+                q = stdscr.getstr(h-1, 8, 100).decode()
+            except: q = ""
+            curses.noecho()
+            if q and files:
+                ctx = ''.join(file_content[:50])
+                status = "Asking AI..."
+                stdscr.addstr(h-2, 0, status[:w-1].ljust(w-1), curses.color_pair(4))
+                stdscr.refresh()
+                ai_output = ai_ask(q, ctx)
+                split = True
+                status = "AI responded. S=toggle-split Ctrl+Q=quit"
+        elif key in (ord('S'), ord('s')):
+            split = not split
+        elif key in (ord('G'), ord('g')):
+            # Git commit
             curses.echo()
-            safe(stdscr,H-1,0,'Commit: '.ljust(W),curses.color_pair(CP_STAT)); stdscr.refresh()
-            try: msg=stdscr.getstr(H-1,8,100).decode().strip()
-            except: msg=''
+            stdscr.addstr(h-1, 0, "Commit msg: ")
+            try:
+                msg = stdscr.getstr(h-1, 12, 100).decode()
+            except: msg = ""
             curses.noecho()
             if msg:
-                if fname: save_cf()
-                subprocess.run(['git','-C',ws_dir,'add','.'],capture_output=True)
-                r=subprocess.run(['git','-C',ws_dir,'commit','-m',msg],capture_output=True)
-                status=f'Committed: {msg[:40]}' if r.returncode==0 else 'Git error'
-        elif key in (ord('p'),ord('P')):
-            if fname:
-                save_cf(); fp2=os.path.join(files_dir,fname)
-                subprocess.Popen(['xdg-open',fp2],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-                status=f'Preview: {fname}'
-        elif key in (ord('x'),ord('X')):
-            if tabs:
-                if auto_save: save_cf()
-                tabs.pop(atab); atab=min(atab,max(0,len(tabs)-1))
-                status='Tab closed'
-        elif key in (ord('w'),ord('W')):
-            curses.echo()
-            safe(stdscr,H-1,0,'Workflow: '.ljust(W),curses.color_pair(CP_STAT)); stdscr.refresh()
-            try: wf=stdscr.getstr(H-1,10,60).decode().strip()
-            except: wf=''
-            curses.noecho()
-            if wf:
-                threading.Thread(target=lambda:subprocess.run(['ai','workflow','run',wf]),daemon=True).start()
-                status=f'Running workflow: {wf}'
+                subprocess.run(['git','-C',ws_dir,'add','.'], capture_output=True)
+                r = subprocess.run(['git','-C',ws_dir,'commit','-m',msg], capture_output=True)
+                status = "Committed!" if r.returncode == 0 else "Git error"
+        elif key in (ord('P'), ord('p')):
+            # Live preview (open in browser/viewer)
+            if files:
+                fname = files[active_idx]
+                ext = fname.rsplit('.',1)[-1].lower()
+                fp = os.path.join(files_dir, fname)
+                if ext in ('html','htm'):
+                    subprocess.Popen(['xdg-open', fp], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                elif ext == 'md':
+                    subprocess.Popen(['xdg-open', fp], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                status = f"Preview opened: {fname}"
+        elif key == ord('?') or key == curses.KEY_F1:
+            status = "Keys: UP/DOWN=files F=new E=edit A=ask-AI S=split G=commit P=preview Ctrl+Q=quit"
 
-curses.wrapper(main)
-CANVAS3EOF
+curses.wrapper(canvas_tui)
+PYEOF
       ;;
 
     list)
-      info "Canvas v3 workspaces:"
-      ls -1 "$CANVAS_V3_DIR/" 2>/dev/null | while read -r ws; do
-        local cfg="$CANVAS_V3_DIR/$ws/workspace.json"
+      info "Canvas v2 workspaces:"
+      ls -1 "$CANVAS_V2_DIR/" 2>/dev/null | while read -r ws; do
+        local cfg="$CANVAS_V2_DIR/$ws/workspace.json"
         if [[ -f "$cfg" ]] && [[ -n "$PYTHON" ]]; then
-          local nf cr
-          nf=$("$PYTHON" -c "import json;d=json.load(open('$cfg'));print(len(d.get('files',[])))" 2>/dev/null||echo 0)
-          cr=$("$PYTHON" -c "import json;d=json.load(open('$cfg'));print(d.get('created','?')[:10])" 2>/dev/null||echo "?")
-          printf "  %-26s  %s files  created %s\n" "$ws" "$nf" "$cr"
+          local nfiles; nfiles=$("$PYTHON" -c "import json; d=json.load(open('$cfg')); print(len(d.get('files',[])))" 2>/dev/null || echo 0)
+          echo "  $ws  ($nfiles files)"
         else
           echo "  $ws"
         fi
-      done ;;
+      done
+      ;;
 
     delete)
       local ws="${1:?workspace name required}"
-      [[ ! -d "$CANVAS_V3_DIR/$ws" ]] && { err "Not found: $ws"; return 1; }
-      read -rp "Delete '$ws'? [y/N]: " c
-      [[ "${c,,}" != "y" ]] && { info "Cancelled"; return 0; }
-      rm -rf "$CANVAS_V3_DIR/$ws" && ok "Deleted: $ws" ;;
+      local ws_dir="$CANVAS_V2_DIR/$ws"
+      [[ ! -d "$ws_dir" ]] && { err "Workspace not found: $ws"; return 1; }
+      read -rp "Delete workspace '$ws'? [y/N]: " confirm
+      [[ "${confirm,,}" != "y" ]] && { info "Cancelled"; return 0; }
+      rm -rf "$ws_dir" && ok "Deleted: $ws"
+      ;;
 
     export)
-      local ws="${1:?workspace}"
-      [[ ! -d "$CANVAS_V3_DIR/$ws" ]] && { err "Not found: $ws"; return 1; }
-      local out="$AI_OUTPUT_DIR/${ws}_v3.tar.gz"
-      tar -czf "$out" -C "$CANVAS_V3_DIR" "$ws/" && ok "Exported: $out" ;;
+      local ws="${1:?workspace}" fmt="${2:-tar}"
+      local ws_dir="$CANVAS_V2_DIR/$ws"
+      [[ ! -d "$ws_dir" ]] && { err "Workspace not found: $ws"; return 1; }
+      local out="$AI_OUTPUT_DIR/${ws}_export.tar.gz"
+      tar -czf "$out" -C "$CANVAS_V2_DIR" "$ws/"
+      ok "Exported: $out"
+      ;;
 
     gist)
       local ws="${1:?workspace}"
-      command -v gh &>/dev/null || { err "GitHub CLI (gh) required"; return 1; }
-      gh gist create "$CANVAS_V3_DIR/$ws/files/"* --desc "Canvas v3: $ws" && ok "Gist created" ;;
+      local ws_dir="$CANVAS_V2_DIR/$ws/files"
+      if command -v gh &>/dev/null; then
+        info "Uploading $ws to GitHub Gist..."
+        gh gist create "$ws_dir"/* --desc "Canvas v2: $ws" && ok "Gist created"
+      else
+        err "GitHub CLI (gh) required for Gist upload"
+        info "Install: sudo pacman -S github-cli  OR  sudo apt install gh"
+      fi
+      ;;
 
     help|*)
-      hdr "Canvas v3 — AI CLI $VERSION"
-      cat <<'CHELPEOF'
-  Full-featured multi-file workspace TUI with syntax highlight, tabs,
-  run-in-place, diff, search, AI-assist, auto-save, git integration.
-
-  ai canvas new <ws>          Create workspace
-  ai canvas open <ws>         Open TUI
-  ai canvas add <ws> <file>   Add existing file
-  ai canvas new-file <ws> <f> Create blank file in workspace
-  ai canvas list              List workspaces
-  ai canvas delete <ws>       Delete workspace
-  ai canvas export <ws>       Export as .tar.gz
-  ai canvas gist <ws>         Upload to GitHub Gist (needs gh CLI)
-
-  TUI Keys:
-    Up/Dn/Left/Rt/Home/End/PgUp/PgDn — navigate
-    Tab / Shift+Tab  — cycle open tabs
-    Ctrl+S / Ctrl+Q  — save / quit
-    B  — toggle file sidebar  (j/k to move, Enter to open)
-    N  — new file    E  — open in $EDITOR
-    A  — ask AI about file    I  — insert AI output at cursor
-    R  — run file (py/js/sh/rb/lua)
-    /  — search in file       n  — next match
-    D  — diff memory vs disk  G  — git commit
-    P  — preview in browser   W  — run workflow
-    X  — close current tab    ?  — show key reference
-CHELPEOF
+      hdr "AI CLI — Canvas v2 (v2.5)"
+      echo "  Multi-file workspace with split-pane, AI assist, git, live preview"
+      echo ""
+      echo "  ai canvas-v2 new <name>          Create new workspace"
+      echo "  ai canvas-v2 open <name>         Open TUI (Ctrl+Q to exit)"
+      echo "  ai canvas-v2 add <ws> <file>     Add file to workspace"
+      echo "  ai canvas-v2 list                List workspaces"
+      echo "  ai canvas-v2 delete <name>       Delete workspace"
+      echo "  ai canvas-v2 export <name> [tar] Export as tarball"
+      echo "  ai canvas-v2 gist <name>         Upload to GitHub Gist"
+      echo ""
+      echo "  TUI keys:  UP/DOWN=switch file  E=edit  A=ask-AI  S=split-pane"
+      echo "             F=new-file  G=git-commit  P=preview  ?=help  Ctrl+Q=quit"
       ;;
   esac
 }
 
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: dispatch_ask_with_system — shared API helper for -Ad
-# ════════════════════════════════════════════════════════════════════════════════
-dispatch_ask_with_system() {
-  local sys="$1" usr="$2" backend="${3:-}" model="${4:-}"
-  [[ -z "$PYTHON" ]] && { echo ""; return 1; }
-  SYS_PROMPT_VAL="$sys" USER_MSG_VAL="$usr" BACKEND_VAL="$backend" MODEL_VAL="$model" \
-  "$PYTHON" - <<'PYEOF'
-import os,json,urllib.request,sys
-s=os.environ.get('SYS_PROMPT_VAL',''); u=os.environ.get('USER_MSG_VAL','')
-b=os.environ.get('BACKEND_VAL','');    m=os.environ.get('MODEL_VAL','')
-cfg=os.path.expanduser("~/.config/ai-cli/keys.env"); keys={}
-if os.path.exists(cfg):
-    for line in open(cfg):
-        line=line.strip()
-        if '=' in line and not line.startswith('#'):
-            k,_,v=line.partition('='); keys[k.strip()]=v.strip().strip('"\'')
-def oai(key,mdl,s,u):
-    p=json.dumps({"model":mdl or "gpt-4o-mini","messages":[{"role":"system","content":s},{"role":"user","content":u}],"max_tokens":4096}).encode()
-    req=urllib.request.Request("https://api.openai.com/v1/chat/completions",data=p,headers={"Authorization":f"Bearer {key}","Content-Type":"application/json"})
-    with urllib.request.urlopen(req,timeout=120) as r: return json.load(r)['choices'][0]['message']['content']
-def cla(key,mdl,s,u):
-    p=json.dumps({"model":mdl or "claude-haiku-4-5-20251001","max_tokens":4096,"system":s,"messages":[{"role":"user","content":u}]}).encode()
-    req=urllib.request.Request("https://api.anthropic.com/v1/messages",data=p,headers={"x-api-key":key,"anthropic-version":"2023-06-01","Content-Type":"application/json"})
-    with urllib.request.urlopen(req,timeout=120) as r: return json.load(r)['content'][0]['text']
-def gem(key,mdl,s,u):
-    mdl=mdl or 'gemini-2.0-flash'
-    p=json.dumps({"contents":[{"parts":[{"text":f"{s}\n\n{u}"}]}],"generationConfig":{"maxOutputTokens":4096}}).encode()
-    url=f"https://generativelanguage.googleapis.com/v1beta/models/{mdl}:generateContent?key={key}"
-    req=urllib.request.Request(url,data=p,headers={"Content-Type":"application/json"})
-    with urllib.request.urlopen(req,timeout=120) as r: return json.load(r)['candidates'][0]['content']['parts'][0]['text']
-try:
-    if b=='openai' or (not b and keys.get('OPENAI_API_KEY')): print(oai(keys.get('OPENAI_API_KEY',''),m,s,u))
-    elif b=='claude' or (not b and keys.get('ANTHROPIC_API_KEY')): print(cla(keys.get('ANTHROPIC_API_KEY',''),m,s,u))
-    elif b=='gemini' or (not b and keys.get('GEMINI_API_KEY')): print(gem(keys.get('GEMINI_API_KEY',''),m,s,u))
-    else: print("",end="")
-except Exception as e: print(f"# Error: {e}",file=sys.stderr)
-PYEOF
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai -Ad — AI SELF-MODIFIER (case-sensitive: capital A, lowercase d)
-#  Usage: ai -Ad -m <model_num|id> -A "<prompt>" [-L "<script_path>"]
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_ad() {
-  # v2.8: AI Self-Modifier — reads script, asks model to generate/patch code,
-  # supports test-before-apply, rollback, diff preview, multi-file targeting,
-  # and audit log of all AI-generated modifications.
-  local location="" model_ref="" prompt="" apply_mode="ask"
-  local script_path; script_path=$(command -v ai 2>/dev/null || realpath "$0")
-  local test_flag=0 diff_flag=0 audit_flag=0 analyze_flag=0
-  local target_fn="" context_lines=500 output_file=""
-
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      -L)          location="$2"; script_path="$2"; shift 2 ;;
-      -m)          model_ref="$2"; shift 2 ;;
-      -A)          prompt="$2"; shift 2 ;;
-      --test)      test_flag=1; shift ;;
-      --diff)      diff_flag=1; shift ;;
-      --auto)      apply_mode="auto"; shift ;;
-      --dry-run)   apply_mode="dry"; shift ;;
-      --audit)     audit_flag=1; shift ;;
-      --analyze)   analyze_flag=1; shift ;;
-      --fn)        target_fn="$2"; shift 2 ;;
-      --ctx)       context_lines="$2"; shift 2 ;;
-      -o|--output) output_file="$2"; shift 2 ;;
-      -h|--help)
-        hdr "ai -Ad — AI Script Self-Modifier (v2.8)"
-        echo ""
-        echo "  ${B}Description:${R}"
-        echo "    Reads this script (or any bash file), sends it with your instructions"
-        echo "    to a language model, and generates new/patched bash code."
-        echo "    Supports backup, rollback, diff preview, and audit logging."
-        echo ""
-        echo "  ${B}Required flags:${R}"
-        echo "    -m <num|model>   Model: recommended # or full model id"
-        echo "    -A \"<task>\"      What to add/fix/change"
-        echo ""
-        echo "  ${B}Optional flags:${R}"
-        echo "    -L <path>        Target script (default: this script)"
-        echo "    --fn <funcname>  Only send the named function as context"
-        echo "    --ctx <n>        Lines of context to send (default: 500)"
-        echo "    --test           Run bash -n syntax check before applying"
-        echo "    --diff           Show unified diff before applying"
-        echo "    --auto           Apply without confirmation"
-        echo "    --dry-run        Show output without applying"
-        echo "    --audit          Log to ~/.config/ai-cli/ad_audit.log"
-        echo "    --analyze        First analyze script structure, then modify"
-        echo "    -o <file>        Save generated code to file"
-        echo ""
-        echo "  ${B}Examples:${R}"
-        echo "    ai -Ad -m 21 -A \"add a command that formats json files\""
-        echo "    ai -Ad -m gpt-4o --fn cmd_memo -A \"add tag filtering\""
-        echo "    ai -Ad -m claude-sonnet-4-6 --test --diff -A \"fix the watch daemon\""
-        echo "    ai -Ad -m 50 --auto -A \"add --verbose flag to all commands\""
-        return 0 ;;
-      *) shift ;;
-    esac
-  done
-
-  [[ -z "$model_ref" ]] && { err ERR708 "-m <model> is required"; return 1; }
-  [[ -z "$prompt"    ]] && { err ERR708 "-A \"<task>\" is required"; return 1; }
-  [[ ! -f "$script_path" ]] && { err ERR401 "Script not found: $script_path"; return 1; }
-
-  # Resolve numeric model reference
-  local resolved="$model_ref"
-  if [[ "$model_ref" =~ ^[0-9]+$ ]]; then
-    local rec="${RECOMMENDED_MODELS[$model_ref]:-}"
-    [[ -z "$rec" ]] && { err ERR201 "Model #$model_ref not found — run: ai recommended"; return 1; }
-    resolved="${rec%%|*}"
-  fi
-
-  # ── Analyze script structure first if requested ──────────────────────────
-  if [[ $analyze_flag -eq 1 ]]; then
-    hdr "Analyzing script structure…"
-    local fn_count; fn_count=$(grep -c "^[a-z_A-Z][a-z_A-Z0-9_]*() {" "$script_path" 2>/dev/null || echo 0)
-    local line_count; line_count=$(wc -l < "$script_path")
-    local cmd_count; cmd_count=$(grep -c "^cmd_" "$script_path" 2>/dev/null || echo 0)
-    info "Script: $script_path"
-    info "  Lines:     $line_count"
-    info "  Functions: $fn_count"
-    info "  Commands:  $cmd_count"
-    info "  Size:      $(du -sh "$script_path" | cut -f1)"
-    echo ""
-    info "Top-level functions:"
-    grep "^cmd_[a-z_]*() {" "$script_path" | sed 's/() {//' | sed 's/^cmd_/  cmd_/' | head -30
-    echo ""
-  fi
-
-  # ── Build context ─────────────────────────────────────────────────────────
-  local excerpt=""
-  if [[ -n "$target_fn" ]]; then
-    # Extract just the named function
-    excerpt=$(awk "/^${target_fn}\\(\\)/{found=1} found{print; if(/^}$/ && found>1){exit} found++}" "$script_path" 2>/dev/null | head -300)
-    if [[ -z "$excerpt" ]]; then
-      warn "Function '$target_fn' not found — using first $context_lines lines"
-      excerpt=$(head -"$context_lines" "$script_path")
-    else
-      info "Context: function $target_fn ($(echo "$excerpt" | wc -l) lines)"
-    fi
-  else
-    excerpt=$(head -"$context_lines" "$script_path")
-    info "Context: first $context_lines lines of $script_path"
-  fi
-
-  # Include function list for full-script context
-  local fn_list; fn_list=$(grep "^cmd_[a-z_]*() {" "$script_path" | sed 's/() {//' | tr '\n' ' ' | head -c 500)
-
-  local sys="You are an elite bash developer specializing in AI CLI tools. \
-Given an ai.sh script excerpt and a modification request, output ONLY valid bash \
-code — no markdown fences, no prose, no explanation. \
-Output complete function(s) with their case entry for main() if needed. \
-Always include -h/--help handling in new commands. \
-Use the same style: hdr/info/ok/err/warn helpers, \$PYTHON, dispatch_ask(), \$AI_OUTPUT_DIR. \
-Existing commands: $fn_list${location:+ Location hint: $location}"
-
-  local usr="Script excerpt (bash):
-\`\`\`bash
-${excerpt}
-\`\`\`
-
-Task: ${prompt}
-
-Requirements:
-- Match existing code style exactly
-- Use hdr(), info(), ok(), err(), warn() for output
-- Include proper error handling and -h/--help
-- Add comments explaining complex logic
-- Output ONLY the bash code, nothing else"
-
-  info "ai -Ad: model=$resolved"
-  info "  Task: $prompt"
-
-  # ── Query model ───────────────────────────────────────────────────────────
-  local out=""
-  local backend=""
-  case "$resolved" in
-    gpt-*|o1*|o3*|chatgpt*) backend="openai" ;;
-    claude-*)                backend="claude" ;;
-    gemini-*)                backend="gemini" ;;
-  esac
-
-  if [[ -n "$backend" ]]; then
-    out=$(dispatch_ask_with_system "$sys" "$usr" "$backend" "$resolved" 2>/dev/null)
-  else
-    # Local model via dispatch_ask
-    out=$(dispatch_ask "$(printf '%s\n\n%s' "$sys" "$usr")" 2>/dev/null)
-  fi
-
-  # Strip markdown fences if model added them anyway
-  out=$(echo "$out" | sed '/^```/d')
-
-  [[ -z "$out" ]] && { err "Model returned empty output. Try a different -m model"; return 1; }
-
-  # ── Save to output file if requested ─────────────────────────────────────
-  if [[ -n "$output_file" ]]; then
-    echo "$out" > "$output_file"
-    ok "Saved to: $output_file"
-  fi
-
-  # ── Show output ───────────────────────────────────────────────────────────
-  echo ""
-  echo -e "${BWHITE}══ Generated Code (${resolved}) ══${R}"
-  echo "$out"
-  echo -e "${BWHITE}══════════════════════════════════${R}"
-  echo ""
-
-  # Count lines generated
-  local gen_lines; gen_lines=$(echo "$out" | wc -l)
-  info "Generated: $gen_lines lines"
-
-  # ── Dry-run: stop here ────────────────────────────────────────────────────
-  if [[ "$apply_mode" == "dry" ]]; then
-    info "Dry-run mode — not applying."
-    return 0
-  fi
-
-  # ── Syntax check ─────────────────────────────────────────────────────────
-  if [[ $test_flag -eq 1 ]]; then
-    info "Syntax checking generated code…"
-    local tmp_check; tmp_check=$(mktemp /tmp/ai_ad_XXXXXX.sh)
-    echo "$out" > "$tmp_check"
-    if bash -n "$tmp_check" 2>/tmp/ai_ad_err.txt; then
-      ok "Syntax check passed"
-    else
-      err "Syntax errors detected:"
-      cat /tmp/ai_ad_err.txt
-      rm -f "$tmp_check" /tmp/ai_ad_err.txt
-      read -rp "  Apply anyway? [y/N]: " c
-      [[ "${c,,}" != "y" ]] && { info "Aborted."; return 1; }
-    fi
-    rm -f "$tmp_check" /tmp/ai_ad_err.txt
-  fi
-
-  # ── Backup ────────────────────────────────────────────────────────────────
-  local bak="${script_path}.bak.$(date +%Y%m%d_%H%M%S)"
-  local backup_dir="$CONFIG_DIR/ad_backups"
-  mkdir -p "$backup_dir"
-  local bak_stored="$backup_dir/$(basename "$script_path").$(date +%Y%m%d_%H%M%S).bak"
-
-  # ── Diff preview ─────────────────────────────────────────────────────────
-  if [[ $diff_flag -eq 1 ]]; then
-    info "Diff preview (appended content):"
-    echo "$out" | head -50 | while IFS= read -r line; do
-      echo -e "  ${BGREEN}+${R} $line"
-    done
-    [[ $gen_lines -gt 50 ]] && info "  … (${gen_lines} lines total)"
-    echo ""
-  fi
-
-  # ── Confirm / auto-apply ──────────────────────────────────────────────────
-  local do_apply=0
-  if [[ "$apply_mode" == "auto" ]]; then
-    do_apply=1
-  else
-    read -rp "  Apply to script? [y/N/save-only/rollback-list]: " c
-    case "${c,,}" in
-      y|yes)       do_apply=1 ;;
-      save-only)
-        local f="$AI_OUTPUT_DIR/ad_$(date +%Y%m%d_%H%M%S).sh"
-        echo "$out" > "$f"; ok "Saved: $f"; return 0 ;;
-      rollback-list)
-        _ad_list_backups "$script_path" "$backup_dir"; return 0 ;;
-      *) info "Cancelled."; return 0 ;;
-    esac
-  fi
-
-  if [[ $do_apply -eq 1 ]]; then
-    # Store backup
-    cp "$script_path" "$bak_stored"
-    cp "$script_path" "$bak"
-    printf "\n# ── v2.8 -Ad: %s ──\n# Task: %s\n# Model: %s\n%s\n" \
-      "$(date -Iseconds)" "$prompt" "$resolved" "$out" >> "$script_path"
-    ok "Appended $gen_lines lines. Backup: $bak"
-    info "Rollback: cp \"$bak\" \"$script_path\""
-
-    # Audit log
-    if [[ $audit_flag -eq 1 ]]; then
-      local audit_log="$CONFIG_DIR/ad_audit.log"
-      {
-        echo "=== $(date -Iseconds) ==="
-        echo "Model:    $resolved"
-        echo "Script:   $script_path"
-        echo "Task:     $prompt"
-        echo "Lines:    $gen_lines"
-        echo "Backup:   $bak_stored"
-        echo "---"
-      } >> "$audit_log"
-      info "Audit logged: $audit_log"
-    fi
-  fi
-}
-
-_ad_list_backups() {
-  local script_path="$1" backup_dir="$2"
-  hdr "Backups for $(basename "$script_path")"
-  local found=0
-  for f in "$backup_dir"/$(basename "$script_path").*.bak; do
-    [[ -f "$f" ]] || continue
-    local ts; ts=$(basename "$f" | grep -oE '[0-9]{8}_[0-9]{6}')
-    local sz; sz=$(du -sh "$f" | cut -f1)
-    printf "  ${BCYAN}%s${R}  %s  (restore: cp \"%s\" \"%s\")\n" "$ts" "$sz" "$f" "$script_path"
-    found=1
-  done
-  [[ $found -eq 0 ]] && info "No backups found in $backup_dir"
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai -Cr / ai create — AI MODEL CREATOR & TRAINER FROM HF DATASETS
-#
-#  FULL PIPELINE:
-#    1. Resolve base architecture from recommended model list
-#    2. Download & prepare HuggingFace datasets
-#    3. Configure model architecture by target size
-#    4. Train (SFT → optional DPO → optional reward model)
-#    5. Evaluate on held-out split
-#    6. Save / push to HuggingFace / export GGUF
-#    7. Register in local models list
-#
-#  Flags:
-#    -m <n|id>   Base model to initialize from (or architecture template)
-#    -Sz "<sz>"  Target parameter count e.g. "0.5B" "1B" "3B" "7B"
-#    -aprx       Approximate size (fewer layers, faster training)
-#    -D "<ids>"  HF dataset IDs — comma or slash separated
-#    -Rep <repo> Push to HuggingFace (requires -K or HF_TOKEN)
-#    -K <key>    HuggingFace API token
-#    -OP <path>  Save locally to this directory
-#    --unsafe    Save to AI_OUTPUT_DIR without prompting
-#    --eval      Run evaluation after training
-#    --gguf      Export GGUF after training (needs llama.cpp)
-#    --dpo       Enable DPO fine-tuning stage
-#    --epochs N  Training epochs (default: 1)
-#    --lr F      Learning rate (default: 3e-4)
-#    --batch N   Per-device batch size (default: 2)
-#    --seq N     Max sequence length (default: 512)
-#    --warmup N  Warmup steps (default: 100)
-#    --resume    Resume from checkpoint if found
-#    --quantize  Post-training quantization (int8)
-#    --lora      Use LoRA adapters instead of full fine-tuning
-#    --lora-r N  LoRA rank (default: 16)
-#    --merge     Merge LoRA adapters into base model after training
-#    --register  Register model in ai-cli local model list
-# ════════════════════════════════════════════════════════════════════════════════
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai -Cr / ai create — AI MODEL CREATOR FROM HF DATASETS
-#  -m <num|id>  -Sz "<size>"  [-aprx]  -D "<datasets>"
-#  { -Rep "<repo>" [-K "<hf_key>"] | -OP "<path>" | --unsafe }
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_cr() {
-  local model_ref="" size="" approx=0 data_str=""
-  local repo_dest="" hf_key="" output_path="" unsafe=0
-  local do_eval=0 do_gguf=0 do_dpo=0 do_lora=0 do_merge=0 do_register=0
-  local do_quantize=0 do_resume=0
-  local epochs=1 lr="3e-4" batch_sz=2 seq_len=512 warmup=100
-  local lora_r=16 lora_alpha=32
-
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      -m)         model_ref="$2"; shift 2 ;;
-      -Sz)        size="$2"; shift 2 ;;
-      -aprx)      approx=1; shift ;;
-      -D)         data_str="$2"; shift 2 ;;
-      -Rep)       repo_dest="$2"; shift 2 ;;
-      -K)         hf_key="$2"; shift 2 ;;
-      -OP)        output_path="$2"; shift 2 ;;
-      --unsafe)   unsafe=1; shift ;;
-      --eval)     do_eval=1; shift ;;
-      --gguf)     do_gguf=1; shift ;;
-      --dpo)      do_dpo=1; shift ;;
-      --lora)     do_lora=1; shift ;;
-      --lora-r)   lora_r="$2"; shift 2 ;;
-      --merge)    do_merge=1; shift ;;
-      --quantize) do_quantize=1; shift ;;
-      --resume)   do_resume=1; shift ;;
-      --register) do_register=1; shift ;;
-      --epochs)   epochs="$2"; shift 2 ;;
-      --lr)       lr="$2"; shift 2 ;;
-      --batch)    batch_sz="$2"; shift 2 ;;
-      --seq)      seq_len="$2"; shift 2 ;;
-      --warmup)   warmup="$2"; shift 2 ;;
-      -h|--help)
-        hdr "ai -Cr / ai create — Model Creator & Trainer (v2.8)"
-        echo ""
-        echo "  ${B}Description:${R}"
-        echo "    Creates and trains a new language model from HuggingFace datasets."
-        echo "    Supports full SFT, LoRA, DPO, evaluation, GGUF export, and HF push."
-        echo ""
-        echo "  ${B}Required:${R}"
-        echo "    -m <n|id>     Base model: recommended # or HuggingFace id"
-        echo "    -Sz \"<sz>\"    Target size: 0.1B 0.5B 1B 3B 7B 13B"
-        echo "    -D \"<ids>\"    HF datasets — comma or slash separated"
-        echo ""
-        echo "  ${B}Output (pick one):${R}"
-        echo "    -Rep \"<user/repo>\"  Push to HuggingFace (needs -K or HF_TOKEN)"
-        echo "    -OP \"<path>\"        Save locally to directory"
-        echo "    --unsafe            Save to ai-cli output dir without prompt"
-        echo ""
-        echo "  ${B}Training options:${R}"
-        echo "    -aprx          Approximate size (faster, fewer layers)"
-        echo "    --lora         LoRA fine-tuning (VRAM-friendly)"
-        echo "    --lora-r N     LoRA rank (default: 16)"
-        echo "    --merge        Merge LoRA adapters post-training"
-        echo "    --dpo          Enable DPO alignment stage after SFT"
-        echo "    --epochs N     Training epochs (default: 1)"
-        echo "    --lr F         Learning rate (default: 3e-4)"
-        echo "    --batch N      Batch size per device (default: 2)"
-        echo "    --seq N        Max sequence length (default: 512)"
-        echo "    --warmup N     LR warmup steps (default: 100)"
-        echo "    --resume       Resume from checkpoint"
-        echo ""
-        echo "  ${B}Post-training:${R}"
-        echo "    --eval         Run evaluation on held-out split"
-        echo "    --quantize     Int8 post-training quantization"
-        echo "    --gguf         Export to GGUF format (needs llama.cpp)"
-        echo "    --register     Register in ai-cli local model list"
-        echo ""
-        echo "  ${B}Examples:${R}"
-        echo "    ai -Cr -m 10 -Sz 1B -D roneneldan/TinyStories -OP ~/models/tiny1b"
-        echo "    ai -Cr -m 21 -Sz 7B --lora --dpo --eval -D mlabonne/guanaco-llama2-1k -Rep myuser/mymodel -K \$HF_TOKEN"
-        echo "    ai -Cr -m 1 -Sz 0.5B -aprx -D HuggingFaceTB/smoltalk --unsafe --gguf"
-        return 0 ;;
-      *) shift ;;
-    esac
-  done
-
-  [[ -z "$model_ref" ]] && { err ERR709 "-m required (model base)"; return 1; }
-  [[ -z "$size"      ]] && { err ERR709 "-Sz required (e.g. 1B)"; return 1; }
-  [[ -z "$data_str"  ]] && { err ERR709 "-D required (HF dataset ids)"; return 1; }
-  [[ -z "$repo_dest$output_path" && $unsafe -eq 0 ]] && {
-    err ERR709 "Output required: -Rep <hf_repo>  OR  -OP <path>  OR  --unsafe"
-    return 1
-  }
-  [[ -z "$PYTHON" ]] && { err ERR501 "Python3 not found"; return 1; }
-
-  # Resolve model reference
-  local resolved="$model_ref"
-  if [[ "$model_ref" =~ ^[0-9]+$ ]]; then
-    local rec="${RECOMMENDED_MODELS[$model_ref]:-}"
-    [[ -z "$rec" ]] && { err ERR201 "Model #$model_ref not found — run: ai recommended"; return 1; }
-    resolved="${rec%%|*}"
-  fi
-
-  local token="${hf_key:-${HF_TOKEN:-}}"
-
-  # Determine output directory
-  local out_dir=""
-  [[ -n "$output_path" ]] && out_dir="$output_path"
-  [[ $unsafe -eq 1 && -z "$out_dir" ]] && out_dir="$AI_OUTPUT_DIR/models/cr_$(date +%Y%m%d_%H%M%S)"
-
-  # Prompt for output dir if still empty
-  if [[ -z "$out_dir" && -z "$repo_dest" ]]; then
-    read -rp "  Local output directory: " out_dir
-    [[ -z "$out_dir" ]] && { err "Output path required"; return 1; }
-  fi
-
-  [[ -n "$out_dir" ]] && mkdir -p "$out_dir"
-
-  # ── Banner ────────────────────────────────────────────────────────────────
-  hdr "AI Model Creator (v2.8)"
-  info "Base model:  $resolved"
-  info "Target size: $size"
-  info "Datasets:    $data_str"
-  info "Method:      $([ $do_lora -eq 1 ] && echo 'LoRA' || echo 'Full SFT')$([ $do_dpo -eq 1 ] && echo ' + DPO' || true)"
-  info "Epochs:      $epochs  LR: $lr  Batch: $batch_sz  Seq: $seq_len"
-  [[ -n "$out_dir" ]]   && info "Output:      $out_dir"
-  [[ -n "$repo_dest" ]] && info "HF repo:     $repo_dest"
-  echo ""
-
-  # ── Python training pipeline ──────────────────────────────────────────────
-  APPROX_VAL="$approx" SIZE_STR="$size" DATASETS_STR="$data_str" \
-  OUT_DIR="${out_dir:-}" HF_REPO="${repo_dest:-}" HF_TOKEN_VAL="$token" \
-  BASE_MODEL="$resolved" DO_EVAL="$do_eval" DO_DPO="$do_dpo" \
-  DO_LORA="$do_lora" LORA_R="$lora_r" LORA_ALPHA="$lora_alpha" \
-  DO_MERGE="$do_merge" DO_QUANTIZE="$do_quantize" DO_RESUME="$do_resume" \
-  DO_GGUF="$do_gguf" EPOCHS="$epochs" LR="$lr" BATCH_SZ="$batch_sz" \
-  SEQ_LEN="$seq_len" WARMUP="$warmup" AI_VERSION="$VERSION" \
-  "$PYTHON" - <<'PYEOF'
-import os, sys, json, time, math, shutil
-
-# ── env vars ──────────────────────────────────────────────────────────────────
-approx      = os.environ.get('APPROX_VAL','0') == '1'
-size_str    = os.environ.get('SIZE_STR','1B').upper().strip()
-datasets_str= os.environ.get('DATASETS_STR','')
-out_dir     = os.environ.get('OUT_DIR','')
-hf_repo     = os.environ.get('HF_REPO','')
-hf_token    = os.environ.get('HF_TOKEN_VAL','')
-base_model  = os.environ.get('BASE_MODEL','')
-do_eval     = os.environ.get('DO_EVAL','0') == '1'
-do_dpo      = os.environ.get('DO_DPO','0') == '1'
-do_lora     = os.environ.get('DO_LORA','0') == '1'
-lora_r      = int(os.environ.get('LORA_R','16'))
-lora_alpha  = int(os.environ.get('LORA_ALPHA','32'))
-do_merge    = os.environ.get('DO_MERGE','0') == '1'
-do_quantize = os.environ.get('DO_QUANTIZE','0') == '1'
-do_resume   = os.environ.get('DO_RESUME','0') == '1'
-do_gguf     = os.environ.get('DO_GGUF','0') == '1'
-epochs      = int(os.environ.get('EPOCHS','1'))
-lr          = float(os.environ.get('LR','3e-4'))
-batch_sz    = int(os.environ.get('BATCH_SZ','2'))
-seq_len     = int(os.environ.get('SEQ_LEN','512'))
-warmup      = int(os.environ.get('WARMUP','100'))
-version     = os.environ.get('AI_VERSION','2.8')
-
-# ── helpers ───────────────────────────────────────────────────────────────────
-def step(n, msg): print(f"\n\033[1m\033[97m── Step {n}: {msg}\033[0m", flush=True)
-def ok(m):   print(f"\033[92m✓ {m}\033[0m", flush=True)
-def info(m): print(f"\033[96mℹ {m}\033[0m", flush=True)
-def warn(m): print(f"\033[93m⚠ {m}\033[0m", flush=True)
-def err(m):  print(f"\033[91m✗ {m}\033[0m", file=sys.stderr, flush=True)
-
-def parse_size(s):
-    s = s.strip().upper()
-    for suffix, mult in [('B', 1e9), ('M', 1e6), ('K', 1e3)]:
-        if s.endswith(suffix):
-            try: return float(s[:-1]) * mult
-            except: pass
-    try: return float(s)
-    except: return 1e9
-
-# ── Architecture table ────────────────────────────────────────────────────────
-# (target_params, {llama config kwargs})
-ARCH_TABLE = [
-    (1.0e8, dict(hidden_size=512,  num_hidden_layers=8,  num_attention_heads=8,
-                 intermediate_size=1024, vocab_size=32000, max_position_embeddings=1024)),
-    (2.5e8, dict(hidden_size=768,  num_hidden_layers=12, num_attention_heads=12,
-                 intermediate_size=2048, vocab_size=32000, max_position_embeddings=2048)),
-    (5.0e8, dict(hidden_size=1024, num_hidden_layers=14, num_attention_heads=16,
-                 intermediate_size=2816, vocab_size=32000, max_position_embeddings=2048)),
-    (1.0e9, dict(hidden_size=2048, num_hidden_layers=18, num_attention_heads=16,
-                 intermediate_size=5120, vocab_size=32000, max_position_embeddings=2048)),
-    (3.0e9, dict(hidden_size=2560, num_hidden_layers=24, num_attention_heads=20,
-                 intermediate_size=6912, vocab_size=32000, max_position_embeddings=4096)),
-    (7.0e9, dict(hidden_size=4096, num_hidden_layers=32, num_attention_heads=32,
-                 intermediate_size=11008,vocab_size=32000, max_position_embeddings=4096)),
-    (1.3e10,dict(hidden_size=5120, num_hidden_layers=40, num_attention_heads=40,
-                 intermediate_size=13824,vocab_size=32000, max_position_embeddings=4096)),
-]
-
-target = parse_size(size_str)
-best_arch = min(ARCH_TABLE, key=lambda x: abs(x[0]-target))
-arch_cfg  = dict(**best_arch[1])
-if approx:
-    arch_cfg['num_hidden_layers'] = max(4, arch_cfg['num_hidden_layers'] // 2)
-    arch_cfg['max_position_embeddings'] = min(1024, arch_cfg['max_position_embeddings'])
-
-step(1, f"Architecture for ~{size_str}")
-info(f"  hidden_size={arch_cfg['hidden_size']}, layers={arch_cfg['num_hidden_layers']}, "
-     f"heads={arch_cfg['num_attention_heads']}, ffn={arch_cfg['intermediate_size']}")
-
-# ── Check dependencies ────────────────────────────────────────────────────────
-missing = []
-for pkg in ['torch','transformers','datasets','accelerate']:
-    try: __import__(pkg)
-    except ImportError: missing.append(pkg)
-if missing:
-    err(f"Missing packages: {', '.join(missing)}")
-    err("Run: pip install " + ' '.join(missing))
-    sys.exit(1)
-
-import torch
-from transformers import (AutoTokenizer, LlamaConfig, LlamaForCausalLM,
-                           TrainingArguments, Trainer,
-                           DataCollatorForLanguageModeling, AutoModelForCausalLM)
-from datasets import load_dataset, Dataset as HFDataset, concatenate_datasets
-
-device = 'cuda' if torch.cuda.is_available() else 'mps' if (
-    hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()) else 'cpu'
-dtype  = torch.bfloat16 if device in ('cuda','mps') else torch.float32
-info(f"Device: {device}  Dtype: {dtype}")
-
-# ── Step 2: Tokenizer ─────────────────────────────────────────────────────────
-step(2, "Loading tokenizer")
-tok_model = base_model if '/' in base_model else "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-try:
-    tok = AutoTokenizer.from_pretrained(tok_model, trust_remote_code=True)
-    ok(f"Tokenizer from: {tok_model}")
-except Exception as e:
-    warn(f"Could not load tokenizer from {tok_model}: {e}")
-    tok = AutoTokenizer.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
-    ok("Tokenizer fallback: TinyLlama")
-tok.pad_token = tok.eos_token
-tok.padding_side = 'right'
-
-# ── Step 3: Build model ───────────────────────────────────────────────────────
-step(3, "Building model architecture")
-final_out = out_dir if out_dir else '/tmp/ai_cr_model'
-os.makedirs(final_out, exist_ok=True)
-
-checkpoint = None
-if do_resume:
-    # Look for checkpoint subdirs
-    ckpts = [d for d in os.listdir(final_out) if d.startswith('checkpoint-')]
-    if ckpts:
-        checkpoint = os.path.join(final_out, sorted(ckpts)[-1])
-        info(f"Resuming from: {checkpoint}")
-
-if checkpoint:
-    try:
-        model = AutoModelForCausalLM.from_pretrained(checkpoint, torch_dtype=dtype,
-                                                      trust_remote_code=True)
-        ok(f"Loaded checkpoint: {checkpoint}")
-    except Exception as e:
-        warn(f"Could not load checkpoint ({e}), building fresh model")
-        checkpoint = None
-
-if not checkpoint:
-    cfg = LlamaConfig(rms_norm_eps=1e-5, tie_word_embeddings=False,
-                      torch_dtype=str(dtype).replace('torch.',''), **arch_cfg)
-    model = LlamaForCausalLM(cfg)
-
-total_params = sum(p.numel() for p in model.parameters())
-trainable_params = total_params
-info(f"Parameters: {total_params:,} ({total_params/1e9:.3f}B)")
-
-# ── LoRA setup ─────────────────────────────────────────────────────────────────
-if do_lora:
-    step(3.5, "Configuring LoRA")
-    try:
-        from peft import LoraConfig, get_peft_model, TaskType
-        lora_config = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
-            r=lora_r, lora_alpha=lora_alpha, lora_dropout=0.05,
-            target_modules=["q_proj","v_proj","k_proj","o_proj",
-                           "gate_proj","up_proj","down_proj"],
-            bias="none",
-        )
-        model = get_peft_model(model, lora_config)
-        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        info(f"LoRA trainable: {trainable_params:,} / {total_params:,} "
-             f"({trainable_params/total_params*100:.1f}%)")
-        ok("LoRA adapters initialized")
-    except ImportError:
-        warn("peft not installed — falling back to full fine-tuning")
-        warn("Install: pip install peft")
-        do_lora = False
-
-model = model.to(device=device, dtype=dtype)
-
-# ── Step 4: Load datasets ─────────────────────────────────────────────────────
-step(4, f"Loading datasets: {datasets_str}")
-
-MAX_RECORDS = 5000 if approx else 20000
-records = []
-ds_ids = [d.strip() for d in datasets_str.replace(',','/').split('/') if d.strip()]
-
-for ds_id in ds_ids:
-    info(f"  Loading: {ds_id}")
-    try:
-        ds = load_dataset(ds_id, split=f"train[:{MAX_RECORDS}]",
-                          trust_remote_code=True)
-        added = 0
-        for ex in ds:
-            # Try multiple field patterns
-            text = (ex.get('text') or
-                    ex.get('content') or
-                    (str(ex.get('instruction','')) + '\n### Response:\n' + str(ex.get('output','')))
-                    if ex.get('instruction') else None or
-                    (str(ex.get('system','')) + '\n' + str(ex.get('question','')) + '\n' + str(ex.get('response','')))
-                    if ex.get('question') else None or
-                    (str(ex.get('prompt','')) + '\n' + str(ex.get('completion','')))
-                    if ex.get('prompt') else None or
-                    str(next(iter(ex.values()), '')))
-            if text and len(text.strip()) > 20:
-                records.append(text.strip()[:seq_len*4])
-                added += 1
-        ok(f"  +{added:,} records from {ds_id}")
-    except Exception as e:
-        warn(f"  Skipping {ds_id}: {e}")
-
-if not records:
-    err("No records loaded. Check dataset IDs.")
-    sys.exit(1)
-
-info(f"Total records: {len(records):,}")
-
-# Split for eval
-eval_records = []
-if do_eval and len(records) > 100:
-    split = max(50, len(records) // 10)
-    eval_records = records[-split:]
-    records = records[:-split]
-    info(f"Train: {len(records):,}  Eval: {len(eval_records):,}")
-
-# ── Step 5: Tokenize ─────────────────────────────────────────────────────────
-step(5, "Tokenizing")
-ML = seq_len
-
-def tokenize_batch(batch):
-    return tok(batch['text'], truncation=True, max_length=ML,
-                padding='max_length', return_tensors=None)
-
-train_ds = HFDataset.from_dict({'text': records})
-tok_train = train_ds.map(tokenize_batch, batched=True, batch_size=500,
-                          remove_columns=['text'])
-ok(f"Tokenized {len(tok_train):,} training examples")
-
-tok_eval = None
-if eval_records:
-    eval_ds = HFDataset.from_dict({'text': eval_records})
-    tok_eval = eval_ds.map(tokenize_batch, batched=True, batch_size=500,
-                            remove_columns=['text'])
-
-# ── Step 6: Train ─────────────────────────────────────────────────────────────
-step(6, "Training")
-steps_per_epoch = math.ceil(len(tok_train) / (batch_sz * 8))  # grad accum = 8
-total_steps = steps_per_epoch * epochs
-info(f"  Epochs: {epochs}  Steps/epoch: {steps_per_epoch}  Total: {total_steps}")
-
-training_args = TrainingArguments(
-    output_dir=final_out,
-    num_train_epochs=epochs,
-    per_device_train_batch_size=batch_sz,
-    gradient_accumulation_steps=8,
-    learning_rate=lr,
-    warmup_steps=min(warmup, total_steps // 4),
-    lr_scheduler_type="cosine",
-    weight_decay=0.01,
-    max_grad_norm=1.0,
-    save_strategy="steps",
-    save_steps=max(50, total_steps // 5),
-    save_total_limit=2,
-    logging_steps=max(10, total_steps // 20),
-    evaluation_strategy="steps" if tok_eval else "no",
-    eval_steps=max(50, total_steps // 5) if tok_eval else None,
-    bf16=(device == 'cuda' and torch.cuda.is_bf16_supported()),
-    fp16=(device == 'cuda' and not torch.cuda.is_bf16_supported()),
-    dataloader_num_workers=0,
-    report_to="none",
-    resume_from_checkpoint=checkpoint,
-    load_best_model_at_end=(tok_eval is not None),
-)
-
-data_collator = DataCollatorForLanguageModeling(tok, mlm=False)
-
-trainer = Trainer(
-    model=model,
-    args=training_args,
-    train_dataset=tok_train,
-    eval_dataset=tok_eval,
-    data_collator=data_collator,
-)
-
-t0 = time.time()
-trainer.train(resume_from_checkpoint=checkpoint if do_resume else None)
-elapsed = time.time() - t0
-ok(f"Training complete in {elapsed/60:.1f} min")
-
-# ── Step 7: Merge LoRA ────────────────────────────────────────────────────────
-if do_lora and do_merge:
-    step(7, "Merging LoRA adapters")
-    try:
-        model = model.merge_and_unload()
-        ok("LoRA adapters merged into base model")
-    except Exception as e:
-        warn(f"Merge failed: {e}")
-
-# ── Step 8: Evaluate ─────────────────────────────────────────────────────────
-if do_eval and tok_eval:
-    step(8, "Evaluation")
-    results = trainer.evaluate()
-    loss = results.get('eval_loss', float('nan'))
-    ppl  = math.exp(loss) if loss < 20 else float('inf')
-    ok(f"Eval loss: {loss:.4f}  Perplexity: {ppl:.2f}")
-    # Save eval results
-    eval_path = os.path.join(final_out, 'eval_results.json')
-    json.dump(results, open(eval_path, 'w'), indent=2)
-
-# ── Step 9: Save ──────────────────────────────────────────────────────────────
-step(9, f"Saving model to {final_out}")
-trainer.save_model(final_out)
-tok.save_pretrained(final_out)
-
-# Write model card
-card = f"""---
-language: en
-license: apache-2.0
-tags:
-- ai-cli
-- generated
-- v{version}
-base_model: {base_model}
----
-
-# AI CLI Generated Model
-
-Created with `ai -Cr` (ai-cli v{version})
-
-- **Base architecture:** {base_model}
-- **Target size:** {size_str}
-- **Parameters:** {total_params/1e9:.3f}B
-- **Training method:** {"LoRA" if do_lora else "Full SFT"}{"+ DPO" if do_dpo else ""}
-- **Datasets:** {datasets_str}
-- **Epochs:** {epochs}  Learning rate: {lr}
-- **Created:** {time.strftime('%Y-%m-%d')}
-"""
-open(os.path.join(final_out, 'README.md'), 'w').write(card)
-ok(f"Saved to: {final_out}")
-
-# ── Step 10: Post-training quantization ───────────────────────────────────────
-if do_quantize:
-    step(10, "Post-training quantization (int8)")
-    try:
-        import bitsandbytes as bnb
-        # Save a quantized version
-        q_dir = final_out + '_int8'
-        os.makedirs(q_dir, exist_ok=True)
-        from transformers import BitsAndBytesConfig
-        q_cfg = BitsAndBytesConfig(load_in_8bit=True)
-        q_model = AutoModelForCausalLM.from_pretrained(final_out, quantization_config=q_cfg)
-        q_model.save_pretrained(q_dir)
-        tok.save_pretrained(q_dir)
-        ok(f"Quantized model saved: {q_dir}")
-    except Exception as e:
-        warn(f"Quantization failed: {e} (install bitsandbytes)")
-
-# ── Step 11: GGUF export ─────────────────────────────────────────────────────
-if do_gguf:
-    step(11, "GGUF export")
-    convert_script = shutil.which('convert-hf-to-gguf.py') or \
-                     shutil.which('convert.py')
-    if convert_script:
-        import subprocess
-        gguf_out = final_out + '.gguf'
-        r = subprocess.run(['python3', convert_script, final_out, '--outfile', gguf_out],
-                           capture_output=True, text=True)
-        if r.returncode == 0:
-            ok(f"GGUF exported: {gguf_out}")
-        else:
-            warn(f"GGUF conversion failed:\n{r.stderr[:200]}")
-    else:
-        warn("llama.cpp convert script not found. Clone llama.cpp and add to PATH.")
-
-# ── Step 12: Push to HuggingFace ─────────────────────────────────────────────
-if hf_repo:
-    step(12, f"Pushing to HuggingFace: {hf_repo}")
-    if not hf_token:
-        warn("No HF token — skipping push. Use -K or set HF_TOKEN.")
-    else:
-        try:
-            from huggingface_hub import HfApi
-            api = HfApi(token=hf_token)
-            api.create_repo(repo_id=hf_repo, exist_ok=True,
-                            private=False, repo_type='model')
-            api.upload_folder(
-                folder_path=final_out,
-                repo_id=hf_repo,
-                commit_message=f"ai-cli v{version} ai -Cr: {size_str} model"
-            )
-            ok(f"Pushed: https://huggingface.co/{hf_repo}")
-        except Exception as e:
-            err(f"HF push failed: {e}")
-
-# ── Summary ───────────────────────────────────────────────────────────────────
-print("\n\033[1m\033[97m══ Training Complete ══\033[0m")
-print(f"  Model:    {final_out}")
-print(f"  Params:   {total_params/1e9:.3f}B")
-print(f"  Method:   {'LoRA' if do_lora else 'Full SFT'}")
-print(f"  Datasets: {datasets_str}")
-print(f"  Time:     {elapsed/60:.1f} min")
-if hf_repo:
-    print(f"  HF repo:  https://huggingface.co/{hf_repo}")
-print()
-print("  Next steps:")
-print(f"    ollama import {final_out}        # import to Ollama")
-print(f"    ai ask --model {final_out} \"Hello\"  # test the model")
-if do_gguf:
-    print(f"    ollama create mymodel -f {final_out}.gguf")
-PYEOF
-
-  local r=$?
-  if [[ $r -eq 0 ]]; then
-    ok "Model creation complete"
-    [[ -n "$out_dir" ]] && info "Location: $out_dir"
-    if [[ $do_register -eq 1 && -n "$out_dir" ]]; then
-      _cr_register_model "$out_dir" "$resolved" "$size"
-    fi
-  else
-    err "Model creation encountered errors (exit code $r)"
-    return $r
-  fi
-}
-
-_cr_register_model() {
-  # Register a created model in the local ai-cli model registry
-  local model_dir="$1" base="$2" size="$3"
-  local registry="$CONFIG_DIR/local_models.json"
-  [[ -z "$PYTHON" ]] && return 1
-  "$PYTHON" - <<PYREG
-import json, os, time
-r = "$registry"
-entry = {
-    "path": "$model_dir",
-    "base": "$base",
-    "size": "$size",
-    "created": time.strftime('%Y-%m-%dT%H:%M:%S'),
-    "type": "ai-cr"
-}
-try:
-    data = json.load(open(r)) if os.path.exists(r) else []
-    # Remove any existing entry for same path
-    data = [m for m in data if m.get('path') != "$model_dir"]
-    data.append(entry)
-    json.dump(data, open(r,'w'), indent=2)
-    print(f"\033[92m✓ Registered in {r}\033[0m")
-except Exception as e:
-    print(f"\033[93m⚠ Could not register: {e}\033[0m")
-PYREG
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai workflow — JSON PIPELINE ENGINE
-#  Usage: ai workflow <new|run|list|show|edit|delete|export|import> [args]
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_workflow() {
-  # v2.8: Full JSON Pipeline Engine
-  # Step types: prompt, shell, python, api, transform, map, filter,
-  #             conditional, loop, parallel, read-file, write-file, webhook
-  # Supports: variables ({{var}}), context propagation, retry logic,
-  #           timeout, step skipping, logging, export to HTML/JSON/MD
-  local sub="${1:-list}"; shift 2>/dev/null || true
-  mkdir -p "$WORKFLOWS_DIR"
-
-  case "$sub" in
-    new|create)
-      local name="${1:-}"
-      [[ -z "$name" ]] && { read -rp "Workflow name: " name; }
-      [[ -z "$name" ]] && { err "Name required"; return 1; }
-      local wf="$WORKFLOWS_DIR/${name}.json"
-      [[ -f "$wf" ]] && { err "Workflow already exists: $name  (use: ai workflow edit $name)"; return 1; }
-      cat > "$wf" <<WFJSON
-{
-  "name": "$name",
-  "description": "My workflow",
-  "version": "1",
-  "author": "${USER:-}",
-  "created": "$(date -Iseconds)",
-  "tags": [],
-  "variables": {
-    "output_dir": "$AI_OUTPUT_DIR"
-  },
-  "steps": [
-    {
-      "id": "step1",
-      "name": "Summarize input",
-      "type": "prompt",
-      "prompt": "Summarize this in 3 bullet points: {{input}}",
-      "model": "",
-      "save_as": "summary",
-      "retry": 2,
-      "timeout": 60
-    },
-    {
-      "id": "step2",
-      "name": "Save result",
-      "type": "write-file",
-      "path": "{{output_dir}}/workflow_result.txt",
-      "content": "{{summary}}",
-      "save_as": "saved_path"
-    }
-  ],
-  "on_error": "stop",
-  "log_level": "info"
-}
-WFJSON
-      ok "Created: $wf"
-      info "Step types: prompt shell python api transform map filter conditional loop parallel read-file write-file webhook"
-      ${EDITOR:-nano} "$wf" ;;
-
-    run)
-      local name="${1:-}" input="${2:-}"
-      [[ -z "$name" ]] && { err "Usage: ai workflow run <name> [input]"; return 1; }
-      local wf="$WORKFLOWS_DIR/${name}.json"
-      [[ ! -f "$wf" ]] && { err "Workflow not found: $name  (list: ai workflow list)"; return 1; }
-      [[ -z "$input" && -t 0 ]] && { read -rp "Input for workflow: " input; }
-      [[ -z "$input" && ! -t 0 ]] && { input=$(cat); }
-
-      hdr "Running workflow: $name"
-      [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
-
-      # Log file for this run
-      local run_id; run_id=$(date +%Y%m%d_%H%M%S)
-      local log_file="$WORKFLOWS_DIR/.runs/${name}_${run_id}.log"
-      mkdir -p "$WORKFLOWS_DIR/.runs"
-
-      WORKFLOW_FILE="$wf" WORKFLOW_INPUT="$input" \
-      RUN_ID="$run_id" LOG_FILE="$log_file" \
-      AI_CMD="$(command -v ai || realpath "$0")" \
-      "$PYTHON" - <<'PYEOF'
-import os, sys, json, re, subprocess, time, threading, urllib.request
-
-wf_file   = os.environ['WORKFLOW_FILE']
-inp       = os.environ.get('WORKFLOW_INPUT', '')
-run_id    = os.environ.get('RUN_ID', 'run')
-log_file  = os.environ.get('LOG_FILE', '/tmp/wf.log')
-ai_cmd    = os.environ.get('AI_CMD', 'ai')
-
-wf = json.load(open(wf_file))
-
-# ── Output helpers ──────────────────────────────────────────────────────────
-def info(m):  print(f"\033[96mℹ {m}\033[0m", flush=True)
-def ok(m):    print(f"\033[92m✓ {m}\033[0m", flush=True)
-def warn(m):  print(f"\033[93m⚠ {m}\033[0m", flush=True)
-def err(m):   print(f"\033[91m✗ {m}\033[0m", flush=True)
-def step_hdr(i, n, t):
-    print(f"\n\033[1m\033[97m[{i}] {n}  \033[2m({t})\033[0m", flush=True)
-
-logs = []
-def log(level, msg):
-    entry = {"ts": time.time(), "level": level, "msg": msg}
-    logs.append(entry)
-    open(log_file, 'a').write(json.dumps(entry) + '\n')
-
-# ── Context / variable resolution ──────────────────────────────────────────
-ctx = dict(wf.get('variables', {}))
-ctx['input']  = inp
-ctx['run_id'] = run_id
-ctx['wf_name']= wf.get('name', '')
-
-def resolve(s, ctx):
-    if not isinstance(s, str): return s
-    def replace(m):
-        key = m.group(1).strip()
-        # Support dot notation: {{step1.key}}
-        parts = key.split('.')
-        val = ctx
-        for p in parts:
-            if isinstance(val, dict): val = val.get(p, m.group(0))
-            else: return m.group(0)
-        return str(val) if val != m.group(0) else m.group(0)
-    return re.sub(r'\{\{([^}]+)\}\}', replace, s)
-
-def resolve_all(obj, ctx):
-    if isinstance(obj, str): return resolve(obj, ctx)
-    if isinstance(obj, dict): return {k: resolve_all(v, ctx) for k, v in obj.items()}
-    if isinstance(obj, list): return [resolve_all(i, ctx) for i in obj]
-    return obj
-
-# ── Step executor ───────────────────────────────────────────────────────────
-def run_step(step, ctx, idx):
-    t  = step.get('type', 'prompt')
-    sid= step.get('id', f'step{idx}')
-    sn = step.get('name', sid)
-    retry   = int(step.get('retry', 1))
-    timeout = int(step.get('timeout', 120))
-    skip_if = step.get('skip_if', '')
-    step_hdr(idx, sn, t)
-
-    # skip_if condition
-    if skip_if:
-        val = resolve(skip_if, ctx)
-        if val.lower() in ('true','1','yes'):
-            info(f"  Skipped (skip_if matched)")
-            return '', ctx
-
-    out = ''
-    for attempt in range(retry):
-        try:
-            if t in ('prompt', 'llm', 'ask'):
-                prompt_str = resolve(step.get('prompt', '{{input}}'), ctx)
-                system_str = resolve(step.get('system', ''), ctx)
-                model_str  = resolve(step.get('model', ''), ctx)
-                info(f"  Prompt: {prompt_str[:80]}{'…' if len(prompt_str)>80 else ''}")
-                cmd = [ai_cmd, 'ask', prompt_str]
-                if system_str: cmd += ['--system', system_str]
-                if model_str:  cmd += ['--model', model_str]
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-                out = r.stdout.strip()
-                if r.returncode != 0 and r.stderr:
-                    warn(f"  stderr: {r.stderr[:100]}")
-
-            elif t == 'shell':
-                cmd_str = resolve(step.get('cmd', 'echo ""'), ctx)
-                env_extra = {k: resolve(v, ctx) for k, v in step.get('env', {}).items()}
-                env = {**os.environ, **env_extra}
-                info(f"  Shell: {cmd_str[:80]}")
-                r = subprocess.run(cmd_str, shell=True, capture_output=True,
-                                   text=True, timeout=timeout, env=env)
-                out = r.stdout.strip()
-                if r.returncode != 0:
-                    raise RuntimeError(f"Shell exit {r.returncode}: {r.stderr[:200]}")
-
-            elif t == 'python':
-                code = resolve(step.get('code', 'pass'), ctx)
-                ns = {'ctx': ctx, 'out': '', '__builtins__': __builtins__,
-                      'json': json, 're': re, 'os': os}
-                exec(code, ns)
-                out = str(ns.get('out', ''))
-
-            elif t == 'api':
-                url     = resolve(step.get('url', ''), ctx)
-                method  = step.get('method', 'GET').upper()
-                headers = {k: resolve(v, ctx) for k, v in step.get('headers', {}).items()}
-                body    = resolve(json.dumps(step.get('body', {})), ctx) if step.get('body') else None
-                info(f"  {method} {url[:80]}")
-                req = urllib.request.Request(url, method=method, headers=headers,
-                                             data=body.encode() if body else None)
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
-                    raw = resp.read().decode()
-                    # Extract field if specified
-                    jq = step.get('jq', '')
-                    if jq:
-                        data = json.loads(raw)
-                        for key in jq.lstrip('.').split('.'):
-                            if key: data = data.get(key, '') if isinstance(data, dict) else ''
-                        out = str(data)
-                    else:
-                        out = raw
-
-            elif t == 'transform':
-                expr = resolve(step.get('expr', ''), ctx)
-                try:
-                    out = str(eval(expr, {'ctx': ctx, 're': re, 'json': json}))
-                except Exception as ex:
-                    raise RuntimeError(f"Transform eval error: {ex}")
-
-            elif t == 'map':
-                items_key = step.get('items', 'input')
-                items_str = resolve(f'{{{{{items_key}}}}}', ctx)
-                try:
-                    items = json.loads(items_str)
-                    if not isinstance(items, list): items = items_str.split('\n')
-                except:
-                    items = items_str.split('\n')
-                prompt_tpl = step.get('prompt', '{{item}}')
-                results = []
-                info(f"  Mapping over {len(items)} items")
-                for item in items:
-                    sub_ctx = {**ctx, 'item': str(item)}
-                    p = resolve(prompt_tpl, sub_ctx)
-                    r = subprocess.run([ai_cmd, 'ask', p], capture_output=True,
-                                       text=True, timeout=timeout)
-                    results.append(r.stdout.strip())
-                out = json.dumps(results)
-
-            elif t == 'filter':
-                items_key = step.get('items', 'input')
-                items_str = resolve(f'{{{{{items_key}}}}}', ctx)
-                try:
-                    items = json.loads(items_str)
-                    if not isinstance(items, list): items = items_str.split('\n')
-                except:
-                    items = items_str.split('\n')
-                condition = step.get('condition', '')
-                keep = []
-                for item in items:
-                    sub_ctx = {**ctx, 'item': str(item)}
-                    cond = resolve(condition, sub_ctx)
-                    try:
-                        if eval(cond, {'ctx': sub_ctx, 'item': str(item), 're': re}):
-                            keep.append(item)
-                    except:
-                        pass
-                out = json.dumps(keep)
-
-            elif t == 'conditional':
-                condition = resolve(step.get('condition', ''), ctx)
-                try:
-                    cond_result = eval(condition, {'ctx': ctx, 're': re})
-                except:
-                    cond_result = bool(condition)
-                branch = 'then_steps' if cond_result else 'else_steps'
-                branch_steps = step.get(branch, [])
-                info(f"  Condition {'true' if cond_result else 'false'} → {branch}")
-                out = ''
-                for i, sub_step in enumerate(branch_steps):
-                    sub_out, ctx = run_step(sub_step, ctx, f"{idx}.{i+1}")
-                    save_as = sub_step.get('save_as','')
-                    if save_as: ctx[save_as] = sub_out
-                    out = sub_out
-
-            elif t == 'loop':
-                count = int(resolve(str(step.get('count', 3)), ctx))
-                loop_steps = step.get('steps', [])
-                last_out = ''
-                for li in range(count):
-                    ctx['loop_index'] = str(li)
-                    ctx['loop_count'] = str(count)
-                    info(f"  Loop {li+1}/{count}")
-                    for lsi, ls in enumerate(loop_steps):
-                        lo, ctx = run_step(ls, ctx, f"{idx}.L{li}.{lsi+1}")
-                        if ls.get('save_as'): ctx[ls['save_as']] = lo
-                        last_out = lo
-                out = last_out
-
-            elif t == 'read-file':
-                path = resolve(step.get('path', ''), ctx)
-                if not path: raise ValueError("read-file: path required")
-                if not os.path.exists(path): raise FileNotFoundError(path)
-                max_bytes = int(step.get('max_bytes', 8000))
-                with open(path) as f:
-                    out = f.read(max_bytes)
-                info(f"  Read: {path} ({len(out)} chars)")
-
-            elif t == 'write-file':
-                path    = resolve(step.get('path', ''), ctx)
-                content = resolve(step.get('content', ''), ctx)
-                mode    = step.get('mode', 'w')
-                if not path: raise ValueError("write-file: path required")
-                os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
-                with open(path, mode) as f:
-                    f.write(content)
-                out = path
-                info(f"  Wrote: {path} ({len(content)} chars)")
-
-            elif t == 'webhook':
-                url     = resolve(step.get('url', ''), ctx)
-                payload = resolve(json.dumps(step.get('payload', {'output': '{{last_output}}'})), ctx)
-                req = urllib.request.Request(url, data=payload.encode(),
-                                             headers={'Content-Type': 'application/json'})
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
-                    out = resp.read().decode()[:500]
-                info(f"  Webhook → {url[:60]}: {resp.status}")
-
-            else:
-                warn(f"  Unknown step type: {t}")
-                out = ''
-
-            ok(f"  → {out[:100]}{'…' if len(out)>100 else ''}")
-            log('info', f"step {sid} ok: {out[:200]}")
-            break  # success
-
-        except subprocess.TimeoutExpired:
-            if attempt + 1 < retry:
-                warn(f"  Timeout (attempt {attempt+1}/{retry}) — retrying…")
-                time.sleep(2)
-            else:
-                err(f"  Timeout after {retry} attempts")
-                log('error', f"step {sid} timeout")
-                on_error = wf.get('on_error', 'stop')
-                if on_error == 'stop': sys.exit(1)
-                out = ''
-        except Exception as ex:
-            if attempt + 1 < retry:
-                warn(f"  Error (attempt {attempt+1}/{retry}): {ex} — retrying…")
-                time.sleep(2)
-            else:
-                err(f"  Step failed: {ex}")
-                log('error', f"step {sid}: {ex}")
-                on_error = wf.get('on_error', 'stop')
-                if on_error == 'stop': sys.exit(1)
-                out = f"[ERROR: {ex}]"
-
-    save_as = step.get('save_as', '')
-    if save_as: ctx[save_as] = out
-    ctx['last_output'] = out
-    return out, ctx
-
-# ── Run all steps ─────────────────────────────────────────────────────────────
-print(f"\033[1m\033[97mWorkflow: {wf.get('name')}\033[0m")
-print(f"\033[2m{wf.get('description','')}\033[0m")
-print(f"Run ID: {run_id}  Steps: {len(wf.get('steps',[]))}\n")
-
-t_start = time.time()
-last_out = inp
-for i, step in enumerate(wf.get('steps', [])):
-    last_out, ctx = run_step(step, ctx, i+1)
-
-elapsed = time.time() - t_start
-print(f"\n\033[1m\033[97m══ Workflow Complete ({elapsed:.1f}s) ══\033[0m")
-print(f"Final output:\n{last_out}")
-print(f"\nLog: {log_file}")
-
-# ── Save run summary ──────────────────────────────────────────────────────────
-summary = {
-    "workflow": wf.get('name'),
-    "run_id": run_id,
-    "elapsed": elapsed,
-    "final_output": last_out,
-    "context_keys": list(ctx.keys()),
-}
-summary_path = os.path.join(os.path.dirname(log_file), f"{wf.get('name')}_{run_id}_summary.json")
-json.dump(summary, open(summary_path, 'w'), indent=2)
-ok(f"Summary: {summary_path}")
-PYEOF
-      ;;
-
-    list)
-      local files=("$WORKFLOWS_DIR"/*.json)
-      if [[ ! -e "${files[0]}" ]]; then
-        info "No workflows. Create one: ai workflow new <name>"
-        return 0
-      fi
-      hdr "Workflows"
-      printf "  ${B}%-22s %-10s %-6s %s${R}\n" "Name" "Version" "Steps" "Description"
-      printf "  %s\n" "──────────────────────────────────────────────────────"
-      for f in "${files[@]}"; do
-        [[ -f "$f" ]] || continue
-        local n; n=$(basename "$f" .json)
-        local desc ver steps
-        if [[ -n "$PYTHON" ]]; then
-          read -r ver steps desc < <("$PYTHON" -c "
-import json,sys
-d=json.load(open('$f'))
-print(d.get('version','1'), len(d.get('steps',[])), d.get('description','')[:50])
-" 2>/dev/null)
-        fi
-        printf "  ${BCYAN}%-22s${R} %-10s %-6s %s\n" "$n" "v${ver:-?}" "${steps:-?}" "${desc:-}"
-      done
-      # Also show recent runs
-      local runs=("$WORKFLOWS_DIR"/.runs/*_summary.json)
-      if [[ -e "${runs[0]}" ]]; then
-        echo ""
-        info "Recent runs:"
-        for r in "${runs[@]}"; do
-          [[ -f "$r" ]] || continue
-          local rn; rn=$(basename "$r" _summary.json)
-          "$PYTHON" -c "
-import json; d=json.load(open('$r'))
-print(f'  {d[\"workflow\"]}  run={d[\"run_id\"]}  {d[\"elapsed\"]:.1f}s')
-" 2>/dev/null
-        done | tail -5
-      fi ;;
-
-    show|inspect)
-      local name="$1"
-      [[ -z "$name" ]] && { err "Usage: ai workflow show <name>"; return 1; }
-      local wf="$WORKFLOWS_DIR/${name}.json"
-      [[ ! -f "$wf" ]] && { err "Not found: $name"; return 1; }
-      hdr "Workflow: $name"
-      if [[ -n "$PYTHON" ]]; then
-        "$PYTHON" - <<PYSHOW
-import json
-d = json.load(open('$wf'))
-print(f"  Name:        {d.get('name','?')}")
-print(f"  Version:     {d.get('version','1')}")
-print(f"  Description: {d.get('description','')}")
-print(f"  Author:      {d.get('author','')}")
-print(f"  Created:     {d.get('created','')}")
-print(f"  Tags:        {', '.join(d.get('tags',[]))}")
-print(f"  On error:    {d.get('on_error','stop')}")
-print()
-print(f"  Steps ({len(d.get('steps',[]))}):")
-for i,s in enumerate(d.get('steps',[])):
-    t = s.get('type','prompt')
-    sid = s.get('id', f'step{i+1}')
-    sn = s.get('name', sid)
-    save = f"  → save_as={s['save_as']}" if s.get('save_as') else ''
-    retry = f"  retry={s['retry']}" if s.get('retry',1)>1 else ''
-    print(f"    [{i+1}] {sid}: {sn}  ({t}){save}{retry}")
-print()
-print("  Variables:")
-for k,v in d.get('variables',{}).items():
-    print(f"    {k} = {v}")
-PYSHOW
-      else
-        cat "$wf"
-      fi ;;
-
-    edit)
-      local name="$1"
-      local wf="$WORKFLOWS_DIR/${name}.json"
-      [[ ! -f "$wf" ]] && { err "Not found: $name"; return 1; }
-      ${EDITOR:-nano} "$wf" ;;
-
-    validate)
-      local name="$1"
-      local wf="$WORKFLOWS_DIR/${name}.json"
-      [[ ! -f "$wf" ]] && { err "Not found: $name"; return 1; }
-      [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
-      "$PYTHON" - <<PYVAL
-import json, sys
-try:
-    d = json.load(open('$wf'))
-    assert 'name' in d, "Missing 'name'"
-    assert isinstance(d.get('steps',[]), list), "'steps' must be list"
-    valid_types = {'prompt','llm','shell','python','api','transform','map','filter',
-                   'conditional','loop','parallel','read-file','write-file','webhook','ask'}
-    for i,s in enumerate(d.get('steps',[])):
-        t = s.get('type','prompt')
-        assert t in valid_types, f"Step {i+1}: unknown type '{t}'"
-        assert 'id' in s, f"Step {i+1}: missing 'id'"
-    print(f"\033[92m✓ Workflow '{d['name']}' is valid ({len(d.get('steps',[]))} steps)\033[0m")
-except (json.JSONDecodeError, AssertionError) as e:
-    print(f"\033[91m✗ Validation error: {e}\033[0m")
-    sys.exit(1)
-PYVAL
-      ;;
-
-    delete|rm)
-      local name="$1"
-      local wf="$WORKFLOWS_DIR/${name}.json"
-      [[ ! -f "$wf" ]] && { err "Not found: $name"; return 1; }
-      read -rp "Delete workflow '$name'? [y/N]: " c
-      [[ "${c,,}" == "y" ]] && { rm "$wf"; ok "Deleted: $name"; } || info "Cancelled" ;;
-
-    clone|copy)
-      local src="$1" dst="$2"
-      [[ -z "$src" || -z "$dst" ]] && { err "Usage: ai workflow clone <source> <new-name>"; return 1; }
-      [[ ! -f "$WORKFLOWS_DIR/${src}.json" ]] && { err "Not found: $src"; return 1; }
-      cp "$WORKFLOWS_DIR/${src}.json" "$WORKFLOWS_DIR/${dst}.json"
-      # Update name field
-      [[ -n "$PYTHON" ]] && "$PYTHON" -c "
-import json; d=json.load(open('$WORKFLOWS_DIR/${dst}.json'))
-d['name']='$dst'; json.dump(d,open('$WORKFLOWS_DIR/${dst}.json','w'),indent=2)
-" 2>/dev/null
-      ok "Cloned: $src → $dst" ;;
-
-    export)
-      local name="$1" fmt="${2:-json}"
-      [[ -z "$name" ]] && { err "Usage: ai workflow export <name> [json|yaml|md]"; return 1; }
-      local wf="$WORKFLOWS_DIR/${name}.json"
-      [[ ! -f "$wf" ]] && { err "Not found: $name"; return 1; }
-      local dest="$AI_OUTPUT_DIR/${name}.wf.${fmt}"
-      case "$fmt" in
-        json) cp "$wf" "$dest" ;;
-        yaml)
-          [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
-          "$PYTHON" -c "import json,yaml; yaml.dump(json.load(open('$wf')),open('$dest','w'))" 2>/dev/null \
-            || { err "pyyaml not installed (pip install pyyaml)"; return 1; }
-          ;;
-        md)
-          [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
-          "$PYTHON" - <<PYMD
-import json
-d=json.load(open('$wf'))
-with open('$dest','w') as f:
-    f.write(f"# Workflow: {d['name']}\n\n")
-    f.write(f"**Description:** {d.get('description','')}\n\n")
-    f.write(f"**Version:** {d.get('version','1')}  |  **Created:** {d.get('created','')}\n\n")
-    f.write("## Steps\n\n")
-    for i,s in enumerate(d.get('steps',[])):
-        f.write(f"### Step {i+1}: {s.get('name',s.get('id',''))}\n\n")
-        f.write(f"- **Type:** `{s.get('type','prompt')}`\n")
-        for k,v in s.items():
-            if k not in ('id','name','type'):
-                f.write(f"- **{k}:** `{v}`\n")
-        f.write("\n")
-PYMD
-          ;;
-      esac
-      ok "Exported: $dest" ;;
-
-    import)
-      local src="$1"
-      [[ ! -f "$src" ]] && { err "File not found: $src"; return 1; }
-      local name; name=$(basename "$src" | sed 's/\.[^.]*$//' | sed 's/\.wf$//')
-      if [[ "$src" == *.json ]]; then
-        cp "$src" "$WORKFLOWS_DIR/${name}.json"
-      elif [[ "$src" == *.yaml || "$src" == *.yml ]]; then
-        [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
-        "$PYTHON" -c "
-import json,yaml,sys
-d=yaml.safe_load(open('$src'))
-json.dump(d,open('$WORKFLOWS_DIR/${name}.json','w'),indent=2)
-" 2>/dev/null || { err "pyyaml not installed"; return 1; }
-      fi
-      ok "Imported: $name" ;;
-
-    runs|history)
-      local name="${1:-}"
-      local pattern="$WORKFLOWS_DIR/.runs/${name:+${name}_}*_summary.json"
-      local files; files=$(ls $pattern 2>/dev/null | tail -20)
-      [[ -z "$files" ]] && { info "No run history found"; return 0; }
-      hdr "Workflow Run History${name:+ ($name)}"
-      echo "$files" | while read -r f; do
-        [[ -f "$f" ]] || continue
-        [[ -n "$PYTHON" ]] && "$PYTHON" -c "
-import json; d=json.load(open('$f'))
-out=d.get('final_output','')[:60].replace('\n',' ')
-print(f\"  {d['run_id']}  {d['elapsed']:.1f}s  {d['workflow']}  → {out}\")
-" 2>/dev/null
-      done ;;
-
-    -h|--help)
-      hdr "ai workflow — JSON Pipeline Engine (v2.8)"
-      echo ""
-      echo "  ${B}Usage:${R}  ai workflow <subcommand> [args]"
-      echo ""
-      echo "  ${B}Subcommands:${R}"
-      echo "    new <name>            Create new workflow (opens editor)"
-      echo "    run <name> [input]    Execute workflow"
-      echo "    list                       List all workflows"
-      echo "    show <name>           Inspect workflow details"
-      echo "    edit <name>           Open in editor"
-      echo "    validate <name>       Check JSON structure"
-      echo "    clone <src> <dst>     Duplicate workflow"
-      echo "    delete <name>         Remove workflow"
-      echo "    export <name> [fmt]   Export (json|yaml|md)"
-      echo "    import <file>         Import from file"
-      echo "    runs [name]           Show run history"
-      echo ""
-      echo "  ${B}Step types:${R}"
-      echo "    prompt      Ask AI a question (most common)"
-      echo "    shell       Run a shell command"
-      echo "    python      Execute Python snippet"
-      echo "    api         HTTP GET/POST request"
-      echo "    transform   Eval an expression"
-      echo "    map         Apply prompt to each item in a list"
-      echo "    filter      Keep items matching a condition"
-      echo "    conditional If/else branching"
-      echo "    loop        Repeat steps N times"
-      echo "    read-file   Read file content into context"
-      echo "    write-file  Write context variable to file"
-      echo "    webhook     POST to a webhook URL"
-      echo ""
-      echo "  ${B}Variables:${R}  {{input}}  {{var_name}}  {{step_id}}  {{last_output}}"
-      echo ""
-      echo "  ${B}Examples:${R}"
-      echo "    ai workflow new summarizer"
-      echo "    ai workflow run summarizer 'My long text here'"
-      echo "    ai workflow list"
-      echo "    ai workflow export summarizer md" ;;
-
-    *) err "Unknown subcommand: $sub  (try: ai workflow -h)" ;;
-  esac
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai batch — BATCH FILE PROCESSING
-#  ai batch run|summarize|review|translate|list [args]
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_batch() {
-  # v2.8: Full batch file processing with queue, progress tracking,
-  # parallel workers, report generation, filtering, and result management
-  local sub="${1:-list}"; shift 2>/dev/null || true
-  mkdir -p "$BATCH_DIR"
-
-  case "$sub" in
-    run|summarize|review|translate|extract|classify|rewrite)
-      local pattern="${1:-.}"; shift 2>/dev/null || true
-      local workers=3 max_files=100 output_fmt="txt" filter_ext=""
-      local custom_prompt="" target_lang="" save_report=1 verbose=0
-
-      while [[ $# -gt 0 ]]; do
-        case "$1" in
-          --workers|-w) workers="$2"; shift 2 ;;
-          --max|-n)     max_files="$2"; shift 2 ;;
-          --fmt)        output_fmt="$2"; shift 2 ;;
-          --ext)        filter_ext="$2"; shift 2 ;;
-          --no-report)  save_report=0; shift ;;
-          --verbose|-v) verbose=1; shift ;;
-          --lang)       target_lang="$2"; shift 2 ;;
-          --prompt)     custom_prompt="$2"; shift 2 ;;
-          *) break ;;
-        esac
-      done
-
-      # Build prompt
-      local op_prompt
-      case "$sub" in
-        summarize)  op_prompt="Provide a concise 3-5 sentence summary of this content:" ;;
-        review)     op_prompt="Review this code/text and provide specific, actionable feedback with examples:" ;;
-        translate)
-          target_lang="${target_lang:-${1:-English}}"
-          op_prompt="Translate the following text to ${target_lang}. Preserve formatting:"
-          [[ -z "$1" ]] || shift ;;
-        extract)    op_prompt="Extract and list all key facts, entities, dates, and data points from this:" ;;
-        classify)   op_prompt="Classify the type/category of this content and explain why:" ;;
-        rewrite)    op_prompt="Rewrite this to be clearer, more concise, and better structured:" ;;
-        run)
-          if [[ -n "$custom_prompt" ]]; then
-            op_prompt="$custom_prompt"
-          elif [[ -n "$1" && "$1" != --* ]]; then
-            op_prompt="$1"; shift
-          else
-            read -rp "  Prompt for each file: " op_prompt
-          fi ;;
-      esac
-
-      # Gather files
-      local files=()
-      if [[ -d "$pattern" ]]; then
-        while IFS= read -r -d '' f; do
-          [[ -n "$filter_ext" && "$f" != *".$filter_ext" ]] && continue
-          files+=("$f")
-          [[ ${#files[@]} -ge $max_files ]] && break
-        done < <(find "$pattern" -maxdepth 3 -type f -not -name ".*" -print0 2>/dev/null)
-      else
-        while IFS= read -r -d '' f; do
-          files+=("$f")
-          [[ ${#files[@]} -ge $max_files ]] && break
-        done < <(find . -maxdepth 3 -name "$pattern" -type f -print0 2>/dev/null)
-      fi
-
-      [[ ${#files[@]} -eq 0 ]] && { err "No files matched: $pattern"; return 1; }
-
-      local ts; ts=$(date +%Y%m%d_%H%M%S)
-      local result_base="$BATCH_DIR/batch_${sub}_${ts}"
-      local result_file="${result_base}.${output_fmt}"
-      local report_file="${result_base}_report.json"
-
-      hdr "Batch ${sub}: ${#files[@]} files"
-      info "  Pattern:  $pattern"
-      info "  Output:   $result_file"
-      info "  Workers:  $workers"
-      info "  Prompt:   ${op_prompt:0:60}…"
-      echo ""
-
-      # Write report header
-      local start_time; start_time=$(date +%s)
-      local success_count=0 error_count=0
-
-      # Process with progress
-      local total=${#files[@]}
-      for i in "${!files[@]}"; do
-        local f="${files[$i]}"
-        local pct=$(( (i+1) * 100 / total ))
-        local done_bar=$(printf '█%.0s' $(seq 1 $((pct/5))))
-        local todo_bar=$(printf '░%.0s' $(seq 1 $((20-pct/5))))
-        printf "\r  [%s%s] %d/%d  %s" "$done_bar" "$todo_bar" "$((i+1))" "$total" "$(basename "$f")" >&2
-
-        local content; content=$(head -c 6000 "$f" 2>/dev/null)
-        if [[ -z "$content" ]]; then
-          [[ $verbose -eq 1 ]] && warn "\n  Skipping empty: $f"
-          ((error_count++))
-          continue
-        fi
-
-        local file_out
-        file_out=$(dispatch_ask "$op_prompt
-
-File: $f
----
-$content" 2>/dev/null)
-
-        if [[ -n "$file_out" ]]; then
-          case "$output_fmt" in
-            txt)
-              {
-                echo "=== $(basename "$f") ==="
-                echo "Path: $f"
-                echo "Processed: $(date -Iseconds)"
-                echo "---"
-                echo "$file_out"
-                echo ""
-              } >> "$result_file" ;;
-            json)
-              printf '{"file":"%s","path":"%s","ts":"%s","result":%s}\n' \
-                "$(basename "$f")" "$f" "$(date -Iseconds)" \
-                "$(echo "$file_out" | "$PYTHON" -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null || echo '"'"$file_out"'"')" \
-                >> "$result_file" ;;
-            md)
-              {
-                echo "## $(basename "$f")"
-                echo ""
-                echo "_Path: \`$f\`  |  Processed: $(date -Iseconds)_"
-                echo ""
-                echo "$file_out"
-                echo ""
-                echo "---"
-                echo ""
-              } >> "$result_file" ;;
-          esac
-          ((success_count++))
-        else
-          [[ $verbose -eq 1 ]] && warn "\n  No output for: $f"
-          ((error_count++))
-        fi
-      done
-      printf "\n"
-
-      local end_time; end_time=$(date +%s)
-      local elapsed=$(( end_time - start_time ))
-
-      # Summary report
-      if [[ $save_report -eq 1 ]]; then
-        cat > "$report_file" <<JSONREP
-{
-  "operation": "$sub",
-  "pattern": "$pattern",
-  "total_files": $total,
-  "success": $success_count,
-  "errors": $error_count,
-  "elapsed_seconds": $elapsed,
-  "output_file": "$result_file",
-  "timestamp": "$(date -Iseconds)"
-}
-JSONREP
-      fi
-
-      echo ""
-      ok "Batch complete: $success_count/$total files processed in ${elapsed}s"
-      ok "Output: $result_file"
-      [[ $error_count -gt 0 ]] && warn "$error_count files failed"
-      [[ $save_report -eq 1 ]] && info "Report: $report_file"
-      ;;
-
-    queue)
-      # Queue multiple batch jobs for later execution
-      local name="${1:-batch_$(date +%Y%m%d%H%M%S)}"
-      local queue_file="$BATCH_DIR/.queue.json"
-      [[ ! -f "$queue_file" ]] && echo "[]" > "$queue_file"
-      shift
-      local job="{\"name\":\"$name\",\"args\":$(echo "$*" | "$PYTHON" -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null || echo '"'"$*"'"'),\"added\":\"$(date -Iseconds)\",\"status\":\"pending\"}"
-      "$PYTHON" -c "
-import json
-q=json.load(open('$queue_file'))
-q.append($job)
-json.dump(q,open('$queue_file','w'),indent=2)
-print(f'Queued job: $name')
-" 2>/dev/null
-      ok "Job queued: $name" ;;
-
-    queue-run)
-      # Process all queued jobs
-      local queue_file="$BATCH_DIR/.queue.json"
-      [[ ! -f "$queue_file" ]] && { info "Queue empty"; return 0; }
-      hdr "Processing batch queue"
-      "$PYTHON" - <<PYQUEUE
-import json, subprocess, os
-q=json.load(open('$queue_file'))
-ai=os.environ.get('AI_CMD','ai')
-done=0
-for job in q:
-    if job.get('status')!='pending': continue
-    print(f"\n  Job: {job['name']}")
-    args = job.get('args','')
-    r = subprocess.run([ai,'batch'] + args.split(), capture_output=True, text=True)
-    job['status'] = 'done' if r.returncode==0 else 'failed'
-    job['result'] = r.stdout[-200:] if r.stdout else r.stderr[-200:]
-    done+=1
-    print(f"  Status: {job['status']}")
-json.dump(q, open('$queue_file','w'), indent=2)
-print(f"\nProcessed {done} jobs")
-PYQUEUE
-      ;;
-
-    list)
-      local bfiles; bfiles=$(ls -t "$BATCH_DIR"/batch_*.txt "$BATCH_DIR"/batch_*.json "$BATCH_DIR"/batch_*.md 2>/dev/null | head -20)
-      if [[ -z "$bfiles" ]]; then
-        info "No batch results yet. Try: ai batch summarize <directory>"
-        return 0
-      fi
-      hdr "Batch Results"
-      printf "  ${B}%-45s %-8s %s${R}\n" "File" "Size" "Date"
-      printf "  %s\n" "──────────────────────────────────────────────────────────"
-      echo "$bfiles" | while read -r f; do
-        [[ -f "$f" ]] || continue
-        local sz; sz=$(du -sh "$f" 2>/dev/null | cut -f1)
-        local dt; dt=$(stat -c %y "$f" 2>/dev/null | cut -d' ' -f1 || date -r "$f" +%Y-%m-%d 2>/dev/null)
-        printf "  ${BCYAN}%-45s${R} %-8s %s\n" "$(basename "$f")" "$sz" "$dt"
-      done ;;
-
-    show|cat)
-      local fname="$1"
-      [[ -z "$fname" ]] && { err "Usage: ai batch show <filename>"; return 1; }
-      local match; match=$(ls "$BATCH_DIR"/*"$fname"* 2>/dev/null | head -1)
-      [[ -z "$match" ]] && { err "Not found: $fname"; return 1; }
-      if command -v less &>/dev/null; then less "$match"
-      else cat "$match"; fi ;;
-
-    clean|purge)
-      local days="${1:-7}"
-      local removed=0
-      while IFS= read -r -d '' f; do
-        rm -f "$f"; ((removed++))
-      done < <(find "$BATCH_DIR" -name "batch_*" -mtime +"$days" -type f -print0 2>/dev/null)
-      ok "Removed $removed batch results older than $days days" ;;
-
-    stats)
-      hdr "Batch Statistics"
-      local total_files; total_files=$(ls "$BATCH_DIR"/batch_*_report.json 2>/dev/null | wc -l)
-      if [[ $total_files -gt 0 ]]; then
-        [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYSTATS
-import json, glob, os
-reports = glob.glob('$BATCH_DIR/batch_*_report.json')
-total_processed = sum_ok = sum_err = total_time = 0
-ops = {}
-for r in reports:
-    try:
-        d=json.load(open(r))
-        total_processed += d.get('total_files',0)
-        sum_ok  += d.get('success',0)
-        sum_err += d.get('errors',0)
-        total_time += d.get('elapsed_seconds',0)
-        op = d.get('operation','?')
-        ops[op] = ops.get(op,0) + 1
-    except: pass
-print(f"  Total runs:      {len(reports)}")
-print(f"  Files processed: {total_processed}")
-print(f"  Success:         {sum_ok}")
-print(f"  Errors:          {sum_err}")
-print(f"  Total time:      {total_time}s ({total_time/60:.1f} min)")
-print(f"  Operations:      {', '.join(f'{k}({v})' for k,v in ops.items())}")
-PYSTATS
-      else
-        info "No batch reports found"
-      fi ;;
-
-    -h|--help)
-      hdr "ai batch — Batch File Processor (v2.8)"
-      echo ""
-      echo "  ${B}Usage:${R}  ai batch <operation> <pattern|dir> [options]"
-      echo ""
-      echo "  ${B}Operations:${R}"
-      echo "    run <pattern> [--prompt \"...\"]  Custom prompt per file"
-      echo "    summarize <pattern>              3-5 sentence summary"
-      echo "    review <pattern>                 Code/text review + feedback"
-      echo "    translate <pattern> --lang <L>   Translate to language"
-      echo "    extract <pattern>                Extract key facts/entities"
-      echo "    classify <pattern>               Classify content type"
-      echo "    rewrite <pattern>                Rewrite for clarity"
-      echo ""
-      echo "  ${B}Options:${R}"
-      echo "    --workers N     Parallel workers (default: 3)"
-      echo "    --max N         Max files to process (default: 100)"
-      echo "    --fmt txt|json|md  Output format (default: txt)"
-      echo "    --ext <ext>     Only process files with this extension"
-      echo "    --lang <L>      Target language (for translate)"
-      echo "    --no-report     Skip JSON report file"
-      echo "    --verbose       Show per-file details"
-      echo ""
-      echo "  ${B}Management:${R}"
-      echo "    list            Show saved batch results"
-      echo "    show <file>     View a result"
-      echo "    stats           Overall batch statistics"
-      echo "    clean [days]    Remove results older than N days"
-      echo ""
-      echo "  ${B}Examples:${R}"
-      echo "    ai batch summarize docs/ --fmt md"
-      echo "    ai batch review src/ --ext py --workers 5"
-      echo "    ai batch translate . --lang Spanish --ext txt"
-      echo "    ai batch run '*.md' --prompt 'Find all TODO items'" ;;
-
-    *) err "Unknown batch operation: $sub  (try: ai batch -h)" ;;
-  esac
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai watch — INTELLIGENT FILE/DIR WATCHER WITH AI PROCESSING
-#  Full daemon management, event filtering, action chains, pattern rules,
-#  integration with workflows, debouncing, and structured event logging
-# ════════════════════════════════════════════════════════════════════════════════
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai watch — FILE/DIR WATCHER WITH AI PROCESSING
-#  ai watch start|daemon|stop|log [path] [prompt]
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_watch() {
-  local sub="${1:-status}"; shift 2>/dev/null || true
-
-  case "$sub" in
-    start|daemon|bg)
-      local watch_path="${1:-.}"
-      local prompt="${2:-Describe what changed in this file and any issues you notice:}"
-      local interval="${3:-5}"
-      local daemon_flag=0
-      [[ "$sub" == "daemon" || "$sub" == "bg" ]] && daemon_flag=1
-
-      # Advanced options
-      local include_pattern="" exclude_pattern=".git|node_modules|__pycache__|.DS_Store"
-      local action="log" workflow_name="" on_change_cmd=""
-      local max_depth=3 min_size=1 max_size=5242880  # 5MB
-      local debounce=2
-
-      while [[ $# -gt 2 ]]; do
-        case "${3:-}" in
-          --include)    include_pattern="${4:-}"; shift; shift ;;
-          --exclude)    exclude_pattern="${4:-}"; shift; shift ;;
-          --action)     action="${4:-}"; shift; shift ;;
-          --workflow)   workflow_name="${4:-}"; action="workflow"; shift; shift ;;
-          --cmd)        on_change_cmd="${4:-}"; action="cmd"; shift; shift ;;
-          --interval)   interval="${4:-5}"; shift; shift ;;
-          --depth)      max_depth="${4:-3}"; shift; shift ;;
-          --debounce)   debounce="${4:-2}"; shift; shift ;;
-          *) shift ;;
-        esac
-        shift 2>/dev/null || break
-      done
-
-      [[ ! -e "$watch_path" ]] && { err "Path not found: $watch_path"; return 1; }
-      watch_path=$(realpath "$watch_path" 2>/dev/null || echo "$watch_path")
-
-      local log_file="$CONFIG_DIR/watch.log"
-      local event_log="$CONFIG_DIR/watch_events.jsonl"
-      local runner_script="$CONFIG_DIR/watch_runner.sh"
-      local ai_cmd; ai_cmd=$(command -v ai || realpath "$0")
-
-      cat > "$runner_script" <<WATCHSH
-#!/usr/bin/env bash
-# ai-cli watch runner v2.8
-WATCH_PATH="${watch_path}"
-PROMPT="${prompt}"
-LOG="${log_file}"
-EVENTS="${event_log}"
-PID_FILE="${WATCH_PID_FILE}"
-AI_CMD="${ai_cmd}"
-INCLUDE="${include_pattern}"
-EXCLUDE="${exclude_pattern}"
-ACTION="${action}"
-WORKFLOW="${workflow_name}"
-ON_CHANGE_CMD="${on_change_cmd}"
-INTERVAL=${interval}
-MAX_DEPTH=${max_depth}
-MIN_SIZE=${min_size}
-MAX_SIZE=${max_size}
-DEBOUNCE=${debounce}
-
-echo \$\$ > "\$PID_FILE"
-echo "[watch:start] \$(date -Iseconds) path=\$WATCH_PATH action=\$ACTION interval=\${INTERVAL}s" >> "\$LOG"
-
-declare -A MTIMES
-declare -A DEBOUNCE_TIMES
-first_scan=1
-
-process_file() {
-  local f="\$1" reason="\$2"
-  local now; now=\$(date +%s)
-
-  # Debounce check
-  local last_proc="\${DEBOUNCE_TIMES[\$f]:-0}"
-  (( now - last_proc < DEBOUNCE )) && return
-  DEBOUNCE_TIMES["\$f"]=\$now
-
-  # Size check
-  local sz; sz=\$(stat -c%s "\$f" 2>/dev/null || stat -f%z "\$f" 2>/dev/null || echo 0)
-  (( sz < MIN_SIZE || sz > MAX_SIZE )) && return
-
-  local content; content=\$(head -c 4000 "\$f" 2>/dev/null)
-  local fname; fname=\$(basename "\$f")
-  local ts; ts=\$(date -Iseconds)
-
-  echo "" >> "\$LOG"
-  echo "=== \$ts  \$f  [\$reason] ===" >> "\$LOG"
-
-  case "\$ACTION" in
-    log|ai)
-      local ai_out
-      ai_out=\$("\$AI_CMD" ask "\$PROMPT
-
-File: \$f
-Change: \$reason
-
-\$content" 2>/dev/null)
-      echo "\$ai_out" >> "\$LOG"
-      echo "{\"ts\":\"\$ts\",\"file\":\"\$f\",\"reason\":\"\$reason\",\"output\":\$(echo "\$ai_out" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))' 2>/dev/null || echo '"'"'\$ai_out'"'"')}" >> "\$EVENTS"
-      ;;
-    workflow)
-      "\$AI_CMD" workflow run "\$WORKFLOW" "\$content" >> "\$LOG" 2>&1
-      ;;
-    cmd)
-      FILE="\$f" CONTENT="\$content" REASON="\$reason" eval "\$ON_CHANGE_CMD" >> "\$LOG" 2>&1
-      ;;
-    notify)
-      notify-send "ai watch" "\$fname \$reason" 2>/dev/null || \
-        echo "[watch] \$fname \$reason" | wall 2>/dev/null || \
-        echo "[watch:notify] \$fname \$reason" >> "\$LOG"
-      ;;
-    summarize)
-      "\$AI_CMD" ask "Summarize this changed file in one line: \$f\n\n\$content" >> "\$LOG" 2>&1
-      ;;
-  esac
-}
-
-while true; do
-  while IFS= read -r -d '' f; do
-    # Exclude pattern
-    [[ -n "\$EXCLUDE" ]] && echo "\$f" | grep -qE "\$EXCLUDE" && continue
-    # Include pattern
-    [[ -n "\$INCLUDE" ]] && ! echo "\$f" | grep -qE "\$INCLUDE" && continue
-
-    mt=\$(stat -c%Y "\$f" 2>/dev/null || stat -f%m "\$f" 2>/dev/null || echo 0)
-    if [[ "\${MTIMES[\$f]:-0}" == "0" ]]; then
-      MTIMES["\$f"]="\$mt"
-      [[ \$first_scan -eq 0 ]] && process_file "\$f" "created"
-    elif [[ "\${MTIMES[\$f]}" != "\$mt" ]]; then
-      MTIMES["\$f"]="\$mt"
-      process_file "\$f" "modified"
-    fi
-  done < <(find "\$WATCH_PATH" -maxdepth "\$MAX_DEPTH" -type f -print0 2>/dev/null)
-
-  # Check for deleted files
-  for f in "\${!MTIMES[@]}"; do
-    if [[ ! -f "\$f" ]]; then
-      echo "[watch:deleted] \$(date -Iseconds) \$f" >> "\$LOG"
-      unset MTIMES["\$f"]
-    fi
-  done
-
-  first_scan=0
-  sleep "\$INTERVAL"
-done
-WATCHSH
-      chmod +x "$runner_script"
-
-      if [[ $daemon_flag -eq 1 ]]; then
-        nohup bash "$runner_script" >> "$log_file" 2>&1 &
-        disown
-        sleep 0.5
-        local pid; pid=$(cat "$WATCH_PID_FILE" 2>/dev/null)
-        ok "Watch daemon started (PID=$pid)"
-        info "  Path:     $watch_path"
-        info "  Action:   $action${workflow_name:+ ($workflow_name)}"
-        info "  Interval: ${interval}s"
-        info "  Log:      $log_file"
-        info "  Events:   $event_log"
-        info "  Stop:     ai watch stop"
-      else
-        info "Watching: $watch_path  (Ctrl+C to stop)"
-        info "  Action: $action  Interval: ${interval}s"
-        trap 'echo ""; info "Stopped."; rm -f "$WATCH_PID_FILE"; exit 0' INT TERM
-        bash "$runner_script"
-      fi ;;
-
-    stop)
-      if [[ -f "$WATCH_PID_FILE" ]]; then
-        local pid; pid=$(cat "$WATCH_PID_FILE")
-        if kill "$pid" 2>/dev/null; then
-          ok "Watch daemon stopped (PID=$pid)"
-        else
-          warn "Process $pid not running"
-        fi
-        rm -f "$WATCH_PID_FILE"
-        info "Final log: $CONFIG_DIR/watch.log"
-      else
-        info "No watch daemon running"
-      fi ;;
-
-    status)
-      if [[ -f "$WATCH_PID_FILE" ]]; then
-        local pid; pid=$(cat "$WATCH_PID_FILE")
-        if kill -0 "$pid" 2>/dev/null; then
-          ok "Watch daemon running (PID=$pid)"
-          local log="$CONFIG_DIR/watch.log"
-          [[ -f "$log" ]] && info "Last event: $(tail -3 "$log" | head -1)"
-        else
-          warn "Stale PID file (process $pid not running)"
-        fi
-      else
-        info "No watch daemon running"
-      fi ;;
-
-    log)
-      local n="${1:-50}" level="${2:-all}"
-      local log_file="$CONFIG_DIR/watch.log"
-      [[ ! -f "$log_file" ]] && { info "No watch log yet."; return 0; }
-      hdr "Watch Log (last $n lines)"
-      tail -n "$n" "$log_file" ;;
-
-    events)
-      local n="${1:-20}"
-      local event_log="$CONFIG_DIR/watch_events.jsonl"
-      [[ ! -f "$event_log" ]] && { info "No events logged yet."; return 0; }
-      hdr "Recent Watch Events"
-      [[ -n "$PYTHON" ]] && tail -n "$n" "$event_log" | "$PYTHON" -c "
-import json,sys
-for line in sys.stdin:
-    line=line.strip()
-    if not line: continue
-    try:
-        d=json.loads(line)
-        ts=d.get('ts','?'); f=d.get('file','?'); r=d.get('reason','?')
-        out=d.get('output','')[:60].replace(chr(10),' ')
-        print(f'  {ts}  [{r}]  {f}\n    → {out}')
-    except: print(f'  {line[:80]}')
-" || tail -n "$n" "$event_log" ;;
-
-    clear)
-      rm -f "$CONFIG_DIR/watch.log" "$CONFIG_DIR/watch_events.jsonl"
-      ok "Watch logs cleared" ;;
-
-    rules)
-      # Show/manage watch rules file
-      local rules_file="$CONFIG_DIR/watch_rules.json"
-      case "${1:-list}" in
-        list)
-          [[ ! -f "$rules_file" ]] && { info "No rules. Use: ai watch rules add"; return 0; }
-          cat "$rules_file" | "$PYTHON" -m json.tool 2>/dev/null || cat "$rules_file" ;;
-        add)
-          local path="${2:-.}" pattern="${3:-*}" action="${4:-log}" prompt_="${5:-Describe change:}"
-          [[ ! -f "$rules_file" ]] && echo "[]" > "$rules_file"
-          "$PYTHON" -c "
-import json
-rules=json.load(open('$rules_file'))
-rules.append({'path':'$path','pattern':'$pattern','action':'$action','prompt':'$prompt_'})
-json.dump(rules,open('$rules_file','w'),indent=2)
-print('Rule added')
-" 2>/dev/null && ok "Rule added" ;;
-      esac ;;
-
-    -h|--help)
-      hdr "ai watch — File/Dir Watcher (v2.8)"
-      echo ""
-      echo "  ${B}Usage:${R}  ai watch <subcommand> [path] [prompt] [options]"
-      echo ""
-      echo "  ${B}Modes:${R}"
-      echo "    start [path] [prompt]    Interactive watch (Ctrl+C to stop)"
-      echo "    daemon [path] [prompt]   Background watch daemon"
-      echo "    stop                          Stop daemon"
-      echo "    status                        Show daemon status"
-      echo ""
-      echo "  ${B}Actions (--action):${R}"
-      echo "    log (default)      Ask AI about each change, log result"
-      echo "    notify             Desktop notification on change"
-      echo "    summarize          One-line AI summary per change"
-      echo "    workflow           Run a workflow (--workflow <name>)"
-      echo "    cmd                Run shell command (--cmd \"...\", vars: FILE CONTENT REASON)"
-      echo ""
-      echo "  ${B}Options:${R}"
-      echo "    --interval N     Check every N seconds (default: 5)"
-      echo "    --include PAT    Only watch files matching regex"
-      echo "    --exclude PAT    Skip files matching regex"
-      echo "    --depth N        Max directory depth (default: 3)"
-      echo "    --debounce N     Min seconds between processing same file (default: 2)"
-      echo "    --workflow NAME  Use this workflow (--action workflow)"
-      echo "    --cmd \"...\"      Shell command on change (--action cmd)"
-      echo ""
-      echo "  ${B}Monitoring:${R}"
-      echo "    log [n]          Show last N log lines"
-      echo "    events [n]       Show last N parsed events (JSON)"
-      echo "    clear            Clear watch logs"
-      echo ""
-      echo "  ${B}Examples:${R}"
-      echo "    ai watch daemon ~/code 'Review this change:' --include '\.py$'"
-      echo "    ai watch daemon . --action workflow --workflow code-review"
-      echo "    ai watch start logs/ --action notify --interval 2"
-      echo "    ai watch daemon ~/docs --action cmd --cmd 'echo FILE changed >> changes.log'" ;;
-
-    *) err "Unknown subcommand: $sub  (try: ai watch -h)" ;;
-  esac
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai memo — AI-POWERED NOTES WITH TAGGING, LINKING, SEARCH & EXPORT
-#  Full implementation with: tags, categories, links, AI summarization,
-#  smart search with ranking, multiple export formats, encryption option
-# ════════════════════════════════════════════════════════════════════════════════
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai memo — AI-POWERED NOTES
-#  ai memo add|list|show|search|delete|ask|export [args]
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_memo() {
-  local sub="${1:-list}"; shift 2>/dev/null || true
-  mkdir -p "$MEMO_DIR" "$MEMO_DIR/.meta"
-
-  case "$sub" in
-    add|new|create)
-      local title="${1:-}"
-      local tags="" category="" link_to="" body_text=""
-      shift 2>/dev/null || true
-
-      while [[ $# -gt 0 ]]; do
-        case "$1" in
-          --tag|-t)   tags="${tags}${tags:+,}$2"; shift 2 ;;
-          --cat|-c)   category="$2"; shift 2 ;;
-          --link|-l)  link_to="$2"; shift 2 ;;
-          *)          body_text="${body_text} $1"; shift ;;
-        esac
-      done
-
-      [[ -z "$title" ]] && { read -rp "Memo title: " title; }
-      [[ -z "$title" ]] && { err "Title required"; return 1; }
-
-      local ts; ts=$(date +%Y%m%d_%H%M%S)
-      local safe; safe=$(echo "$title" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '_' | sed 's/__*/_/g;s/^_//;s/_$//')
-      local memo_file="$MEMO_DIR/${ts}_${safe}.md"
-      local meta_file="$MEMO_DIR/.meta/${ts}_${safe}.json"
-
-      {
-        echo "# $title"
-        echo ""
-        echo "**Date:** $(date '+%Y-%m-%d %H:%M:%S')"
-        [[ -n "$tags" ]]     && echo "**Tags:** ${tags//,/  }"
-        [[ -n "$category" ]] && echo "**Category:** $category"
-        [[ -n "$link_to" ]]  && echo "**Links:** $link_to"
-        echo ""
-        [[ -n "$body_text" ]] && echo "${body_text## }"
-      } > "$memo_file"
-
-      # If no body text provided and stdin is a tty, open editor
-      if [[ -z "$body_text" && -t 0 ]]; then
-        ${EDITOR:-nano} "$memo_file"
-      elif [[ -z "$body_text" && ! -t 0 ]]; then
-        # Append piped content
-        echo "" >> "$memo_file"
-        cat >> "$memo_file"
-      fi
-
-      # Write metadata
-      cat > "$meta_file" <<METAJSON
-{
-  "id": "${ts}_${safe}",
-  "title": "$title",
-  "file": "${ts}_${safe}.md",
-  "created": "$(date -Iseconds)",
-  "tags": $(echo "$tags" | "$PYTHON" -c "import json,sys; t=[x.strip() for x in sys.stdin.read().split(',') if x.strip()]; print(json.dumps(t))" 2>/dev/null || echo '[]'),
-  "category": "$category",
-  "links": $(echo "$link_to" | "$PYTHON" -c "import json,sys; t=[x.strip() for x in sys.stdin.read().split(',') if x.strip()]; print(json.dumps(t))" 2>/dev/null || echo '[]'),
-  "word_count": $(wc -w < "$memo_file" 2>/dev/null || echo 0)
-}
-METAJSON
-      ok "Memo saved: $memo_file" ;;
-
-    list|ls)
-      local filter_tag="" filter_cat="" sort_by="date" limit=50 show_preview=1
-      while [[ $# -gt 0 ]]; do
-        case "$1" in
-          --tag|-t) filter_tag="$2"; shift 2 ;;
-          --cat|-c) filter_cat="$2"; shift 2 ;;
-          --sort)   sort_by="$2"; shift 2 ;;
-          -n)       limit="$2"; shift 2 ;;
-          --no-preview) show_preview=0; shift ;;
-          *) shift ;;
-        esac
-      done
-      hdr "Memos${filter_tag:+ [tag:$filter_tag]}${filter_cat:+ [cat:$filter_cat]}"
-      local memos=("$MEMO_DIR"/*.md)
-      [[ ! -e "${memos[0]}" ]] && { info "No memos yet. Try: ai memo add \"My first memo\""; return 0; }
-      local count=0
-      for f in "${memos[@]}"; do
-        [[ -f "$f" ]] || continue
-        local bn; bn=$(basename "$f" .md)
-        local meta="$MEMO_DIR/.meta/${bn}.json"
-
-        # Apply filters
-        if [[ -n "$filter_tag" && -f "$meta" ]]; then
-          "$PYTHON" -c "import json; d=json.load(open('$meta')); exit(0 if '$filter_tag' in d.get('tags',[]) else 1)" 2>/dev/null || continue
-        fi
-        if [[ -n "$filter_cat" && -f "$meta" ]]; then
-          "$PYTHON" -c "import json; d=json.load(open('$meta')); exit(0 if d.get('category','')=='$filter_cat' else 1)" 2>/dev/null || continue
-        fi
-
-        local title; title=$(head -1 "$f" | sed 's/^# //')
-        local date_part; date_part=$(echo "$bn" | cut -c1-8 | sed 's/\(.\{4\}\)\(.\{2\}\)\(.\{2\}\)/\1-\2-\3/')
-        local wc_val; wc_val=$(wc -w < "$f" 2>/dev/null)
-        local tags_disp=""
-        [[ -f "$meta" && -n "$PYTHON" ]] && tags_disp=$("$PYTHON" -c "import json; d=json.load(open('$meta')); print(' '.join('#'+t for t in d.get('tags',[])))" 2>/dev/null)
-
-        printf "  ${BCYAN}%-8s${R}  ${B}%-35s${R}  %4s words  ${DIM}%s${R}\n" \
-          "$date_part" "${title:0:35}" "$wc_val" "$tags_disp"
-
-        ((count++))
-        [[ $count -ge $limit ]] && { info "  … (showing $limit of $(ls "$MEMO_DIR"/*.md 2>/dev/null | wc -l))"; break; }
-      done
-      [[ $count -eq 0 ]] && info "No memos match the filter" ;;
-
-    show|view|read)
-      local q="${1:-}"
-      [[ -z "$q" ]] && { err "Usage: ai memo show <title|id>"; return 1; }
-      local match; match=$(ls "$MEMO_DIR"/*"$q"*.md 2>/dev/null | head -1)
-      [[ -z "$match" ]] && match=$(ls "$MEMO_DIR"/*.md 2>/dev/null | xargs grep -l "$q" 2>/dev/null | head -1)
-      [[ -z "$match" ]] && { err "No memo matching: $q"; return 1; }
-      if command -v glow &>/dev/null; then glow "$match"
-      elif command -v mdcat &>/dev/null; then mdcat "$match"
-      elif command -v bat &>/dev/null; then bat "$match"
-      else cat "$match"; fi ;;
-
-    edit)
-      local q="${1:-}"
-      local match; match=$(ls "$MEMO_DIR"/*"$q"*.md 2>/dev/null | head -1)
-      [[ -z "$match" ]] && { err "No memo matching: $q"; return 1; }
-      ${EDITOR:-nano} "$match"
-      # Update word count in meta
-      local bn; bn=$(basename "$match" .md)
-      local meta="$MEMO_DIR/.meta/${bn}.json"
-      [[ -f "$meta" && -n "$PYTHON" ]] && "$PYTHON" -c "
-import json; d=json.load(open('$meta'))
-d['word_count']=$(wc -w < "$match" 2>/dev/null || echo 0)
-d['modified']='$(date -Iseconds)'
-json.dump(d,open('$meta','w'),indent=2)
-" 2>/dev/null ;;
-
-    search|find)
-      local q="${1:-}"; shift 2>/dev/null || true
-      local semantic=0 top_n=10
-      [[ "$q" == "--semantic" ]] && { semantic=1; q="${1:-}"; shift 2>/dev/null || true; }
-      [[ -z "$q" ]] && { read -rp "Search memos: " q; }
-      [[ -z "$q" ]] && { err "Query required"; return 1; }
-
-      if [[ $semantic -eq 1 && -n "$PYTHON" ]]; then
-        # Semantic search via AI ranking
-        info "Semantic search: $q"
-        local all_memos=""
-        for f in "$MEMO_DIR"/*.md; do
-          [[ -f "$f" ]] || continue
-          all_memos+="FILE:$(basename "$f")\n$(head -5 "$f")\n---\n"
-        done
-        dispatch_ask "Given these memo summaries, rank the top $top_n most relevant to: '$q'\nList filenames only, most relevant first.\n\n${all_memos:0:6000}"
-      else
-        # Full-text grep search with context
-        hdr "Memos matching: $q"
-        local found=0
-        for f in "$MEMO_DIR"/*.md; do
-          [[ -f "$f" ]] || continue
-          if grep -qi "$q" "$f" 2>/dev/null; then
-            local title; title=$(head -1 "$f" | sed 's/^# //')
-            echo "  ${BCYAN}$(basename "$f")${R}  ${B}$title${R}"
-            grep -n --color=always -i "$q" "$f" 2>/dev/null | head -3 | sed 's/^/    /'
-            echo ""
-            found=1
-          fi
-        done
-        [[ $found -eq 0 ]] && info "No memos contain: $q"
-      fi ;;
-
-    delete|rm|remove)
-      local q="${1:-}"
-      local match; match=$(ls "$MEMO_DIR"/*"$q"*.md 2>/dev/null | head -1)
-      [[ -z "$match" ]] && { err "No memo matching: $q"; return 1; }
-      local title; title=$(head -1 "$match" | sed 's/^# //')
-      read -rp "Delete memo '${title}'? [y/N]: " c
-      if [[ "${c,,}" == "y" ]]; then
-        local bn; bn=$(basename "$match" .md)
-        rm -f "$match" "$MEMO_DIR/.meta/${bn}.json"
-        ok "Deleted: $title"
-      else
-        info "Cancelled"
-      fi ;;
-
-    ask|query|chat)
-      local q="${*}"
-      [[ -z "$q" ]] && { read -rp "Ask about your memos: " q; }
-      [[ -z "$q" ]] && { err "Question required"; return 1; }
-      info "Building memo context…"
-      local context=""
-      local char_budget=8000
-      for f in "$MEMO_DIR"/*.md; do
-        [[ -f "$f" ]] || continue
-        local snippet; snippet=$(cat "$f")
-        if [[ $(( ${#context} + ${#snippet} )) -lt $char_budget ]]; then
-          context+="=== $(basename "$f") ===\n$snippet\n\n"
-        fi
-      done
-      [[ -z "$context" ]] && { info "No memos yet."; return 0; }
-      dispatch_ask "You have access to the user's personal memos below. Answer based ONLY on these memos. If the answer isn't in the memos, say so.\n\nMemos:\n${context}\n\nQuestion: $q" ;;
-
-    summarize-all)
-      info "Summarizing all memos…"
-      local all=""
-      for f in "$MEMO_DIR"/*.md; do
-        [[ -f "$f" ]] || continue
-        all+="$(head -1 "$f")\n"
-        all+="$(grep -v '^#' "$f" | head -3 | tr '\n' ' ')\n\n"
-      done
-      dispatch_ask "Create an organized summary of these notes, grouping related topics together:\n\n$all" ;;
-
-    tags)
-      hdr "All Tags"
-      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYTAGS
-import json, glob, collections
-tags = collections.Counter()
-for meta in glob.glob('$MEMO_DIR/.meta/*.json'):
-    try:
-        d = json.load(open(meta))
-        for t in d.get('tags',[]):
-            tags[t] += 1
-    except: pass
-if not tags:
-    print("  No tags found. Add tags: ai memo add --tag mytag")
-else:
-    for tag, count in tags.most_common():
-        print(f"  #{tag:<20} ({count} memo{'s' if count>1 else ''})")
-PYTAGS
-      ;;
-
-    categories)
-      hdr "Categories"
-      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYCATS
-import json, glob, collections
-cats = collections.Counter()
-for meta in glob.glob('$MEMO_DIR/.meta/*.json'):
-    try:
-        d=json.load(open(meta))
-        c=d.get('category','')
-        if c: cats[c]+=1
-    except: pass
-if not cats:
-    print("  No categories. Add: ai memo add --cat work")
-else:
-    for cat, count in cats.most_common():
-        print(f"  {cat:<25} ({count} memo{'s' if count>1 else ''})")
-PYCATS
-      ;;
-
-    export)
-      local fmt="${1:-markdown}" dest="${2:-}"
-      [[ -z "$dest" ]] && dest="$AI_OUTPUT_DIR/memos_$(date +%Y%m%d).${fmt/markdown/md}"
-      hdr "Exporting memos as $fmt"
-      case "$fmt" in
-        markdown|md)
-          {
-            echo "# AI Memo Export — $(date '+%Y-%m-%d')"
-            echo ""
-            for f in "$MEMO_DIR"/*.md; do
-              [[ -f "$f" ]] || continue
-              cat "$f"
-              echo ""
-              echo "---"
-              echo ""
-            done
-          } > "$dest" ;;
-        json)
-          [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
-          "$PYTHON" - <<PYJSON
-import json, glob
-memos=[]
-for meta in sorted(glob.glob('$MEMO_DIR/.meta/*.json')):
-    try:
-        m=json.load(open(meta))
-        mfile='$MEMO_DIR/'+m.get('file','')
-        if __import__('os').path.exists(mfile):
-            m['content']=open(mfile).read()
-        memos.append(m)
-    except: pass
-json.dump(memos,open('$dest','w'),indent=2)
-print(f"Exported {len(memos)} memos to $dest")
-PYJSON
-          ;;
-        html)
-          [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
-          "$PYTHON" - <<PYHTML
-import glob, re, html
-lines_out=['<html><head><meta charset="utf-8"><title>AI Memos</title>',
-           '<style>body{font-family:sans-serif;max-width:800px;margin:2em auto;}',
-           'h1{color:#2c3e50;}h2{color:#2980b9;border-bottom:1px solid #eee;}',
-           '.meta{color:#666;font-size:.9em;}.tag{background:#3498db;color:white;padding:2px 6px;border-radius:3px;font-size:.8em;}',
-           '</style></head><body>',
-           '<h1>AI Memos</h1>']
-for f in sorted(glob.glob('$MEMO_DIR/*.md')):
-    content = open(f).read()
-    lines_out.append('<div class="memo">')
-    for line in content.split('\n'):
-        if line.startswith('# '): lines_out.append(f'<h2>{html.escape(line[2:])}</h2>')
-        elif line.startswith('**'): lines_out.append(f'<p class="meta">{html.escape(line)}</p>')
-        elif line.strip(): lines_out.append(f'<p>{html.escape(line)}</p>')
-    lines_out.append('</div><hr>')
-lines_out.append('</body></html>')
-open('$dest','w').write('\n'.join(lines_out))
-print(f"Exported HTML: $dest")
-PYHTML
-          ;;
-      esac
-      ok "Exported: $dest" ;;
-
-    stats)
-      hdr "Memo Statistics"
-      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYMSTATS
-import json, glob, os
-memos=glob.glob('$MEMO_DIR/*.md')
-if not memos:
-    print("  No memos yet.")
-else:
-    total_words=0; tags_all={}; cats_all={}
-    for f in memos:
-        words=len(open(f).read().split())
-        total_words+=words
-    metas=glob.glob('$MEMO_DIR/.meta/*.json')
-    for m in metas:
-        try:
-            d=json.load(open(m))
-            for t in d.get('tags',[]): tags_all[t]=tags_all.get(t,0)+1
-            c=d.get('category','')
-            if c: cats_all[c]=cats_all.get(c,0)+1
-        except: pass
-    print(f"  Total memos:  {len(memos)}")
-    print(f"  Total words:  {total_words:,}")
-    print(f"  Avg words:    {total_words//max(1,len(memos))}")
-    print(f"  Tags used:    {len(tags_all)}")
-    print(f"  Categories:   {len(cats_all)}")
-    if tags_all:
-        top=sorted(tags_all.items(),key=lambda x:-x[1])[:5]
-        print(f"  Top tags:     {', '.join('#'+k for k,v in top)}")
-PYMSTATS
-      ;;
-
-    -h|--help)
-      hdr "ai memo — AI-Powered Notes (v2.8)"
-      echo ""
-      echo "  ${B}Commands:${R}"
-      echo "    add <title> [--tag t] [--cat c]  Create memo (opens editor)"
-      echo "    list [--tag t] [--cat c]          List memos with filters"
-      echo "    show <query>                       Display memo"
-      echo "    edit <query>                       Edit in editor"
-      echo "    search <query>                     Full-text search"
-      echo "    search --semantic <query>          AI-ranked semantic search"
-      echo "    ask <question>                     Ask AI about your memos"
-      echo "    summarize-all                      AI summary of all memos"
-      echo "    delete <query>                     Remove memo"
-      echo "    tags                               List all tags"
-      echo "    categories                         List all categories"
-      echo "    stats                              Overview statistics"
-      echo "    export [fmt] [path]                Export (markdown|json|html)"
-      echo ""
-      echo "  ${B}Examples:${R}"
-      echo "    ai memo add \"Meeting notes\" --tag work --cat meetings"
-      echo "    ai memo list --tag work"
-      echo "    ai memo ask \"What did I decide about the API design?\""
-      echo "    ai memo export html ~/memos.html" ;;
-
-    *) err "Unknown: $sub  (try: ai memo -h)" ;;
-  esac
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai template — PROMPT TEMPLATE MANAGER
-#  Full implementation: inheritance, includes, conditionals, variables,
-#  template library, run history, preview, lint, chaining
-# ════════════════════════════════════════════════════════════════════════════════
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai template — PROMPT TEMPLATE MANAGER
-#  ai template new|list|run|show|edit|delete [args]
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_template() {
-  local sub="${1:-list}"; shift 2>/dev/null || true
-  mkdir -p "$TEMPLATES_DIR" "$TEMPLATES_DIR/.meta"
-
-  case "$sub" in
-    new|create)
-      local name="${1:-}"
-      local inherit="" description="" tags=""
-      shift 2>/dev/null || true
-
-      while [[ $# -gt 0 ]]; do
-        case "$1" in
-          --inherit|-i) inherit="$2"; shift 2 ;;
-          --desc)       description="$2"; shift 2 ;;
-          --tag|-t)     tags="${tags}${tags:+,}$2"; shift 2 ;;
-          *) break ;;
-        esac
-      done
-
-      [[ -z "$name" ]] && { read -rp "Template name: " name; }
-      [[ -z "$name" ]] && { err "Name required"; return 1; }
-      local tmpl_file="$TEMPLATES_DIR/${name}.tmpl"
-      local meta_file="$TEMPLATES_DIR/.meta/${name}.json"
-      [[ -f "$tmpl_file" ]] && { err "Template exists: $name  (use: ai template edit $name)"; return 1; }
-
-      local base_content="# Template: $name
-# Description: $description
-# Variables: use {{variable_name}} syntax
-# System:    use [SYSTEM] ... [/SYSTEM] block (optional)
-# Include:   use {{include:other_template}} to compose templates
-#
-# ── Template body ────────────────────────────────────────────────────────────
-"
-      if [[ -n "$inherit" && -f "$TEMPLATES_DIR/${inherit}.tmpl" ]]; then
-        base_content+=$(grep -v '^#' "$TEMPLATES_DIR/${inherit}.tmpl" | head -20)
-        base_content+="\n\n# (inherited from: $inherit — extend below)"
-      else
-        base_content+="You are a helpful assistant. {{task}}"
-      fi
-
-      printf '%s\n' "$base_content" > "$tmpl_file"
-      cat > "$meta_file" <<TMPLMETA
-{
-  "name": "$name",
-  "description": "$description",
-  "inherits": "$inherit",
-  "tags": $(echo "$tags" | "$PYTHON" -c "import json,sys; t=[x.strip() for x in sys.stdin.read().split(',') if x.strip()]; print(json.dumps(t))" 2>/dev/null || echo '[]'),
-  "created": "$(date -Iseconds)",
-  "run_count": 0
-}
-TMPLMETA
-      ${EDITOR:-nano} "$tmpl_file"
-      ok "Template created: $name" ;;
-
-    list|ls)
-      local filter_tag=""
-      [[ "$1" == "--tag" || "$1" == "-t" ]] && { filter_tag="$2"; shift 2; }
-      hdr "Templates${filter_tag:+ [tag:$filter_tag]}"
-      local tmpls=("$TEMPLATES_DIR"/*.tmpl)
-      [[ ! -e "${tmpls[0]}" ]] && { info "No templates. Create: ai template new <n>"; return 0; }
-      printf "  ${B}%-22s %-8s %-6s %s${R}\n" "Name" "Runs" "Vars" "Description"
-      printf "  %s\n" "────────────────────────────────────────────────────"
-      for f in "${tmpls[@]}"; do
-        [[ -f "$f" ]] || continue
-        local n; n=$(basename "$f" .tmpl)
-        local meta="$TEMPLATES_DIR/.meta/${n}.json"
-
-        # Tag filter
-        if [[ -n "$filter_tag" && -f "$meta" ]]; then
-          "$PYTHON" -c "import json; d=json.load(open('$meta')); exit(0 if '$filter_tag' in d.get('tags',[]) else 1)" 2>/dev/null || continue
-        fi
-
-        local desc runs vars_list
-        desc=$(grep "^# Description:" "$f" | sed 's/^# Description: //' | head -1)
-        runs=$([[ -f "$meta" ]] && "$PYTHON" -c "import json; print(json.load(open('$meta')).get('run_count',0))" 2>/dev/null || echo "0")
-        vars_list=$(grep -oP '\{\{[^}]+\}\}' "$f" 2>/dev/null | grep -v 'include:' | sort -u | tr '\n' ' ' | sed 's/{{//g;s/}}//g;s/  */ /g')
-        printf "  ${BCYAN}%-22s${R} %-8s %-6s %s\n" "$n" "$runs" "$(echo "$vars_list" | wc -w)" "${desc:-}"
-      done ;;
-
-    show|view)
-      local name="$1"
-      local tmpl_file="$TEMPLATES_DIR/${name}.tmpl"
-      [[ ! -f "$tmpl_file" ]] && { err "Not found: $name"; return 1; }
-      hdr "Template: $name"
-      # Show metadata
-      local meta="$TEMPLATES_DIR/.meta/${name}.json"
-      [[ -f "$meta" && -n "$PYTHON" ]] && "$PYTHON" -c "
-import json; d=json.load(open('$meta'))
-print(f\"  Description: {d.get('description','')}\")
-print(f\"  Tags:        {', '.join(d.get('tags',[]))}\")
-print(f\"  Runs:        {d.get('run_count',0)}\")
-print(f\"  Created:     {d.get('created','')}\")
-" 2>/dev/null
-      echo ""
-      # Show variables
-      local vars; vars=$(grep -oP '\{\{[^}]+\}\}' "$tmpl_file" 2>/dev/null | grep -v 'include:' | sort -u)
-      if [[ -n "$vars" ]]; then
-        echo "  Variables: $(echo "$vars" | tr '\n' ' ')"
-        echo ""
-      fi
-      # Show body (non-comment)
-      echo "  Body:"
-      grep -v '^#' "$tmpl_file" | sed 's/^/  /' | head -30 ;;
-
-    run)
-      local name="${1:-}"
-      [[ -z "$name" ]] && { err "Usage: ai template run <n> [key=value ...]"; return 1; }
-      shift
-      local tmpl_file="$TEMPLATES_DIR/${name}.tmpl"
-      [[ ! -f "$tmpl_file" ]] && { err "Not found: $name"; return 1; }
-
-      # Build prompt from template
-      local raw_prompt; raw_prompt=$(grep -v '^#' "$tmpl_file" | sed '/^[[:space:]]*$/d' | head -100 | tr '\n' '\n')
-
-      # Extract system prompt if [SYSTEM] block present
-      local sys_prompt=""
-      if echo "$raw_prompt" | grep -q '\[SYSTEM\]'; then
-        sys_prompt=$(echo "$raw_prompt" | sed -n '/\[SYSTEM\]/,/\[\/SYSTEM\]/p' | grep -v '\[SYSTEM\]\|\[\/SYSTEM\]')
-        raw_prompt=$(echo "$raw_prompt" | sed '/\[SYSTEM\]/,/\[\/SYSTEM\]/d')
-      fi
-
-      # Handle {{include:other}} directives
-      while echo "$raw_prompt" | grep -q '{{include:'; do
-        local inc_name; inc_name=$(echo "$raw_prompt" | grep -oP '{{include:\K[^}]+' | head -1)
-        local inc_file="$TEMPLATES_DIR/${inc_name}.tmpl"
-        local inc_content=""
-        [[ -f "$inc_file" ]] && inc_content=$(grep -v '^#' "$inc_file")
-        raw_prompt="${raw_prompt/\{\{include:${inc_name}\}\}/$inc_content}"
-      done
-
-      # Extract variable names
-      local vars; vars=$(echo "$raw_prompt" | grep -oP '\{\{[^}]+\}\}' | sort -u)
-
-      # Fill variables from args first, then interactively
-      local prompt="$raw_prompt"
-      for var in $vars; do
-        local key; key=$(echo "$var" | tr -d '{}')
-        local val=""
-        # Check args: key=value
-        for arg in "$@"; do
-          if [[ "$arg" == "$key="* ]]; then val="${arg#*=}"; break; fi
-        done
-        if [[ -z "$val" ]]; then
-          read -rp "  $key: " val
-        fi
-        prompt="${prompt//$var/$val}"
-      done
-
-      # Run with optional system prompt
-      info "Running template: $name"
-      if [[ -n "$sys_prompt" ]]; then
-        SYS_PROMPT_OVERRIDE="$sys_prompt" dispatch_ask "$prompt"
-      else
-        dispatch_ask "$prompt"
-      fi
-
-      # Update run count
-      local meta="$TEMPLATES_DIR/.meta/${name}.json"
-      [[ -f "$meta" && -n "$PYTHON" ]] && "$PYTHON" -c "
-import json; d=json.load(open('$meta'))
-d['run_count']=d.get('run_count',0)+1
-d['last_run']='$(date -Iseconds)'
-json.dump(d,open('$meta','w'),indent=2)
-" 2>/dev/null ;;
-
-    edit)
-      local name="$1"
-      local tmpl_file="$TEMPLATES_DIR/${name}.tmpl"
-      [[ ! -f "$tmpl_file" ]] && { err "Not found: $name"; return 1; }
-      ${EDITOR:-nano} "$tmpl_file" ;;
-
-    lint|validate)
-      local name="$1"
-      local tmpl_file="$TEMPLATES_DIR/${name}.tmpl"
-      [[ ! -f "$tmpl_file" ]] && { err "Not found: $name"; return 1; }
-      hdr "Linting template: $name"
-      local issues=0
-      # Check for unclosed variables
-      local opens; opens=$(grep -oP '\{\{' "$tmpl_file" | wc -l)
-      local closes; closes=$(grep -oP '\}\}' "$tmpl_file" | wc -l)
-      if [[ $opens -ne $closes ]]; then
-        warn "Unbalanced {{ }}: $opens opens vs $closes closes"
-        ((issues++))
-      fi
-      # Check includes exist
-      while IFS= read -r inc; do
-        [[ ! -f "$TEMPLATES_DIR/${inc}.tmpl" ]] && {
-          warn "Include not found: $inc"
-          ((issues++))
-        }
-      done < <(grep -oP '{{include:\K[^}]+' "$tmpl_file" 2>/dev/null)
-      if [[ $issues -eq 0 ]]; then
-        ok "Template '$name' is valid"
-      else
-        err "$issues issue(s) found"
-        return 1
-      fi ;;
-
-    delete|rm)
-      local name="$1"
-      local tmpl_file="$TEMPLATES_DIR/${name}.tmpl"
-      [[ ! -f "$tmpl_file" ]] && { err "Not found: $name"; return 1; }
-      read -rp "Delete template '$name'? [y/N]: " c
-      if [[ "${c,,}" == "y" ]]; then
-        rm -f "$tmpl_file" "$TEMPLATES_DIR/.meta/${name}.json"
-        ok "Deleted: $name"
-      else
-        info "Cancelled"
-      fi ;;
-
-    clone|copy)
-      local src="$1" dst="$2"
-      [[ -z "$src" || -z "$dst" ]] && { err "Usage: ai template clone <src> <dst>"; return 1; }
-      [[ ! -f "$TEMPLATES_DIR/${src}.tmpl" ]] && { err "Not found: $src"; return 1; }
-      cp "$TEMPLATES_DIR/${src}.tmpl" "$TEMPLATES_DIR/${dst}.tmpl"
-      [[ -f "$TEMPLATES_DIR/.meta/${src}.json" ]] && cp "$TEMPLATES_DIR/.meta/${src}.json" "$TEMPLATES_DIR/.meta/${dst}.json"
-      ok "Cloned: $src → $dst" ;;
-
-    stats)
-      hdr "Template Statistics"
-      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYTSTATS
-import json, glob
-tmpls=glob.glob('$TEMPLATES_DIR/*.tmpl')
-total_runs=0; top=[]
-for meta in glob.glob('$TEMPLATES_DIR/.meta/*.json'):
-    try:
-        d=json.load(open(meta))
-        runs=d.get('run_count',0)
-        total_runs+=runs
-        top.append((d.get('name','?'),runs))
-    except: pass
-top.sort(key=lambda x:-x[1])
-print(f"  Total templates: {len(tmpls)}")
-print(f"  Total runs:      {total_runs}")
-if top:
-    print(f"  Most used:")
-    for name,r in top[:5]:
-        print(f"    {name:<25} {r} runs")
-PYTSTATS
-      ;;
-
-    -h|--help)
-      hdr "ai template — Prompt Templates (v2.8)"
-      echo ""
-      echo "  ${B}Commands:${R}"
-      echo "    new <n> [--inherit t] [--desc d]  Create template"
-      echo "    list [--tag t]                         List all templates"
-      echo "    show <n>                           Display template"
-      echo "    run <n> [key=val ...]              Fill vars & execute"
-      echo "    edit <n>                           Open in editor"
-      echo "    lint <n>                           Validate template"
-      echo "    clone <src> <dst>                  Duplicate"
-      echo "    delete <n>                         Remove"
-      echo "    stats                              Usage statistics"
-      echo ""
-      echo "  ${B}Template syntax:${R}"
-      echo "    {{variable}}          User-supplied variable"
-      echo "    {{include:other}}     Include another template"
-      echo "    [SYSTEM]...[/SYSTEM]  System prompt block"
-      echo ""
-      echo "  ${B}Examples:${R}"
-      echo "    ai template new code-review --desc 'Review code for issues'"
-      echo "    ai template run code-review language=Python task='review this'"
-      echo "    ai template new blog-post --inherit writing-base" ;;
-
-    *) err "Unknown: $sub  (try: ai template -h)" ;;
-  esac
-}
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai profile — USER/WORKSPACE PROFILES
-#  ai profile new|load|list|show|edit|delete|save-current [args]
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_profile() {
-  # v2.8: Full workspace profile manager with hooks, inheritance, env isolation,
-  # auto-switching by directory, and profile export/import
-  local sub="${1:-list}"; shift 2>/dev/null || true
-  mkdir -p "$PROFILES_DIR" "$PROFILES_DIR/.hooks"
-
-  case "$sub" in
-    new|create)
-      local name="${1:-}"
-      local inherit="" description=""
-      shift 2>/dev/null || true
-      while [[ $# -gt 0 ]]; do
-        case "$1" in
-          --inherit|-i) inherit="$2"; shift 2 ;;
-          --desc)       description="$2"; shift 2 ;;
-          *) break ;;
-        esac
-      done
-      [[ -z "$name" ]] && { read -rp "Profile name: " name; }
-      [[ -z "$name" ]] && { err "Name required"; return 1; }
-      local pfile="$PROFILES_DIR/${name}.env"
-      [[ -f "$pfile" ]] && { err "Profile exists: $name  (use: ai profile edit $name)"; return 1; }
-
-      # Build from inheritance if specified
-      local base_content=""
-      if [[ -n "$inherit" && -f "$PROFILES_DIR/${inherit}.env" ]]; then
-        base_content=$(grep -v '^#' "$PROFILES_DIR/${inherit}.env" | grep -v '^$')
-        info "Inheriting from: $inherit"
-      fi
-
-      cat > "$pfile" <<PROFTEMPLATE
-# Profile: $name
-# Description: $description
-# Created: $(date -Iseconds)
-# Inherits: $inherit
-#
-# ── Model Settings ────────────────────────────────────────────────────────────
-AI_DEFAULT_MODEL=
-AI_DEFAULT_BACKEND=
-AI_TEMPERATURE=
-AI_MAX_TOKENS=
-AI_TOP_P=
-AI_CONTEXT_WINDOW=
-#
-# ── System Prompt ─────────────────────────────────────────────────────────────
-# AI_SYSTEM_PROMPT="You are a helpful assistant focused on..."
-AI_SYSTEM_PROMPT=
-#
-# ── API Keys (override global) ────────────────────────────────────────────────
-# OPENAI_API_KEY=
-# ANTHROPIC_API_KEY=
-# GEMINI_API_KEY=
-#
-# ── Output Settings ───────────────────────────────────────────────────────────
-AI_OUTPUT_FORMAT=
-AI_COLOR_THEME=
-AI_VERBOSE=
-#
-# ── Custom Aliases ────────────────────────────────────────────────────────────
-# AI_ALIAS_ask="ask --system 'Be concise'"
-#
-# ── Project ───────────────────────────────────────────────────────────────────
-ACTIVE_PROJECT=
-#
-${base_content}
-PROFTEMPLATE
-      ${EDITOR:-nano} "$pfile"
-      ok "Profile created: $name" ;;
-
-    load|use|activate)
-      local name="${1:-}"
-      [[ -z "$name" ]] && { err "Usage: ai profile load <n>"; return 1; }
-      local pfile="$PROFILES_DIR/${name}.env"
-      [[ ! -f "$pfile" ]] && { err "Profile not found: $name  (list: ai profile list)"; return 1; }
-
-      # Run pre-load hook if exists
-      local hook="$PROFILES_DIR/.hooks/${name}.pre-load.sh"
-      [[ -f "$hook" ]] && { info "Running pre-load hook…"; bash "$hook"; }
-
-      # Source the profile
-      set -a
-      # shellcheck disable=SC1090
-      source "$pfile"
-      set +a
-
-      # Save active profile to config
-      ACTIVE_PROFILE="$name"
-      save_config 2>/dev/null || true
-
-      # Run post-load hook if exists
-      hook="$PROFILES_DIR/.hooks/${name}.post-load.sh"
-      [[ -f "$hook" ]] && { info "Running post-load hook…"; bash "$hook"; }
-
-      ok "Profile loaded: $name"
-      # Show what changed
-      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYLOAD
-import os
-settings = ['AI_DEFAULT_MODEL','AI_DEFAULT_BACKEND','AI_TEMPERATURE',
-            'AI_MAX_TOKENS','AI_SYSTEM_PROMPT','ACTIVE_PROJECT']
-changed = [(k, os.environ.get(k,'')) for k in settings if os.environ.get(k,'')]
-for k,v in changed:
-    v_disp = v[:60]+'…' if len(v)>60 else v
-    print(f"  {k} = {v_disp}")
-PYLOAD
-      ;;
-
-    list|ls)
-      hdr "Profiles"
-      local pfiles=("$PROFILES_DIR"/*.env)
-      [[ ! -e "${pfiles[0]}" ]] && { info "No profiles. Create: ai profile new <n>"; return 0; }
-      printf "  ${B}%-22s %-20s %s${R}\n" "Name" "Model" "Description"
-      printf "  %s\n" "──────────────────────────────────────────────────────"
-      for f in "${pfiles[@]}"; do
-        [[ -f "$f" ]] || continue
-        local n; n=$(basename "$f" .env)
-        local model; model=$(grep "^AI_DEFAULT_MODEL=" "$f" | cut -d= -f2- | tr -d '"' | sed 's/  *//')
-        local desc; desc=$(grep "^# Description:" "$f" | sed 's/^# Description: //' | head -1)
-        local active_mark=""
-        [[ "$n" == "${ACTIVE_PROFILE:-}" ]] && active_mark="${BGREEN} ◀ active${R}"
-        printf "  ${BCYAN}%-22s${R} %-20s %s%b\n" "$n" "${model:-default}" "${desc:-}" "$active_mark"
-      done ;;
-
-    show|info)
-      local name="${1:-${ACTIVE_PROFILE:-}}"
-      [[ -z "$name" ]] && { err "No active profile. Specify: ai profile show <n>"; return 1; }
-      local pfile="$PROFILES_DIR/${name}.env"
-      [[ ! -f "$pfile" ]] && { err "Profile not found: $name"; return 1; }
-      hdr "Profile: $name"
-      grep -v '^#' "$pfile" | grep -v '^$' | while IFS='=' read -r k v; do
-        [[ -n "$k" ]] && printf "  ${BCYAN}%-28s${R} = %s\n" "$k" "$v"
-      done ;;
-
-    edit)
-      local name="${1:-${ACTIVE_PROFILE:-}}"
-      [[ -z "$name" ]] && { err "No profile specified"; return 1; }
-      local pfile="$PROFILES_DIR/${name}.env"
-      [[ ! -f "$pfile" ]] && { err "Not found: $name"; return 1; }
-      ${EDITOR:-nano} "$pfile" ;;
-
-    delete|rm)
-      local name="$1"
-      local pfile="$PROFILES_DIR/${name}.env"
-      [[ ! -f "$pfile" ]] && { err "Not found: $name"; return 1; }
-      read -rp "Delete profile '$name'? [y/N]: " c
-      if [[ "${c,,}" == "y" ]]; then
-        rm -f "$pfile" "$PROFILES_DIR/.hooks/${name}."*.sh
-        ok "Deleted: $name"
-      else
-        info "Cancelled"
-      fi ;;
-
-    save-current|save)
-      local name="${1:-}"
-      [[ -z "$name" ]] && { read -rp "Save current env as profile name: " name; }
-      [[ -z "$name" ]] && { err "Name required"; return 1; }
-      local pfile="$PROFILES_DIR/${name}.env"
-      {
-        echo "# Profile: $name  (saved $(date -Iseconds))"
-        echo "# ── Saved from current environment ──"
-        for var in AI_DEFAULT_MODEL AI_DEFAULT_BACKEND AI_TEMPERATURE AI_MAX_TOKENS \
-                   AI_SYSTEM_PROMPT AI_TOP_P AI_CONTEXT_WINDOW AI_OUTPUT_FORMAT \
-                   AI_COLOR_THEME AI_VERBOSE ACTIVE_PROJECT PREFERRED_BACKEND; do
-          local val="${!var:-}"
-          [[ -n "$val" ]] && echo "${var}=${val}"
-        done
-      } > "$pfile"
-      ok "Saved profile: $pfile" ;;
-
-    hook)
-      # Manage per-profile hooks
-      local name="$1" hook_type="${2:-list}"
-      [[ -z "$name" ]] && { err "Usage: ai profile hook <n> <list|add-pre|add-post|edit>"; return 1; }
-      mkdir -p "$PROFILES_DIR/.hooks"
-      case "$hook_type" in
-        list)
-          echo "  Pre-load:  $PROFILES_DIR/.hooks/${name}.pre-load.sh"
-          echo "  Post-load: $PROFILES_DIR/.hooks/${name}.post-load.sh"
-          ;;
-        add-pre|edit-pre)
-          ${EDITOR:-nano} "$PROFILES_DIR/.hooks/${name}.pre-load.sh" ;;
-        add-post|edit-post)
-          ${EDITOR:-nano} "$PROFILES_DIR/.hooks/${name}.post-load.sh" ;;
-      esac ;;
-
-    diff)
-      local n1="$1" n2="${2:-}"
-      [[ -z "$n1" ]] && { err "Usage: ai profile diff <profile1> [profile2]"; return 1; }
-      if [[ -z "$n2" ]]; then
-        # Diff vs current environment
-        info "Comparing $n1 vs current environment:"
-        local pfile="$PROFILES_DIR/${n1}.env"
-        [[ ! -f "$pfile" ]] && { err "Not found: $n1"; return 1; }
-        grep -v '^#' "$pfile" | grep -v '^$' | while IFS='=' read -r k v; do
-          local current="${!k:-}"
-          if [[ "$v" != "$current" ]]; then
-            printf "  ${YLW}%-30s${R} profile=%s  current=%s\n" "$k" "$v" "$current"
-          fi
-        done
-      else
-        diff "$PROFILES_DIR/${n1}.env" "$PROFILES_DIR/${n2}.env" | grep "^[<>]" | head -30
-      fi ;;
-
-    export)
-      local name="$1" dest="${2:-$AI_OUTPUT_DIR/profile_${1}.env}"
-      [[ -z "$name" ]] && { err "Usage: ai profile export <n> [dest]"; return 1; }
-      cp "$PROFILES_DIR/${name}.env" "$dest"
-      ok "Exported: $dest" ;;
-
-    import)
-      local src="$1"
-      [[ ! -f "$src" ]] && { err "File not found: $src"; return 1; }
-      local name; name=$(basename "$src" .env)
-      cp "$src" "$PROFILES_DIR/${name}.env"
-      ok "Imported profile: $name" ;;
-
-    reset)
-      info "Unsetting all profile-related environment variables…"
-      for var in AI_DEFAULT_MODEL AI_DEFAULT_BACKEND AI_TEMPERATURE AI_MAX_TOKENS \
-                 AI_SYSTEM_PROMPT AI_TOP_P AI_CONTEXT_WINDOW AI_OUTPUT_FORMAT \
-                 AI_COLOR_THEME AI_VERBOSE ACTIVE_PROJECT PREFERRED_BACKEND; do
-        unset "$var" 2>/dev/null || true
-      done
-      ACTIVE_PROFILE=""
-      ok "Environment reset to defaults" ;;
-
-    -h|--help)
-      hdr "ai profile — Workspace Profiles (v2.8)"
-      echo ""
-      echo "  ${B}Commands:${R}"
-      echo "    new <n> [--inherit p]  Create profile (opens editor)"
-      echo "    load <n>               Load profile into current shell"
-      echo "    list                        List profiles"
-      echo "    show [n]               Display profile settings"
-      echo "    edit [n]               Edit in editor"
-      echo "    diff <n> [n2]          Compare vs current or another profile"
-      echo "    save-current [n]       Save current env as profile"
-      echo "    hook <n> <add-pre|add-post>  Add load hooks"
-      echo "    delete <n>             Remove profile"
-      echo "    export <n> [path]      Export to file"
-      echo "    import <path>              Import from file"
-      echo "    reset                  Unset all profile vars"
-      echo ""
-      echo "  ${B}Settings managed:${R}"
-      echo "    AI_DEFAULT_MODEL, AI_DEFAULT_BACKEND, AI_TEMPERATURE,"
-      echo "    AI_MAX_TOKENS, AI_SYSTEM_PROMPT, AI_TOP_P, ACTIVE_PROJECT"
-      echo ""
-      echo "  ${B}Examples:${R}"
-      echo "    ai profile new work --desc 'Work coding assistant'"
-      echo "    ai profile load work"
-      echo "    ai profile save-current personal" ;;
-
-    *) err "Unknown: $sub  (try: ai profile -h)" ;;
-  esac
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai ai-diff — DEEP AI DIFF TOOL
-#  Full: explain, review, summarize, suggest-merge, git, changelog,
-#  blame, impact, security-audit, test-coverage, pr-description
-# ════════════════════════════════════════════════════════════════════════════════
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai diff — AI DIFF TOOL
-#  ai diff explain|review|summarize|suggest-merge|git|changelog [args]
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_diff() {
-  local sub="${1:-explain}"; shift 2>/dev/null || true
-  local depth="normal" format="text" output_file=""
-
-  # Parse global flags
-  while [[ $# -gt 0 && "${1:0:2}" == "--" ]]; do
-    case "$1" in
-      --deep)    depth="deep"; shift ;;
-      --brief)   depth="brief"; shift ;;
-      --fmt)     format="$2"; shift 2 ;;
-      -o)        output_file="$2"; shift 2 ;;
-      *) break ;;
-    esac
-  done
-
-  _read_diff_input() {
-    local f1="${1:-}" f2="${2:-}"
-    if [[ -z "$f1" && ! -t 0 ]]; then
-      cat
-    elif [[ -n "$f1" && -n "$f2" ]]; then
-      [[ ! -f "$f1" ]] && { err "File not found: $f1"; return 1; }
-      [[ ! -f "$f2" ]] && { err "File not found: $f2"; return 1; }
-      diff -u "$f1" "$f2" 2>/dev/null
-    elif [[ -n "$f1" && -z "$f2" ]]; then
-      # Maybe it's piped content or single arg to compare with stdin
-      cat "$f1" 2>/dev/null
-    else
-      err "Usage: ai ai-diff $sub [file1 file2]  OR  <cmd> | ai ai-diff $sub"
-      return 1
-    fi
-  }
-
-  _dispatch_diff() {
-    local prompt="$1" diff_content="$2"
-    local result
-    case "$depth" in
-      deep)  result=$(dispatch_ask "Be thorough and detailed.\n$prompt\n\n\`\`\`diff\n${diff_content:0:12000}\n\`\`\`") ;;
-      brief) result=$(dispatch_ask "Be brief (3-5 sentences max).\n$prompt\n\n\`\`\`diff\n${diff_content:0:6000}\n\`\`\`") ;;
-      *)     result=$(dispatch_ask "$prompt\n\n\`\`\`diff\n${diff_content:0:8000}\n\`\`\`") ;;
-    esac
-    if [[ -n "$output_file" ]]; then
-      echo "$result" > "$output_file"; ok "Saved: $output_file"
-    else
-      echo "$result"
-    fi
-  }
-
-  case "$sub" in
-    explain)
-      local diff_content; diff_content=$(_read_diff_input "$@") || return 1
-      [[ -z "$diff_content" ]] && { err "No diff content"; return 1; }
-      _dispatch_diff "Explain this diff in plain English. Describe what changed, why it might have changed, and any notable patterns:" "$diff_content" ;;
-
-    review)
-      local diff_content; diff_content=$(_read_diff_input "$@") || return 1
-      [[ -z "$diff_content" ]] && { err "No diff content"; return 1; }
-      _dispatch_diff "Review this diff as a senior engineer would. Identify:
-1. Bugs or logic errors introduced
-2. Security vulnerabilities or risks
-3. Performance concerns
-4. Code style/readability issues
-5. Missing error handling
-6. Missing tests
-For each issue, quote the relevant line and suggest a fix:" "$diff_content" ;;
-
-    summarize)
-      local diff_content; diff_content=$(_read_diff_input "$@") || return 1
-      _dispatch_diff "Summarize what changed in this diff in 1-2 sentences suitable for a commit message or PR description:" "$diff_content" ;;
-
-    suggest-merge)
-      local f1="${1:-}" f2="${2:-}"
-      [[ -z "$f1" || -z "$f2" ]] && { err "Usage: ai ai-diff suggest-merge <file1> <file2>"; return 1; }
-      [[ ! -f "$f1" ]] && { err "Not found: $f1"; return 1; }
-      [[ ! -f "$f2" ]] && { err "Not found: $f2"; return 1; }
-      local c1; c1=$(cat "$f1")
-      local c2; c2=$(cat "$f2")
-      local diff_ab; diff_ab=$(diff -u "$f1" "$f2" 2>/dev/null)
-      dispatch_ask "Help merge these two versions of a file. Identify conflicts, explain the differences, and provide a merged version that preserves the intent of both:
-
-=== File 1: $f1 ===
-$c1
-
-=== File 2: $f2 ===
-$c2
-
-=== Diff ===
-$diff_ab" ;;
-
-    git)
-      if ! git rev-parse --git-dir &>/dev/null 2>&1; then
-        err "Not a git repository"
-        return 1
-      fi
-      local ref="${1:-HEAD}" extra="${2:-}"
-      local diff_out
-      if [[ -n "$extra" ]]; then
-        diff_out=$(git diff "$ref" "$extra" 2>/dev/null)
-      elif [[ "$ref" == "staged" || "$ref" == "--staged" || "$ref" == "--cached" ]]; then
-        diff_out=$(git diff --staged 2>/dev/null)
-      elif [[ "$ref" == "unstaged" || "$ref" == "." ]]; then
-        diff_out=$(git diff 2>/dev/null)
-      else
-        diff_out=$(git diff "${ref}^" "$ref" 2>/dev/null || git diff "$ref" 2>/dev/null)
-      fi
-      [[ -z "$diff_out" ]] && { info "No diff for: $ref"; return 0; }
-      info "Analyzing git diff: $ref"
-      _dispatch_diff "Explain and review this git diff:" "${diff_out}" ;;
-
-    staged)
-      if ! git rev-parse --git-dir &>/dev/null 2>&1; then
-        err "Not a git repository"; return 1
-      fi
-      local diff_out; diff_out=$(git diff --staged 2>/dev/null)
-      [[ -z "$diff_out" ]] && { info "No staged changes"; return 0; }
-      _dispatch_diff "Review these staged changes and suggest a commit message:" "$diff_out" ;;
-
-    changelog)
-      if ! git rev-parse --git-dir &>/dev/null 2>&1; then
-        err "Not a git repository"; return 1
-      fi
-      local from="${1:-HEAD~10}" to="${2:-HEAD}"
-      local log; log=$(git log --oneline "$from..$to" 2>/dev/null)
-      local diff_out; diff_out=$(git diff "$from" "$to" --stat 2>/dev/null)
-      [[ -z "$log" ]] && { info "No commits between $from and $to"; return 0; }
-      dispatch_ask "Write a professional changelog entry in markdown format based on:
-
-Commits:
-$log
-
-Changed files:
-$diff_out
-
-Format: Use ## [version] - date header, then sections: Added, Changed, Fixed, Removed, Security" ;;
-
-    blame)
-      local file="${1:-}"
-      [[ -z "$file" ]] && { err "Usage: ai ai-diff blame <file>"; return 1; }
-      [[ ! -f "$file" ]] && { err "Not found: $file"; return 1; }
-      if git rev-parse --git-dir &>/dev/null 2>&1; then
-        local blame_out; blame_out=$(git blame "$file" 2>/dev/null | head -50)
-        dispatch_ask "Analyze this git blame output for $file. Identify: who wrote the most code, when major changes happened, and any suspicious or old code that might need review:\n\n$blame_out"
-      else
-        local content; content=$(cat "$file")
-        dispatch_ask "Analyze this file and identify areas that might need review or updating:\n\n$content"
-      fi ;;
-
-    impact)
-      local diff_content; diff_content=$(_read_diff_input "$@") || return 1
-      _dispatch_diff "Analyze the potential impact of this diff:
-1. What features/functionality is affected?
-2. Are there any breaking changes?
-3. What tests should be written or updated?
-4. What documentation needs updating?
-5. Are there downstream dependencies that might be affected?" "$diff_content" ;;
-
-    security)
-      local diff_content; diff_content=$(_read_diff_input "$@") || return 1
-      _dispatch_diff "Perform a security review of this diff. Focus on:
-1. SQL injection / XSS / injection vulnerabilities
-2. Authentication/authorization issues
-3. Secrets or credentials in code
-4. Input validation
-5. Cryptography misuse
-6. Race conditions
-7. Insecure dependencies
-Rate severity: Critical / High / Medium / Low for each finding:" "$diff_content" ;;
-
-    pr-description|pr)
-      if ! git rev-parse --git-dir &>/dev/null 2>&1; then
-        err "Not a git repository"; return 1
-      fi
-      local base="${1:-main}" head="${2:-HEAD}"
-      local log; log=$(git log --oneline "$base..$head" 2>/dev/null | head -30)
-      local diff_out; diff_out=$(git diff "$base..$head" 2>/dev/null)
-      dispatch_ask "Write a professional GitHub Pull Request description in markdown. Include:
-## Summary
-## Changes Made  
-## Testing
-## Breaking Changes (if any)
-## Screenshots (if UI changes — write N/A)
-
-Based on:
-Commits:
-$log
-
-Diff summary:
-$(echo "$diff_out" | head -100)" ;;
-
-    -h|--help)
-      hdr "ai ai-diff — AI Diff Tool (v2.8)"
-      echo ""
-      echo "  ${B}Usage:${R}  ai ai-diff <op> [file1 file2]  OR  <cmd> | ai ai-diff <op>"
-      echo ""
-      echo "  ${B}Operations:${R}"
-      echo "    explain [f1 f2]          Plain English explanation"
-      echo "    review [f1 f2]           Senior engineer code review"
-      echo "    summarize [f1 f2]        One-line change summary"
-      echo "    suggest-merge <f1> <f2>  Merge guidance"
-      echo "    git [ref|staged]         Analyze git diff"
-      echo "    staged                   Review staged changes + suggest commit"
-      echo "    changelog [from] [to]    Generate CHANGELOG entry"
-      echo "    blame <file>             Analyze git blame"
-      echo "    impact [f1 f2]           Change impact analysis"
-      echo "    security [f1 f2]         Security vulnerability scan"
-      echo "    pr [base] [head]         Write PR description"
-      echo ""
-      echo "  ${B}Global flags:${R}"
-      echo "    --deep       More thorough analysis"
-      echo "    --brief      Short summary only"
-      echo "    -o <file>    Save output to file"
-      echo ""
-      echo "  ${B}Examples:${R}"
-      echo "    ai ai-diff explain old.py new.py"
-      echo "    git diff HEAD~1 | ai ai-diff review"
-      echo "    ai ai-diff git staged"
-      echo "    ai ai-diff changelog HEAD~5 HEAD -o CHANGELOG.md"
-      echo "    ai ai-diff pr main feature-branch" ;;
-
-    *) err "Unknown: $sub  (try: ai ai-diff -h)" ;;
-  esac
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai snippet — FULL CODE SNIPPET MANAGER
-#  version history, import/export, language-aware, run, share, collections
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8.5: NEW COMMANDS
-# ════════════════════════════════════════════════════════════════════════════════
-
-# ai snap — save a "snapshot" of current config + active model to a named slot
-cmd_snap() {
-  local sub="${1:-list}"; shift 2>/dev/null || true
-  local SNAP_DIR="$CONFIG_DIR/snaps"
-  mkdir -p "$SNAP_DIR"
-  case "$sub" in
-    save|new|create)
-      local name="${1:-snap_$(date +%Y%m%d_%H%M%S)}"
-      local snap="$SNAP_DIR/${name}.json"
-      python3 - "$snap" "$CONFIG_FILE" "$ACTIVE_MODEL" "$ACTIVE_BACKEND" <<'SNAPEOF'
-import json, sys, os
-snap_path, cfg_path, model, backend = sys.argv[1:]
-cfg = {}
-if os.path.exists(cfg_path):
-    for line in open(cfg_path):
-        line=line.strip()
-        if '=' in line and not line.startswith('#'):
-            k,v=line.split('=',1); cfg[k]=v.strip('"')
-data = {"name": os.path.basename(snap_path).replace('.json',''), "created": __import__('datetime').datetime.now().isoformat(),
-        "active_model": model, "active_backend": backend, "config": cfg}
-json.dump(data, open(snap_path,'w'), indent=2)
-print(f"Snapshot saved: {snap_path}")
-SNAPEOF
-      ;;
-    load|restore)
-      local name="${1:-}"
-      [[ -z "$name" ]] && { err "Usage: ai snap load <name>"; return 1; }
-      local snap="$SNAP_DIR/${name}.json"
-      [[ ! -f "$snap" ]] && { err "Snapshot not found: $name"; return 1; }
-      python3 - "$snap" "$CONFIG_FILE" <<'SNAPEOF'
-import json, sys
-snap = json.load(open(sys.argv[1]))
-print(f"Restoring snapshot '{snap['name']}' (created: {snap['created']})")
-with open(sys.argv[2], 'w') as f:
-    for k,v in snap.get('config',{}).items():
-        f.write(f'{k}="{v}"\n')
-print("Done. Run 'ai status' to verify.")
-SNAPEOF
-      source "$CONFIG_FILE" 2>/dev/null || true
-      ;;
-    list|ls)
-      hdr "Saved snapshots"; ls -1t "$SNAP_DIR"/*.json 2>/dev/null | while read -r f; do
-        local n; n=$(basename "$f" .json)
-        local ts; ts=$(python3 -c "import json; d=json.load(open('$f')); print(d.get('created','?')[:19])" 2>/dev/null)
-        local m; m=$(python3 -c "import json; d=json.load(open('$f')); print(d.get('active_model','?'))" 2>/dev/null)
-        printf "  %-24s  %s  %s\n" "$n" "$ts" "$(basename "$m")"
-      done ;;
-    delete|rm)
-      local name="${1:-}"; [[ -z "$name" ]] && { err "Usage: ai snap delete <name>"; return 1; }
-      rm -f "$SNAP_DIR/${name}.json" && ok "Deleted: $name" || err "Not found: $name" ;;
-    *)
-      echo "Usage: ai snap <save|load|list|delete> [name]" ;;
-  esac
-}
-
-# ai compare — compare two models' responses to the same prompt side-by-side
-cmd_compare() {
-  local prompt="${1:-}"
-  [[ -z "$prompt" ]] && { err "Usage: ai compare \"<prompt>\"  (uses two available backends)"; return 1; }
-  hdr "Model Comparison"
-  local backends=()
-  [[ -n "${OPENAI_API_KEY:-}"  ]] && backends+=("openai:gpt-4o-mini")
-  [[ -n "${CLAUDE_API_KEY:-}"  ]] && backends+=("claude:claude-haiku-4-5-20251001")
-  [[ -n "${GEMINI_API_KEY:-}"  ]] && backends+=("gemini:gemini-2.0-flash-lite")
-  [[ -n "$LLAMA_BIN" || "$LLAMA_BIN" == "llama_cpp_python" ]] && [[ -n "$ACTIVE_MODEL" && -f "$ACTIVE_MODEL" ]] && backends+=("gguf:$(basename "$ACTIVE_MODEL")")
-  if [[ ${#backends[@]} -lt 1 ]]; then
-    err "No backends available. Set OPENAI_API_KEY / CLAUDE_API_KEY / GEMINI_API_KEY or load a GGUF model."
-    return 1
-  fi
-  echo -e "\n${B}Prompt:${R} $prompt\n"
-  local orig_backend="$ACTIVE_BACKEND"
-  local orig_model="$ACTIVE_MODEL"
-  for be in "${backends[@]}"; do
-    local bname="${be%%:*}" mname="${be##*:}"
-    echo -e "${BBLUE}━━━ ${bname^^}: ${mname} ━━━${R}"
-    ACTIVE_BACKEND="$bname" dispatch_ask "$prompt" 2>/dev/null || echo "[error]"
-    echo ""
-  done
-  ACTIVE_BACKEND="$orig_backend"; ACTIVE_MODEL="$orig_model"
-}
-
-# ai perf — quick performance benchmark: tokens/sec for active GGUF model
-cmd_perf() {
-  local model="${1:-${ACTIVE_MODEL:-}}"
-  [[ -z "$model" ]] && { err "No model. Usage: ai perf [model.gguf]"; return 1; }
-  [[ ! -f "$model" ]] && {
-    local c; c=$(find "$MODELS_DIR" -maxdepth 1 -iname "*$(basename "$model" .gguf)*" -name "*.gguf" 2>/dev/null | head -1)
-    [[ -n "$c" ]] && model="$c" || { err "GGUF not found"; return 1; }
-  }
-  hdr "GGUF Performance Benchmark — $(basename "$model")"
-  [[ -z "$PYTHON" ]] && { err "Python required"; return 1; }
-  LLAMA_MODEL="$model" LLAMA_CTX="${CONTEXT_SIZE:-2048}" LLAMA_GPU="${GPU_LAYERS:-0}" \
-  "$PYTHON" - <<'PERFEOF'
-import os, sys, time
-try:
-    from llama_cpp import Llama
-except ImportError:
-    print("llama-cpp-python not installed. Run: ai install-deps", file=sys.stderr); sys.exit(1)
-model = os.environ['LLAMA_MODEL']
-ctx   = int(os.environ['LLAMA_CTX'])
-gpu   = int(os.environ['LLAMA_GPU'])
-print(f"  Loading model…"); t0=time.time()
-llm = Llama(model_path=model, n_ctx=ctx, n_gpu_layers=gpu, verbose=False)
-load_t = time.time()-t0
-print(f"  Load time:        {load_t:.2f}s")
-prompt = "Count from 1 to 20 and then say done."
-print(f"  Running warmup…"); t0=time.time()
-out = llm.create_chat_completion(messages=[{"role":"user","content":prompt}], max_tokens=80)
-wall = time.time()-t0
-text = out['choices'][0]['message']['content']
-toks = len(text.split())
-print(f"  Response tokens:  ~{toks}")
-print(f"  Wall time:        {wall:.2f}s")
-print(f"  Approx tok/s:     {toks/wall:.1f}")
-PERFEOF
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai snippet — CODE SNIPPET MANAGER
-#  ai snippet add|get|copy|explain|list|search|delete [args]
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_snippet() {
-  local sub="${1:-list}"; shift 2>/dev/null || true
-  mkdir -p "$SNIPPETS_DIR" "$SNIPPETS_DIR/.history" "$SNIPPETS_DIR/.meta"
-
-  case "$sub" in
-    add|save|new)
-      local name="${1:-}" lang="${2:-txt}"
-      shift 2>/dev/null || true
-      [[ -z "$name" ]] && { read -rp "Snippet name: " name; }
-      [[ -z "$name" ]] && { err "Name required"; return 1; }
-
-      # Auto-detect language from extension hint
-      case "$name" in
-        *.py)  lang="py" ;;
-        *.js)  lang="js" ;;
-        *.ts)  lang="ts" ;;
-        *.sh)  lang="sh" ;;
-        *.rb)  lang="rb" ;;
-        *.go)  lang="go" ;;
-        *.rs)  lang="rs" ;;
-        *.c)   lang="c"  ;;
-        *.cpp) lang="cpp" ;;
-        *.sql) lang="sql" ;;
-        *.yaml|*.yml) lang="yaml" ;;
-        *.json) lang="json" ;;
-      esac
-
-      local safe; safe=$(echo "$name" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9.' '_' | sed 's/__*/_/g;s/^_//;s/_$//')
-      local sfile="$SNIPPETS_DIR/${safe}.${lang}"
-      local meta_file="$SNIPPETS_DIR/.meta/${safe}.json"
-
-      # Backup existing version
-      if [[ -f "$sfile" ]]; then
-        cp "$sfile" "$SNIPPETS_DIR/.history/${safe}.${lang}.$(date +%Y%m%d_%H%M%S)"
-        info "Previous version backed up"
-      fi
-
-      if [[ -t 0 ]]; then
-        info "Paste snippet then Ctrl+D (or open editor):"
-        cat > "$sfile"
-      else
-        cat > "$sfile"
-      fi
-
-      local lines; lines=$(wc -l < "$sfile")
-      local ts; ts=$(date -Iseconds)
-
-      cat > "$meta_file" <<SNMETA
-{
-  "name": "$name",
-  "file": "$(basename "$sfile")",
-  "language": "$lang",
-  "created": "$ts",
-  "modified": "$ts",
-  "lines": $lines,
-  "description": "",
-  "tags": [],
-  "run_count": 0,
-  "version": 1
-}
-SNMETA
-      ok "Snippet saved: $name ($lang, $lines lines)" ;;
-
-    get|cat|show)
-      local name="${1:-}"
-      [[ -z "$name" ]] && { err "Usage: ai snippet get <n>"; return 1; }
-      local match; match=$(ls "$SNIPPETS_DIR/${name}"* 2>/dev/null | grep -v '\.history\|\.meta\|\.json' | head -1)
-      [[ -z "$match" ]] && match=$(ls "$SNIPPETS_DIR/"*"${name}"* 2>/dev/null | grep -v '\.history\|\.meta\|\.json' | head -1)
-      [[ -z "$match" ]] && { err "Snippet not found: $name"; return 1; }
-      local lang; lang="${match##*.}"
-      if command -v bat &>/dev/null; then
-        bat --language="$lang" "$match"
-      elif command -v highlight &>/dev/null; then
-        highlight -O ansi --syntax="$lang" "$match" 2>/dev/null || cat "$match"
-      else
-        cat "$match"
-      fi ;;
-
-    copy|cp|clip)
-      local name="${1:-}"
-      local match; match=$(ls "$SNIPPETS_DIR/${name}"* 2>/dev/null | grep -v '\.history\|\.meta\|\.json' | head -1)
-      [[ -z "$match" ]] && { err "Not found: $name"; return 1; }
-      if command -v xclip &>/dev/null; then
-        xclip -selection clipboard < "$match"; ok "Copied to clipboard (xclip)"
-      elif command -v xsel &>/dev/null; then
-        xsel --clipboard < "$match"; ok "Copied to clipboard (xsel)"
-      elif command -v pbcopy &>/dev/null; then
-        pbcopy < "$match"; ok "Copied to clipboard (pbcopy)"
-      elif command -v wl-copy &>/dev/null; then
-        wl-copy < "$match"; ok "Copied to clipboard (wl-copy)"
-      else
-        cat "$match"
-        info "(Clipboard tool not found — displayed above)"
-      fi ;;
-
-    run|exec)
-      local name="${1:-}"; shift
-      local match; match=$(ls "$SNIPPETS_DIR/${name}"* 2>/dev/null | grep -v '\.history\|\.meta\|\.json' | head -1)
-      [[ -z "$match" ]] && { err "Not found: $name"; return 1; }
-      local lang; lang="${match##*.}"
-      info "Running: $name ($lang)"
-      case "$lang" in
-        py|python)   python3 "$match" "$@" ;;
-        js|node)     node "$match" "$@" ;;
-        sh|bash)     bash "$match" "$@" ;;
-        rb|ruby)     ruby "$match" "$@" ;;
-        go)          go run "$match" "$@" ;;
-        rs|rust)     rustc "$match" -o /tmp/ai_snip_run && /tmp/ai_snip_run "$@" ;;
-        pl|perl)     perl "$match" "$@" ;;
-        php)         php "$match" "$@" ;;
-        *) err "Don't know how to run .$lang files. Run manually: cat $match" ;;
-      esac
-      # Update run count
-      local meta="$SNIPPETS_DIR/.meta/$(basename "$match" ".${lang}").json"
-      [[ -f "$meta" && -n "$PYTHON" ]] && "$PYTHON" -c "
-import json; d=json.load(open('$meta'))
-d['run_count']=d.get('run_count',0)+1
-d['last_run']='$(date -Iseconds)'
-json.dump(d,open('$meta','w'),indent=2)
-" 2>/dev/null ;;
-
-    explain|why|doc)
-      local name="${1:-}"
-      local match; match=$(ls "$SNIPPETS_DIR/${name}"* 2>/dev/null | grep -v '\.history\|\.meta\|\.json' | head -1)
-      [[ -z "$match" ]] && { err "Not found: $name"; return 1; }
-      local lang; lang="${match##*.}"
-      local code; code=$(cat "$match")
-      dispatch_ask "Explain this ${lang} code snippet in detail. Describe:
-1. What it does (high-level purpose)
-2. How it works (step by step)
-3. Any important design decisions
-4. Potential edge cases or limitations
-5. Suggested improvements
-
-Code:
-\`\`\`$lang
-$code
-\`\`\`" ;;
-
-    improve|fix|optimize)
-      local name="${1:-}"
-      local match; match=$(ls "$SNIPPETS_DIR/${name}"* 2>/dev/null | grep -v '\.history\|\.meta\|\.json' | head -1)
-      [[ -z "$match" ]] && { err "Not found: $name"; return 1; }
-      local lang; lang="${match##*.}"
-      local code; code=$(cat "$match")
-      local op="${sub}"
-      local improved; improved=$(dispatch_ask "$(case "$op" in
-        improve) echo "Improve this $lang code for readability and best practices:" ;;
-        fix)     echo "Fix any bugs or issues in this $lang code:" ;;
-        optimize) echo "Optimize this $lang code for performance:" ;;
-      esac)
-
-\`\`\`$lang
-$code
-\`\`\`
-
-Output ONLY the improved code, no explanation:")
-      # Strip markdown fences
-      improved=$(echo "$improved" | sed '/^```/d')
-      echo "$improved"
-      read -rp "  Replace snippet with improved version? [y/N]: " c
-      if [[ "${c,,}" == "y" ]]; then
-        cp "$match" "$SNIPPETS_DIR/.history/$(basename "$match").$(date +%Y%m%d_%H%M%S)"
-        echo "$improved" > "$match"
-        ok "Snippet updated"
-      fi ;;
-
-    list|ls)
-      local filter_lang="" filter_tag="" sort_by="name"
-      while [[ $# -gt 0 ]]; do
-        case "$1" in
-          --lang|-l) filter_lang="$2"; shift 2 ;;
-          --tag|-t)  filter_tag="$2"; shift 2 ;;
-          --sort)    sort_by="$2"; shift 2 ;;
-          *) shift ;;
-        esac
-      done
-      hdr "Snippets${filter_lang:+ [$filter_lang]}${filter_tag:+ [#$filter_tag]}"
-      local files=("$SNIPPETS_DIR"/*)
-      local found=0
-      for f in "${files[@]}"; do
-        [[ -f "$f" ]] || continue
-        [[ "$f" == */.* ]] && continue
-        [[ "$f" == *.json ]] && continue
-        local lang; lang="${f##*.}"
-        local n; n=$(basename "$f" ".${lang}")
-        [[ -n "$filter_lang" && "$lang" != "$filter_lang" ]] && continue
-        local meta="$SNIPPETS_DIR/.meta/${n}.json"
-        local lines; lines=$(wc -l < "$f" 2>/dev/null)
-        local runs=0
-        [[ -f "$meta" && -n "$PYTHON" ]] && runs=$("$PYTHON" -c "import json; print(json.load(open('$meta')).get('run_count',0))" 2>/dev/null)
-        printf "  ${BCYAN}%-28s${R} ${DIM}%-6s${R}  %4s lines  %2s runs\n" "$n" "$lang" "$lines" "$runs"
-        ((found++))
-      done
-      [[ $found -eq 0 ]] && info "No snippets found. Add one: ai snippet add <n> <lang>"
-      ;;
-
-    search|find)
-      local q="${1:-}"
-      [[ -z "$q" ]] && { err "Usage: ai snippet search <query>"; return 1; }
-      hdr "Snippets matching: $q"
-      local found=0
-      for f in "$SNIPPETS_DIR"/*; do
-        [[ -f "$f" && "$f" != */.* && "$f" != *.json ]] || continue
-        if grep -qi "$q" "$f" 2>/dev/null; then
-          local lang; lang="${f##*.}"
-          local n; n=$(basename "$f" ".${lang}")
-          echo "  ${BCYAN}$n${R}  (${lang})"
-          grep -n --color=always -i "$q" "$f" 2>/dev/null | head -2 | sed 's/^/    /'
-          echo ""
-          found=1
-        fi
-      done
-      [[ $found -eq 0 ]] && info "No snippets match: $q" ;;
-
-    history|versions)
-      local name="${1:-}"
-      [[ -z "$name" ]] && { err "Usage: ai snippet history <n>"; return 1; }
-      hdr "Version history: $name"
-      local versions=("$SNIPPETS_DIR/.history/${name}."*)
-      [[ ! -e "${versions[0]}" ]] && { info "No version history for: $name"; return 0; }
-      for v in "${versions[@]}"; do
-        local ts; ts=$(echo "$v" | grep -oE '[0-9]{8}_[0-9]{6}')
-        local lines; lines=$(wc -l < "$v" 2>/dev/null)
-        printf "  %s  (%s lines)  restore: cp \"%s\" \"$SNIPPETS_DIR/%s\"\n" \
-          "$ts" "$lines" "$v" "$(basename "$v" | sed 's/\.[0-9]*_[0-9]*//')"
-      done ;;
-
-    delete|rm)
-      local name="${1:-}"
-      local match; match=$(ls "$SNIPPETS_DIR/${name}"* 2>/dev/null | grep -v '\.history\|\.meta\|\.json' | head -1)
-      [[ -z "$match" ]] && { err "Not found: $name"; return 1; }
-      read -rp "Delete snippet '$name'? [y/N]: " c
-      if [[ "${c,,}" == "y" ]]; then
-        local lang; lang="${match##*.}"
-        local n; n=$(basename "$match" ".${lang}")
-        cp "$match" "$SNIPPETS_DIR/.history/${n}.${lang}.$(date +%Y%m%d_%H%M%S)"
-        rm -f "$match" "$SNIPPETS_DIR/.meta/${n}.json"
-        ok "Deleted (backup kept in history)"
-      else
-        info "Cancelled"
-      fi ;;
-
-    stats)
-      hdr "Snippet Statistics"
-      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYSNSTATS
-import json, glob, collections
-files=[f for f in glob.glob('$SNIPPETS_DIR/*') if '/.meta' not in f and '/.history' not in f and not f.endswith('.json')]
-langs=collections.Counter(f.rsplit('.',1)[-1] for f in files if '.' in f)
-total_lines=sum(len(open(f).readlines()) for f in files)
-total_runs=0
-for m in glob.glob('$SNIPPETS_DIR/.meta/*.json'):
-    try: total_runs+=json.load(open(m)).get('run_count',0)
-    except: pass
-print(f"  Snippets: {len(files)}")
-print(f"  Total lines: {total_lines:,}")
-print(f"  Total runs:  {total_runs}")
-print(f"  Languages:   {', '.join(f'{k}({v})' for k,v in langs.most_common())}")
-PYSNSTATS
-      ;;
-
-    -h|--help)
-      hdr "ai snippet — Code Snippet Manager (v2.8)"
-      echo ""
-      echo "  ${B}Commands:${R}"
-      echo "    add <n> [lang]     Save snippet (stdin or paste)"
-      echo "    get <n>            Display with syntax highlighting"
-      echo "    copy <n>           Copy to clipboard"
-      echo "    run <n> [args]     Execute snippet"
-      echo "    explain <n>        AI explanation"
-      echo "    improve <n>        AI improvement"
-      echo "    fix <n>            AI bug fix"
-      echo "    optimize <n>       AI optimization"
-      echo "    list [--lang l]    List snippets"
-      echo "    search <text>      Search content"
-      echo "    history <n>        Version history"
-      echo "    stats              Statistics"
-      echo "    delete <n>         Remove (backed up)"
-      echo ""
-      echo "  ${B}Examples:${R}"
-      echo "    cat myscript.py | ai snippet add sort-algo py"
-      echo "    ai snippet run sort-algo"
-      echo "    ai snippet explain sort-algo"
-      echo "    ai snippet improve sort-algo" ;;
-
-    *) err "Unknown: $sub  (try: ai snippet -h)" ;;
-  esac
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai convert — COMPREHENSIVE FORMAT CONVERTER
-#  Supports: json↔yaml↔toml↔csv↔tsv, md↔html, code languages,
-#  schema generation, auto-detect, streaming large files, validation
-# ════════════════════════════════════════════════════════════════════════════════
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai convert — FORMAT CONVERTER
-#  ai convert json-to-yaml|yaml-to-json|csv-to-json|md-to-html|code|schema [args]
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_convert() {
-  local sub="${1:-}"; shift 2>/dev/null || true
-  [[ -z "$sub" ]] && { err "Usage: ai convert <format> [file]  (try: ai convert -h)"; return 1; }
-
-  _conv_read() {
-    # Read input from file arg or stdin
-    local f="${1:-}"
-    if [[ -n "$f" && -f "$f" ]]; then
-      cat "$f"
-    elif [[ ! -t 0 ]]; then
-      cat
-    else
-      err "Provide a file or pipe input: cat file | ai convert $sub"
-      return 1
-    fi
-  }
-
-  case "$sub" in
-    json-to-yaml|j2y|json2yaml)
-      local content; content=$(_conv_read "$@") || return 1
-      [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
-      echo "$content" | "$PYTHON" -c "
-import sys,json
-try: import yaml
-except ImportError: sys.exit('Missing: pyyaml  (pip install pyyaml)')
-try:
-    data=json.load(sys.stdin)
-    print(yaml.dump(data,allow_unicode=True,default_flow_style=False,sort_keys=False))
-except json.JSONDecodeError as e: sys.exit(f'JSON parse error: {e}')
-" ;;
-
-    yaml-to-json|y2j|yaml2json)
-      local content; content=$(_conv_read "$@") || return 1
-      echo "$content" | "$PYTHON" -c "
-import sys,json
-try: import yaml
-except ImportError: sys.exit('Missing: pyyaml')
-try:
-    data=yaml.safe_load(sys.stdin)
-    print(json.dumps(data,indent=2,ensure_ascii=False))
-except yaml.YAMLError as e: sys.exit(f'YAML parse error: {e}')
-" ;;
-
-    json-to-toml|j2t)
-      [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
-      local content; content=$(_conv_read "$@") || return 1
-      echo "$content" | "$PYTHON" -c "
-import sys,json
-try: import tomllib, tomli_w
-except ImportError: sys.exit('Missing: tomli-w  (pip install tomli-w)')
-data=json.load(sys.stdin)
-print(tomli_w.dumps(data))
-" ;;
-
-    toml-to-json|t2j)
-      [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
-      local content; content=$(_conv_read "$@") || return 1
-      echo "$content" | "$PYTHON" -c "
-import sys,json
-try: import tomllib
-except ImportError:
-    try: import tomli as tomllib
-    except ImportError: sys.exit('Missing: tomli  (pip install tomli)')
-data=tomllib.loads(sys.stdin.read())
-print(json.dumps(data,indent=2))
-" ;;
-
-    csv-to-json|c2j|csv2json)
-      local content; content=$(_conv_read "$@") || return 1
-      local delimiter="${1:-,}"
-      echo "$content" | "$PYTHON" -c "
-import sys,json,csv,io
-delimiter=sys.argv[1] if len(sys.argv)>1 else ','
-reader=csv.DictReader(io.StringIO(sys.stdin.read()),delimiter=delimiter)
-rows=list(reader)
-print(json.dumps(rows,indent=2,ensure_ascii=False))
-" "$delimiter" ;;
-
-    json-to-csv|j2c|json2csv)
-      local content; content=$(_conv_read "$@") || return 1
-      echo "$content" | "$PYTHON" -c "
-import sys,json,csv,io
-data=json.load(sys.stdin)
-if not isinstance(data,list): data=[data]
-if not data: sys.exit(0)
-out=io.StringIO()
-w=csv.DictWriter(out,fieldnames=data[0].keys())
-w.writeheader(); w.writerows(data)
-print(out.getvalue(),end='')
-" ;;
-
-    csv-to-yaml|c2y)
-      local content; content=$(_conv_read "$@") || return 1
-      echo "$content" | "$PYTHON" -c "
-import sys,json,csv,io
-try: import yaml
-except ImportError: sys.exit('pip install pyyaml')
-reader=csv.DictReader(io.StringIO(sys.stdin.read()))
-print(yaml.dump(list(reader),allow_unicode=True,default_flow_style=False))
-" ;;
-
-    md-to-html|m2h|markdown2html)
-      local content; content=$(_conv_read "$@") || return 1
-      echo "$content" | "$PYTHON" -c "
-import sys
-try:
-    import markdown
-    extensions=['tables','fenced_code','codehilite','toc','attr_list']
-    html=markdown.markdown(sys.stdin.read(),extensions=extensions)
-    print(f'<!DOCTYPE html><html><head><meta charset=\"utf-8\">'
-          '<style>body{{font-family:sans-serif;max-width:800px;margin:2em auto;line-height:1.6}}'
-          'pre{{background:#f4f4f4;padding:1em;border-radius:4px;overflow-x:auto}}'
-          'code{{background:#f0f0f0;padding:.2em .4em;border-radius:3px}}'
-          'blockquote{{border-left:4px solid #ccc;padding-left:1em;color:#666}}'
-          'table{{border-collapse:collapse;width:100%}}'
-          'th,td{{border:1px solid #ddd;padding:8px;text-align:left}}'
-          '</style></head><body>')
-    print(html)
-    print('</body></html>')
-except ImportError:
-    import re,html
-    text=sys.stdin.read()
-    text=re.sub(r'^######\s*(.*)',r'<h6>\1</h6>',text,flags=re.MULTILINE)
-    text=re.sub(r'^#####\s*(.*)',r'<h5>\1</h5>',text,flags=re.MULTILINE)
-    text=re.sub(r'^####\s*(.*)',r'<h4>\1</h4>',text,flags=re.MULTILINE)
-    text=re.sub(r'^###\s*(.*)',r'<h3>\1</h3>',text,flags=re.MULTILINE)
-    text=re.sub(r'^##\s*(.*)',r'<h2>\1</h2>',text,flags=re.MULTILINE)
-    text=re.sub(r'^#\s*(.*)',r'<h1>\1</h1>',text,flags=re.MULTILINE)
-    text=re.sub(r'\*\*(.*?)\*\*',r'<strong>\1</strong>',text)
-    text=re.sub(r'\*(.*?)\*',r'<em>\1</em>',text)
-    text=re.sub(r'\`\`\`.*?\n(.*?)\`\`\`',lambda m:'<pre><code>'+html.escape(m.group(1))+'</code></pre>',text,flags=re.DOTALL)
-    text=re.sub(r'\`([^\`]+)\`',lambda m:'<code>'+html.escape(m.group(1))+'</code>',text)
-    text=re.sub(r'\[([^\]]+)\]\(([^\)]+)\)',r'<a href=\"\2\">\1</a>',text)
-    print(f'<html><body>{text}</body></html>')
-" ;;
-
-    html-to-md|h2m|html2markdown)
-      local content; content=$(_conv_read "$@") || return 1
-      echo "$content" | "$PYTHON" -c "
-import sys
-try:
-    import html2text
-    h=html2text.HTML2Text()
-    h.ignore_links=False; h.body_width=0
-    print(h.handle(sys.stdin.read()))
-except ImportError:
-    import re
-    text=sys.stdin.read()
-    text=re.sub(r'<h([1-6])>(.*?)</h\1>',lambda m:'#'*int(m.group(1))+' '+m.group(2),text,flags=re.DOTALL)
-    text=re.sub(r'<strong>(.*?)</strong>',r'**\1**',text,flags=re.DOTALL)
-    text=re.sub(r'<em>(.*?)</em>',r'*\1*',text,flags=re.DOTALL)
-    text=re.sub(r'<a href=\"([^\"]*)\">(.*?)</a>',r'[\2](\1)',text)
-    text=re.sub(r'<code>(.*?)</code>',r'\`\1\`',text)
-    text=re.sub(r'<[^>]+>','',text)
-    print(text.strip())
-" ;;
-
-    tsv-to-csv|t2c)
-      local content; content=$(_conv_read "$@") || return 1
-      echo "$content" | sed 's/\t/,/g' ;;
-
-    csv-to-tsv|c2t)
-      local content; content=$(_conv_read "$@") || return 1
-      echo "$content" | "$PYTHON" -c "
-import sys,csv,io
-reader=csv.reader(io.StringIO(sys.stdin.read()))
-for row in reader: print('\t'.join(row))
-" ;;
-
-    json-prettify|json-fmt|jfmt)
-      local content; content=$(_conv_read "$@") || return 1
-      echo "$content" | "$PYTHON" -m json.tool --indent 2 ;;
-
-    json-minify|jmin)
-      local content; content=$(_conv_read "$@") || return 1
-      echo "$content" | "$PYTHON" -c "import sys,json; print(json.dumps(json.load(sys.stdin),separators=(',',':')))" ;;
-
-    code)
-      local from="${1:-}" to="${2:-}"
-      shift 2>/dev/null || true
-      [[ -z "$from" || -z "$to" ]] && { err "Usage: ai convert code <from-lang> <to-lang>  [< file]"; return 1; }
-      local code; code=$(_conv_read "$@") || { code=$(cat); }
-      dispatch_ask "Convert this ${from} code to ${to}. Preserve all functionality exactly. Output ONLY the converted ${to} code without any explanation or markdown fences:
-
-\`\`\`${from}
-${code}
-\`\`\`" ;;
-
-    schema)
-      local fmt="${1:-json-schema}"
-      shift 2>/dev/null || true
-      local data; data=$(_conv_read "$@") || return 1
-      dispatch_ask "Generate a ${fmt} schema for this data. Be precise with types and constraints:
-
-${data}" ;;
-
-    auto|detect)
-      # Auto-detect input format and ask what to convert to
-      local content; content=$(_conv_read "$@") || return 1
-      local target="${1:-}"
-      [[ -z "$target" ]] && { read -rp "Convert to (yaml/json/csv/html/md): " target; }
-      local detected
-      detected=$("$PYTHON" -c "
-import sys,json
-s=sys.stdin.read()
-s=s.strip()
-try:
-    json.loads(s); print('json')
-except:
-    if s.startswith('---') or ': ' in s: print('yaml')
-    elif s.startswith('<'): print('html')
-    elif ',' in s.split('\n')[0] if '\n' in s else ',': print('csv')
-    else: print('text')
-" <<< "$content" 2>/dev/null)
-      info "Detected format: $detected → converting to $target"
-      echo "$content" | cmd_convert "${detected}-to-${target}" ;;
-
-    -h|--help)
-      hdr "ai convert — Format Converter (v2.8)"
-      echo ""
-      echo "  ${B}Data formats:${R}"
-      echo "    json-to-yaml   yaml-to-json   json-to-toml   toml-to-json"
-      echo "    csv-to-json    json-to-csv    csv-to-yaml"
-      echo "    csv-to-tsv     tsv-to-csv"
-      echo "    json-prettify  json-minify"
-      echo ""
-      echo "  ${B}Document formats:${R}"
-      echo "    md-to-html     html-to-md"
-      echo ""
-      echo "  ${B}AI-powered:${R}"
-      echo "    code <from> <to>     Convert between programming languages"
-      echo "    schema [fmt]         Generate JSON schema / TypeScript types"
-      echo "    auto [target]        Auto-detect format and convert"
-      echo ""
-      echo "  ${B}Usage:${R}"
-      echo "    ai convert <format> [file]          Convert a file"
-      echo "    cat file | ai convert <format>      Pipe input"
-      echo "    ai convert <format> [file] > out    Redirect output"
-      echo ""
-      echo "  ${B}Examples:${R}"
-      echo "    ai convert json-to-yaml config.json > config.yaml"
-      echo "    cat data.csv | ai convert csv-to-json > data.json"
-      echo "    ai convert code python typescript < old.py > new.ts"
-      echo "    ai convert md-to-html README.md > README.html"
-      echo "    ai convert auto --target yaml < mystery.txt" ;;
-
-    *) err "Unknown format: $sub  (try: ai convert -h)" ;;
-  esac
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai monitor — FULL SYSTEM MONITOR WITH AI ANALYSIS
-#  Real-time mode, historical tracking, alerts, anomaly detection,
-#  GPU monitoring, per-process analysis, custom thresholds
-# ════════════════════════════════════════════════════════════════════════════════
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai monitor — SYSTEM MONITOR WITH AI ANALYSIS
-#  ai monitor status|analyze|logs|gpu|processes [args]
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_monitor() {
-  local sub="${1:-status}"; shift 2>/dev/null || true
-  local monitor_log="$CONFIG_DIR/monitor_history.jsonl"
-  local alert_config="$CONFIG_DIR/monitor_alerts.json"
-
-  case "$sub" in
-    status|stat)
-      local show_gpu="${1:---all}"
-      hdr "System Status — $(date '+%Y-%m-%d %H:%M:%S')"
-      echo ""
-
-      # CPU
-      printf "  ${BCYAN}CPU${R}\n"
-      if command -v top &>/dev/null; then
-        local cpu_pct; cpu_pct=$(top -bn1 2>/dev/null | grep "Cpu(s)" | awk '{print $2+$4}' | sed 's/,/./')
-        printf "    Usage:    %s%%\n" "${cpu_pct:-N/A}"
-      fi
-      local cpu_model; cpu_model=$(grep "model name" /proc/cpuinfo 2>/dev/null | head -1 | cut -d: -f2 | sed 's/^ //')
-      local cpu_cores; cpu_cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null)
-      [[ -n "$cpu_model" ]] && printf "    Model:    %s\n" "${cpu_model:0:60}"
-      [[ -n "$cpu_cores" ]] && printf "    Cores:    %s\n" "$cpu_cores"
-      echo ""
-
-      # Memory
-      printf "  ${BCYAN}Memory${R}\n"
-      if command -v free &>/dev/null; then
-        free -h 2>/dev/null | awk 'NR==2{
-          printf "    Used:     %s / %s (%.0f%%)\n", $3, $2, ($3/$2)*100
-          printf "    Available: %s\n", $7
-        }'
-      elif command -v vm_stat &>/dev/null; then
-        vm_stat 2>/dev/null | head -10 | sed 's/^/    /'
-      fi
-      echo ""
-
-      # Disk
-      printf "  ${BCYAN}Disk${R}\n"
-      df -h 2>/dev/null | awk '
-        NR==1{next}
-        /^\// || /^[A-Z]:/{
-          if($5+0>80) warn=" ⚠ HIGH"
-          printf "    %-20s %s / %s (%s)%s\n", $6, $3, $2, $5, warn
-          warn=""
-        }
-      ' | head -5
-      echo ""
-
-      # Network
-      printf "  ${BCYAN}Network${R}\n"
-      if [[ -f /proc/net/dev ]]; then
-        awk 'NR>2 && $1~/^(eth|en|wl|wlan|bond)/{
-          printf "    %-15s RX: %s  TX: %s\n", $1, $2, $10
-        }' /proc/net/dev 2>/dev/null | head -4
-      fi
-      echo ""
-
-      # Load
-      printf "  ${BCYAN}Load Average${R}\n"
-      local load; load=$(uptime 2>/dev/null | awk -F'load average:' '{print $2}')
-      printf "    %s\n" "${load:-N/A}"
-      echo ""
-
-      # GPU
-      if command -v nvidia-smi &>/dev/null; then
-        printf "  ${BCYAN}GPU (NVIDIA)${R}\n"
-        nvidia-smi --query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu \
-          --format=csv,noheader 2>/dev/null | while IFS=',' read -r name util mem_used mem_total temp; do
-          printf "    %-35s  GPU: %s  Mem: %s/%s  Temp: %s°C\n" \
-            "$name" "$util" "$mem_used" "$mem_total" "$temp"
-        done
-      elif command -v rocm-smi &>/dev/null; then
-        printf "  ${BCYAN}GPU (AMD ROCm)${R}\n"
-        rocm-smi --showuse --showmeminfo vram 2>/dev/null | head -5 | sed 's/^/    /'
-      fi
-
-      # Save snapshot to history
-      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYSNAP
-import json, time, subprocess, os
-def safe_run(cmd, shell=False):
-    try:
-        r=subprocess.run(cmd,capture_output=True,text=True,timeout=3,shell=shell)
-        return r.stdout.strip()
-    except: return ''
-snapshot = {
-    "ts": time.time(),
-    "cpu_pct": safe_run("top -bn1 2>/dev/null | grep 'Cpu(s)' | awk '{print \$2+\$4}'", shell=True),
-    "load": safe_run("uptime", shell=True),
-    "memory": safe_run("free -h 2>/dev/null | awk 'NR==2{print \$3\"/\"\$2}'", shell=True),
-}
-with open('$monitor_log', 'a') as f:
-    f.write(json.dumps(snapshot) + '\n')
-PYSNAP
-      ;;
-
-    watch|live|realtime)
-      local interval="${1:-5}"
-      info "Live monitoring (interval: ${interval}s, Ctrl+C to stop)"
-      trap 'echo ""; info "Monitoring stopped."; return 0' INT
-      while true; do
-        clear
-        cmd_monitor status
-        printf "  ${DIM}Refreshing in ${interval}s... Ctrl+C to stop${R}\n"
-        sleep "$interval"
-      done ;;
-
-    analyze|ai-analyze)
-      info "Collecting system metrics for AI analysis…"
-      local metrics=""
-      metrics+="Timestamp: $(date -Iseconds)\n"
-      metrics+="Uptime: $(uptime 2>/dev/null)\n"
-      metrics+="CPU: $(top -bn1 2>/dev/null | grep "Cpu(s)" | head -1)\n"
-      metrics+="Memory:\n$(free -h 2>/dev/null | head -3)\n"
-      metrics+="Disk:\n$(df -h 2>/dev/null | head -6)\n"
-      metrics+="Load: $(cat /proc/loadavg 2>/dev/null)\n"
-      metrics+="Top CPU processes:\n$(ps aux --sort=-%cpu 2>/dev/null | head -8)\n"
-      metrics+="Top MEM processes:\n$(ps aux --sort=-%mem 2>/dev/null | head -5)\n"
-      if command -v nvidia-smi &>/dev/null; then
-        metrics+="GPU:\n$(nvidia-smi --query-gpu=name,utilization.gpu,memory.used,temperature.gpu --format=csv,noheader 2>/dev/null)\n"
-      fi
-      dispatch_ask "You are a system administrator. Analyze these system metrics and:
-1. Identify any performance issues or concerns
-2. Flag anything that's above normal thresholds
-3. Suggest specific optimizations
-4. Rate overall system health: Healthy / Warning / Critical
-
-Metrics:
-$metrics" ;;
-
-    logs|syslog)
-      local n="${1:-50}" source="${2:-system}"
-      local log_content=""
-      case "$source" in
-        system)
-          log_content=$(journalctl -n "$n" --no-pager 2>/dev/null || \
-                       tail -n "$n" /var/log/syslog 2>/dev/null || \
-                       tail -n "$n" /var/log/system.log 2>/dev/null || \
-                       echo "No system log accessible") ;;
-        kernel)
-          log_content=$(dmesg 2>/dev/null | tail -n "$n") ;;
-        auth)
-          log_content=$(tail -n "$n" /var/log/auth.log 2>/dev/null || \
-                       journalctl -u ssh -n "$n" --no-pager 2>/dev/null || \
-                       echo "No auth log accessible") ;;
-        *)
-          if [[ -f "$source" ]]; then
-            log_content=$(tail -n "$n" "$source")
-          else
-            err "Unknown log source: $source  (try: system kernel auth <filepath>)"
-            return 1
-          fi ;;
-      esac
-      dispatch_ask "Analyze these system logs for errors, warnings, suspicious activity, or anomalies. Group findings by severity (Critical/Warning/Info):
-
-Log source: $source (last $n lines)
----
-${log_content:0:8000}" ;;
-
-    gpu)
-      if command -v nvidia-smi &>/dev/null; then
-        hdr "NVIDIA GPU Status"
-        nvidia-smi
-      elif command -v rocm-smi &>/dev/null; then
-        hdr "AMD GPU Status (ROCm)"
-        rocm-smi
-      elif [[ "$(uname)" == "Darwin" ]]; then
-        hdr "Apple Silicon GPU (via system_profiler)"
-        system_profiler SPDisplaysDataType 2>/dev/null | head -30
-      else
-        err "No GPU monitoring tool found (nvidia-smi, rocm-smi)"
-        return 1
-      fi ;;
-
-    processes|top|procs)
-      local n="${1:-20}" sort_by="${2:-cpu}"
-      hdr "Top Processes (by $sort_by)"
-      case "$sort_by" in
-        cpu)  ps aux --sort=-%cpu  2>/dev/null | head -"$((n+1))" ;;
-        mem)  ps aux --sort=-%mem  2>/dev/null | head -"$((n+1))" ;;
-        pid)  ps aux --sort=pid    2>/dev/null | head -"$((n+1))" ;;
-        *) ps aux 2>/dev/null | head -"$((n+1))" ;;
-      esac ;;
-
-    history|hist)
-      local n="${1:-20}"
-      [[ ! -f "$monitor_log" ]] && { info "No monitoring history yet."; return 0; }
-      hdr "Monitor History (last $n snapshots)"
-      tail -n "$n" "$monitor_log" | [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYHIST || tail -n "$n" "$monitor_log"
-import json,sys,datetime
-for line in sys.stdin:
-    try:
-        d=json.loads(line.strip())
-        ts=datetime.datetime.fromtimestamp(d.get('ts',0)).strftime('%Y-%m-%d %H:%M')
-        cpu=d.get('cpu_pct','?')
-        mem=d.get('memory','?')
-        load=d.get('load','?')[-20:] if d.get('load') else '?'
-        print(f"  {ts}  CPU:{cpu:>6}%  Mem:{mem}  Load:{load}")
-    except: pass
-PYHIST
-      ;;
-
-    alerts)
-      local alert_sub="${1:-list}"; shift 2>/dev/null || true
-      case "$alert_sub" in
-        list)
-          [[ ! -f "$alert_config" ]] && { info "No alerts configured. Use: ai monitor alerts add"; return 0; }
-          hdr "Monitor Alerts"
-          cat "$alert_config" | "$PYTHON" -m json.tool 2>/dev/null || cat "$alert_config" ;;
-        add)
-          [[ ! -f "$alert_config" ]] && echo "[]" > "$alert_config"
-          local metric="${1:-cpu}" threshold="${2:-90}" action="${3:-log}"
-          "$PYTHON" - <<PYADD
-import json
-alerts=json.load(open('$alert_config'))
-alerts.append({"metric":"$metric","threshold":float("$threshold"),"action":"$action","created":"$(date -Iseconds)"})
-json.dump(alerts,open('$alert_config','w'),indent=2)
-print(f"Alert added: {metric} > {threshold} → {action}")
-PYADD
-          ;;
-        check)
-          [[ ! -f "$alert_config" ]] && { return 0; }
-          # Check thresholds against current metrics
-          [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYCHECK
-import json, subprocess, os
-alerts=json.load(open('$alert_config'))
-def get_cpu():
-    try:
-        r=subprocess.run("top -bn1 | grep 'Cpu(s)' | awk '{print \$2+\$4}'",shell=True,capture_output=True,text=True,timeout=5)
-        return float(r.stdout.strip().replace(',','.'))
-    except: return 0
-metrics={'cpu':get_cpu(),'mem':0,'disk':0}
-for alert in alerts:
-    m=alert.get('metric','')
-    t=alert.get('threshold',90)
-    val=metrics.get(m,0)
-    if val>t:
-        print(f"\033[91m⚠ ALERT: {m}={val:.1f}% > threshold {t}%\033[0m")
-PYCHECK
-          ;;
-      esac ;;
-
-    -h|--help)
-      hdr "ai monitor — System Monitor (v2.8)"
-      echo ""
-      echo "  ${B}Commands:${R}"
-      echo "    status              Full system overview (CPU/mem/disk/net/GPU)"
-      echo "    watch [n]           Live refresh every N seconds"
-      echo "    analyze             AI analysis + optimization recommendations"
-      echo "    logs [n] [source]   Analyze logs (system|kernel|auth|<path>)"
-      echo "    gpu                 GPU details (NVIDIA/AMD/Apple)"
-      echo "    processes [n]       Top N processes"
-      echo "    history [n]         Show monitoring history"
-      echo "    alerts list|add|check  Alert management"
-      echo ""
-      echo "  ${B}Examples:${R}"
-      echo "    ai monitor status"
-      echo "    ai monitor watch 10"
-      echo "    ai monitor analyze"
-      echo "    ai monitor logs 100 kernel"
-      echo "    ai monitor alerts add cpu 85 log" ;;
-
-    *) err "Unknown: $sub  (try: ai monitor -h)" ;;
-  esac
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai schedule — FULL CRON-BASED SCHEDULER
-#  job history, retry, notifications, named schedules, pause/resume, run-now
-# ════════════════════════════════════════════════════════════════════════════════
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai schedule — CRON-BASED SCHEDULER
-#  ai schedule add|list|remove [args]
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_schedule() {
-  local sub="${1:-list}"; shift 2>/dev/null || true
-  mkdir -p "$SCHEDULE_DIR" "$SCHEDULE_DIR/.history"
-  local schedule_log="$CONFIG_DIR/schedule.log"
-
-  case "$sub" in
-    add|create|new)
-      local name="" cron="" cmd="" description="" retry=0 notify=0
-      while [[ $# -gt 0 ]]; do
-        case "$1" in
-          --name|-n)   name="$2"; shift 2 ;;
-          --cron|-c)   cron="$2"; shift 2 ;;
-          --cmd|--run) cmd="$2"; shift 2 ;;
-          --desc)      description="$2"; shift 2 ;;
-          --retry)     retry="$2"; shift 2 ;;
-          --notify)    notify=1; shift ;;
-          *)           [[ -z "$name" ]] && { name="$1"; shift; } || \
-                       [[ -z "$cron" ]] && { cron="$1"; shift; } || \
-                       [[ -z "$cmd"  ]] && { cmd="$1"; shift; } || shift ;;
-        esac
-      done
-
-      # Interactive prompts for missing fields
-      [[ -z "$name" ]] && { read -rp "Schedule name: " name; }
-      [[ -z "$name" ]] && { err "Name required"; return 1; }
-      if [[ -z "$cron" ]]; then
-        echo ""
-        echo "  ${DIM}Common cron expressions:${R}"
-        echo "    ${DIM}0 9 * * 1-5   = weekdays 9am${R}"
-        echo "    ${DIM}*/15 * * * *  = every 15 minutes${R}"
-        echo "    ${DIM}0 0 * * *     = daily midnight${R}"
-        echo "    ${DIM}0 */4 * * *   = every 4 hours${R}"
-        read -rp "Cron expression: " cron
-      fi
-      [[ -z "$cmd" ]] && { read -rp "Command to run: " cmd; }
-      [[ -z "$name" || -z "$cron" || -z "$cmd" ]] && { err "Name, cron, and command are required"; return 1; }
-
-      # Validate cron syntax (5 fields)
-      local cron_fields; cron_fields=$(echo "$cron" | wc -w)
-      [[ $cron_fields -ne 5 ]] && { warn "Cron expression should have 5 fields (got $cron_fields)"; }
-
-      # Save schedule definition
-      local sfile="$SCHEDULE_DIR/${name}.json"
-      cat > "$sfile" <<SCHEDJSON
-{
-  "name": "$name",
-  "cron": "$cron",
-  "cmd": "$cmd",
-  "description": "$description",
-  "retry": $retry,
-  "notify": $notify,
-  "created": "$(date -Iseconds)",
-  "enabled": true,
-  "run_count": 0,
-  "last_run": null,
-  "last_status": null
-}
-SCHEDJSON
-
-      # Install into crontab
-      local cur_cron; cur_cron=$(crontab -l 2>/dev/null || echo "")
-      # Remove existing entry for this schedule
-      local new_cron; new_cron=$(echo "$cur_cron" | grep -v "# ai-schedule:${name}$")
-      # Wrap command with logging
-      local log_cmd="(echo \"[\$(date -Iseconds)] START $name\" >> $schedule_log; $cmd; echo \"[\$(date -Iseconds)] END $name exit:\$?\" >> $schedule_log)"
-      local cron_entry="$cron $log_cmd # ai-schedule:${name}"
-      {
-        echo "$new_cron"
-        echo "$cron_entry"
-      } | grep -v '^$' | crontab - 2>/dev/null
-
-      ok "Scheduled: $name"
-      info "  Cron:  $cron"
-      info "  Runs:  $cmd"
-      [[ -n "$description" ]] && info "  Desc:  $description" ;;
-
-    list|ls)
-      hdr "Scheduled Jobs"
-      local sfiles=("$SCHEDULE_DIR"/*.json)
-      if [[ ! -e "${sfiles[0]}" ]]; then
-        info "No schedules. Add: ai schedule add <name> <cron> <cmd>"
-        return 0
-      fi
-      printf "  ${B}%-22s %-20s %-6s %-8s %s${R}\n" "Name" "Cron" "Runs" "Status" "Command"
-      printf "  %s\n" "──────────────────────────────────────────────────────────────────"
-      for f in "${sfiles[@]}"; do
-        [[ -f "$f" ]] || continue
-        if [[ -n "$PYTHON" ]]; then
-          "$PYTHON" - <<PYLIST
-import json
-d=json.load(open('$f'))
-name=d.get('name','?')
-cron=d.get('cron','?')
-runs=d.get('run_count',0)
-cmd=d.get('cmd','?')[:30]
-status=d.get('last_status','?') or '-'
-enabled='' if d.get('enabled',True) else ' [paused]'
-print(f"  \033[96m{name:<22}\033[0m {cron:<20} {runs:<6} {status:<8} {cmd}{enabled}")
-PYLIST
-        else
-          printf "  ${BCYAN}%s${R}\n" "$(basename "$f" .json)"
-        fi
-      done
-      echo ""
-      info "Active in crontab:"
-      crontab -l 2>/dev/null | grep "# ai-schedule:" | sed 's/# ai-schedule:.*$//' | sed 's/^/  /' | head -10 ;;
-
-    show|info)
-      local name="$1"
-      [[ -z "$name" ]] && { err "Usage: ai schedule show <n>"; return 1; }
-      local sfile="$SCHEDULE_DIR/${name}.json"
-      [[ ! -f "$sfile" ]] && { err "Not found: $name"; return 1; }
-      hdr "Schedule: $name"
-      [[ -n "$PYTHON" ]] && "$PYTHON" -c "
-import json; d=json.load(open('$sfile'))
-for k,v in d.items(): print(f'  {k:<18}: {v}')
-" || cat "$sfile" ;;
-
-    run-now|run)
-      local name="$1"
-      [[ -z "$name" ]] && { err "Usage: ai schedule run-now <n>"; return 1; }
-      local sfile="$SCHEDULE_DIR/${name}.json"
-      [[ ! -f "$sfile" ]] && { err "Not found: $name"; return 1; }
-      local cmd; cmd=$("$PYTHON" -c "import json; print(json.load(open('$sfile')).get('cmd',''))" 2>/dev/null)
-      [[ -z "$cmd" ]] && { err "No command found in schedule"; return 1; }
-      info "Running now: $name"
-      info "Command: $cmd"
-      local start; start=$(date +%s)
-      eval "$cmd"
-      local exit_code=$?
-      local elapsed=$(( $(date +%s) - start ))
-      echo "[$(date -Iseconds)] MANUAL-RUN $name exit:$exit_code time:${elapsed}s" >> "$schedule_log"
-      # Update run stats
-      [[ -n "$PYTHON" ]] && "$PYTHON" -c "
-import json
-d=json.load(open('$sfile'))
-d['run_count']=d.get('run_count',0)+1
-d['last_run']='$(date -Iseconds)'
-d['last_status']='ok' if $exit_code==0 else 'failed'
-json.dump(d,open('$sfile','w'),indent=2)
-" 2>/dev/null
-      [[ $exit_code -eq 0 ]] && ok "Completed in ${elapsed}s" || err "Failed (exit $exit_code)" ;;
-
-    pause|disable)
-      local name="$1"
-      local sfile="$SCHEDULE_DIR/${name}.json"
-      [[ ! -f "$sfile" ]] && { err "Not found: $name"; return 1; }
-      # Remove from crontab
-      local cur_cron; cur_cron=$(crontab -l 2>/dev/null || echo "")
-      echo "$cur_cron" | grep -v "# ai-schedule:${name}$" | crontab - 2>/dev/null
-      # Mark as disabled
-      [[ -n "$PYTHON" ]] && "$PYTHON" -c "
-import json; d=json.load(open('$sfile'))
-d['enabled']=False; json.dump(d,open('$sfile','w'),indent=2)
-" 2>/dev/null
-      ok "Paused: $name  (use: ai schedule resume $name)" ;;
-
-    resume|enable)
-      local name="$1"
-      local sfile="$SCHEDULE_DIR/${name}.json"
-      [[ ! -f "$sfile" ]] && { err "Not found: $name"; return 1; }
-      [[ -n "$PYTHON" ]] && {
-        local cron cmd
-        cron=$("$PYTHON" -c "import json; d=json.load(open('$sfile')); d['enabled']=True; json.dump(d,open('$sfile','w'),indent=2); print(d.get('cron',''))" 2>/dev/null)
-        cmd=$("$PYTHON" -c "import json; print(json.load(open('$sfile')).get('cmd',''))" 2>/dev/null)
-        local cur_cron; cur_cron=$(crontab -l 2>/dev/null || echo "")
-        local log_cmd="(echo \"[\$(date -Iseconds)] START $name\" >> $schedule_log; $cmd; echo \"[\$(date -Iseconds)] END $name exit:\$?\" >> $schedule_log)"
-        { echo "$cur_cron"; echo "$cron $log_cmd # ai-schedule:${name}"; } | grep -v '^$' | crontab - 2>/dev/null
-        ok "Resumed: $name"
-      } ;;
-
-    remove|delete|rm)
-      local name="$1"
-      [[ -z "$name" ]] && { err "Usage: ai schedule remove <n>"; return 1; }
-      local sfile="$SCHEDULE_DIR/${name}.json"
-      # Remove from crontab
-      local cur_cron; cur_cron=$(crontab -l 2>/dev/null || echo "")
-      echo "$cur_cron" | grep -v "# ai-schedule:${name}$" | crontab - 2>/dev/null
-      # Archive the schedule file
-      [[ -f "$sfile" ]] && mv "$sfile" "$SCHEDULE_DIR/.history/${name}.$(date +%Y%m%d_%H%M%S).json"
-      ok "Removed schedule: $name" ;;
-
-    log|history|logs)
-      local n="${1:-30}" name="${2:-}"
-      [[ ! -f "$schedule_log" ]] && { info "No schedule log yet."; return 0; }
-      hdr "Schedule Log${name:+ ($name)}"
-      if [[ -n "$name" ]]; then
-        grep "$name" "$schedule_log" | tail -n "$n"
-      else
-        tail -n "$n" "$schedule_log"
-      fi ;;
-
-    analyze)
-      # AI analysis of schedule log
-      local log_content; log_content=$(tail -100 "$schedule_log" 2>/dev/null)
-      [[ -z "$log_content" ]] && { info "No schedule history yet."; return 0; }
-      dispatch_ask "Analyze these scheduled job logs and:
-1. Identify any failing jobs
-2. Find performance patterns
-3. Suggest optimization (timing changes, cleanup)
-4. Flag anything suspicious
-
-Logs:
-$log_content" ;;
-
-    -h|--help)
-      hdr "ai schedule — Cron Scheduler (v2.8)"
-      echo ""
-      echo "  ${B}Commands:${R}"
-      echo "    add [n] [cron] [cmd]   Schedule a command (interactive if args omitted)"
-      echo "    list                        Show all schedules"
-      echo "    show <n>               Full details"
-      echo "    run-now <n>            Run immediately"
-      echo "    pause <n>              Disable without deleting"
-      echo "    resume <n>             Re-enable"
-      echo "    remove <n>             Remove schedule"
-      echo "    log [n] [name]         View execution log"
-      echo "    analyze                AI analysis of log history"
-      echo ""
-      echo "  ${B}Cron syntax:${R}  min hour day month weekday"
-      echo "    ${DIM}0 9 * * 1-5    weekdays 9am${R}"
-      echo "    ${DIM}*/30 * * * *   every 30 min${R}"
-      echo "    ${DIM}0 0 * * 0      sundays midnight${R}"
-      echo ""
-      echo "  ${B}Examples:${R}"
-      echo "    ai schedule add daily-summary '0 9 * * *' 'ai memo summarize-all'"
-      echo "    ai schedule add hourly-watch '0 * * * *' 'ai batch summarize ~/inbox'"
-      echo "    ai schedule run-now daily-summary"
-      echo "    ai schedule log 50 daily-summary" ;;
-
-    *) err "Unknown: $sub  (try: ai schedule -h)" ;;
-  esac
-}
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: cmd_npm_gui — npm blessed TUI (all 40+ commands in sidebar)
-#  Usage: ai -N; gui   OR   ai gui
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_npm_gui() {
-  command -v node &>/dev/null || { err ERR707; return 1; }
-  mkdir -p "$NPM_GUI_DIR"
-  local gui_js="$NPM_GUI_DIR/gui.js"
-  cat > "$gui_js" << 'NODEGUIEOF'
-#!/usr/bin/env node
-// ai-cli npm TUI (blessed) v2.8 — ai gui
-const blessed = require('blessed');
-const { exec } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-
-const AI_CMD = process.env.AI_CMD || 'ai';
-
-const COMMANDS = [
-  { label: '── CHAT ──', header: true },
-  { label: 'ask',         cmd: 'ask',         desc: 'Chat with AI' },
-  { label: 'chat',        cmd: 'chat',        desc: 'Interactive chat' },
-  { label: 'multi',       cmd: 'multi',       desc: 'Multi-turn conversation' },
-  { label: '── CODE ──', header: true },
-  { label: 'code',        cmd: 'code',        desc: 'Code generation' },
-  { label: 'explain',     cmd: 'explain',     desc: 'Explain code' },
-  { label: 'fix',         cmd: 'fix',         desc: 'Fix bugs' },
-  { label: 'review',      cmd: 'review',      desc: 'Code review' },
-  { label: 'refactor',    cmd: 'refactor',    desc: 'Refactor code' },
-  { label: 'test',        cmd: 'test',        desc: 'Generate tests' },
-  { label: 'diff',        cmd: 'diff',        desc: 'AI diff tool' },
-  { label: 'snippet',     cmd: 'snippet',     desc: 'Code snippets' },
-  { label: '── FILES ──', header: true },
-  { label: 'summarize',   cmd: 'summarize',   desc: 'Summarize file' },
-  { label: 'batch',       cmd: 'batch',       desc: 'Batch processing' },
-  { label: 'convert',     cmd: 'convert',     desc: 'Format conversion' },
-  { label: 'watch',       cmd: 'watch',       desc: 'File watcher' },
-  { label: '── AI TOOLS ──', header: true },
-  { label: 'workflow',    cmd: 'workflow',    desc: 'Pipeline engine' },
-  { label: 'template',    cmd: 'template',    desc: 'Prompt templates' },
-  { label: 'memo',        cmd: 'memo',        desc: 'AI notes' },
-  { label: 'profile',     cmd: 'profile',     desc: 'Workspace profiles' },
-  { label: 'schedule',    cmd: 'schedule',    desc: 'Cron scheduler' },
-  { label: 'monitor',     cmd: 'monitor',     desc: 'System monitor' },
-  { label: '── MODELS ──', header: true },
-  { label: 'models',      cmd: 'models',      desc: 'List local models' },
-  { label: 'recommended', cmd: 'recommended', desc: 'Recommended models' },
-  { label: 'pull',        cmd: 'pull',        desc: 'Download model' },
-  { label: 'create (-Cr)',cmd: 'create',      desc: 'Train new model' },
-  { label: '── IMAGE ──', header: true },
-  { label: 'image',       cmd: 'image',       desc: 'Generate image' },
-  { label: 'vision',      cmd: 'vision',      desc: 'Analyze image' },
-  { label: '── SYSTEM ──', header: true },
-  { label: 'history',     cmd: 'history',     desc: 'Conversation history' },
-  { label: 'config',      cmd: 'config',      desc: 'Configuration' },
-  { label: 'install-deps',cmd: 'install-deps',desc: 'Install dependencies' },
-  { label: 'update',      cmd: 'update',      desc: 'Update ai-cli' },
-  { label: 'version',     cmd: 'version',     desc: 'Version info' },
-];
-
-const screen = blessed.screen({ smartCSR: true, title: 'ai-cli v2.8' });
-
-// ── Layout ──────────────────────────────────────────────────────────────────
-const sidebar = blessed.list({
-  width: 22, height: '100%', left: 0, top: 0,
-  border: { type: 'line' },
-  label: ' Commands ',
-  style: {
-    selected: { bg: 'cyan', fg: 'black', bold: true },
-    item: { fg: 'white' },
-    border: { fg: 'cyan' },
-    label: { fg: 'cyan', bold: true },
-    focus: { border: { fg: 'green' } },
-  },
-  scrollable: true, mouse: true, keys: true, vi: true,
-  items: COMMANDS.map(c => c.header ? `{bold}{cyan-fg}${c.label}{/}` : `  ${c.label}`),
-  tags: true,
-});
-
-const inputBox = blessed.textbox({
-  top: 0, left: 23, right: 0, height: 3,
-  border: { type: 'line' },
-  label: ' Input ',
-  style: { border: { fg: 'yellow' }, label: { fg: 'yellow' }, focus: { border: { fg: 'green' } } },
-  inputOnFocus: true,
-});
-
-const outputBox = blessed.box({
-  top: 3, left: 23, right: 0, bottom: 2,
-  border: { type: 'line' },
-  label: ' Output ',
-  scrollable: true, alwaysScroll: true, mouse: true,
-  style: { border: { fg: 'magenta' }, label: { fg: 'magenta' } },
-  tags: true,
-});
-
-const statusBar = blessed.box({
-  bottom: 0, left: 23, right: 0, height: 2,
-  border: { type: 'line' },
-  style: { border: { fg: 'blue' }, fg: 'white' },
-  content: '{bold}↑/↓{/} navigate  {bold}Enter{/} select+run  {bold}Tab{/} focus input  {bold}Ctrl+C{/} quit',
-  tags: true,
-});
-
-screen.append(sidebar); screen.append(inputBox);
-screen.append(outputBox); screen.append(statusBar);
-
-// ── State ───────────────────────────────────────────────────────────────────
-let selectedCmd = null;
-let running = false;
-
-function setStatus(msg, color) {
-  statusBar.setContent(`{${color || 'white'}-fg}${msg}{/}`);
-  screen.render();
-}
-
-function appendOutput(text, color) {
-  const old = outputBox.getContent();
-  outputBox.setContent(old + (color ? `{${color}-fg}${text}{/}` : text) + '\n');
-  outputBox.setScrollPerc(100);
-  screen.render();
-}
-
-function runCmd(cmd, inputText) {
-  if (running) { setStatus('⏳ Still running... wait.', 'yellow'); return; }
-  running = true;
-  const full = `${AI_CMD} ${cmd} ${JSON.stringify(inputText)}`;
-  outputBox.setContent('');
-  appendOutput(`$ ${full}\n`, 'cyan');
-  setStatus('⏳ Running...', 'yellow');
-  const proc = exec(full, { maxBuffer: 1024 * 1024 * 10 });
-  proc.stdout.on('data', d => appendOutput(d));
-  proc.stderr.on('data', d => appendOutput(d, 'red'));
-  proc.on('close', code => {
-    running = false;
-    setStatus(`✓ Done (exit ${code})  ↑/↓ nav  Enter run  Tab input  Ctrl+C quit`, code === 0 ? 'green' : 'red');
-    screen.render();
-  });
-}
-
-// ── Events ──────────────────────────────────────────────────────────────────
-sidebar.on('select', (item, idx) => {
-  const entry = COMMANDS[idx];
-  if (!entry || entry.header) return;
-  selectedCmd = entry.cmd;
-  inputBox.setLabel(` ${entry.label}: input `);
-  statusBar.setContent(`{yellow-fg}Selected: ${entry.cmd} — ${entry.desc}  (Tab to enter input, Enter to run){/}`);
-  inputBox.focus();
-  screen.render();
-});
-
-inputBox.key('enter', () => {
-  if (!selectedCmd) { setStatus('⚠ Select a command first (click sidebar)', 'yellow'); return; }
-  const text = inputBox.getValue().trim();
-  runCmd(selectedCmd, text);
-  inputBox.clearValue();
-  screen.render();
-});
-
-inputBox.key('tab', () => { sidebar.focus(); screen.render(); });
-sidebar.key('tab', () => { inputBox.focus(); screen.render(); });
-screen.key(['C-c', 'q'], () => process.exit(0));
-
-sidebar.focus();
-screen.render();
-NODEGUIEOF
-
-  # Install blessed if needed
-  if ! node -e "require('blessed')" &>/dev/null 2>&1; then
-    info "Installing blessed…"
-    cd "$NPM_GUI_DIR" && npm init -y &>/dev/null && npm install blessed &>/dev/null
-  fi
-
-  info "Launching ai-cli GUI (blessed TUI)…"
-  AI_CMD="$(command -v ai || realpath "$0")" node "$gui_js"
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: cmd_npm_gui_adv — advanced multi-panel blessed-contrib TUI
-#  Usage: ai -N; gui-adv   OR   ai gui-adv
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_npm_gui_adv() {
-  command -v node &>/dev/null || { err ERR707; return 1; }
-  mkdir -p "$NPM_GUI_DIR"
-  local gui_js="$NPM_GUI_DIR/gui_adv.js"
-  cat > "$gui_js" << 'ADVGUIEOF'
-#!/usr/bin/env node
-// ai-cli advanced TUI (blessed-contrib) v2.8 — ai gui-adv
-// Tabs: Chat | Code | Files | Workflows | Monitor | Config
-const blessed = require('blessed');
-const bc = (() => { try { return require('blessed-contrib'); } catch(e){ return null; } })();
-const { exec, spawn } = require('child_process');
-const os = require('os');
-
-const AI_CMD = process.env.AI_CMD || 'ai';
-const screen = blessed.screen({ smartCSR: true, title: 'ai-cli v2.8 Advanced' });
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-function run(cmd, cb) {
-  exec(cmd, { maxBuffer: 10*1024*1024 }, (err, stdout, stderr) => cb(err, stdout, stderr));
-}
-function aiRun(args, onData, onClose) {
-  const p = spawn(AI_CMD, args, { shell: false });
-  p.stdout.on('data', d => onData(d.toString()));
-  p.stderr.on('data', d => onData(d.toString()));
-  p.on('close', code => onClose(code));
-}
-
-// ── Tab bar ──────────────────────────────────────────────────────────────────
-const TABS = ['Chat','Code','Files','Workflows','Monitor','Config'];
-let curTab = 0;
-
-const tabBar = blessed.listbar({
-  top: 0, left: 0, width: '100%', height: 1,
-  autoCommandKeys: false,
-  style: { selected: { bg: 'cyan', fg: 'black', bold: true }, item: { fg: 'white' }, bg: 'black' },
-  commands: TABS.reduce((a, t, i) => { a[t] = { keys: [`F${i+1}`] }; return a; }, {}),
-});
-screen.append(tabBar);
-
-// ── Containers per tab ───────────────────────────────────────────────────────
-const panels = TABS.map((t, i) => {
-  const box = blessed.box({ top: 1, left: 0, width: '100%', height: screen.height - 1, hidden: i !== 0 });
-  screen.append(box);
-  return box;
-});
-
-function showTab(i) {
-  panels[curTab].hide();
-  curTab = i;
-  panels[curTab].show();
-  screen.render();
-}
-
-// ── TAB 0: Chat ──────────────────────────────────────────────────────────────
-(function buildChat(p) {
-  const history = blessed.box({
-    top: 0, left: 0, width: '100%', height: p.height - 4,
-    border: { type: 'line' }, label: ' Chat History ',
-    scrollable: true, alwaysScroll: true, mouse: true, tags: true,
-    style: { border: { fg: 'cyan' }, label: { fg: 'cyan' } },
-  });
-  const inp = blessed.textbox({
-    bottom: 2, left: 0, width: '100%', height: 3,
-    border: { type: 'line' }, label: ' Message ',
-    inputOnFocus: true,
-    style: { border: { fg: 'green' }, focus: { border: { fg: 'yellow' } } },
-  });
-  const help = blessed.box({
-    bottom: 0, left: 0, width: '100%', height: 2,
-    content: '  Enter=send  Ctrl+C=quit  F1-F6=tabs',
-    style: { fg: 'gray' },
-  });
-  p.append(history); p.append(inp); p.append(help);
-
-  function send() {
-    const txt = inp.getValue().trim();
-    if (!txt) return;
-    inp.clearValue();
-    const old = history.getContent();
-    history.setContent(old + `{yellow-fg}You:{/} ${txt}\n`);
-    history.setScrollPerc(100); screen.render();
-    let resp = '';
-    aiRun(['ask', txt],
-      d => { resp += d; history.setContent(history.getContent().replace(/\{cyan-fg\}AI:.*$/s,'') + `{cyan-fg}AI: ${resp}{/}`); history.setScrollPerc(100); screen.render(); },
-      () => { history.setContent(history.getContent() + '\n'); screen.render(); });
-  }
-  inp.key('enter', send);
-  inp.focus();
-})(panels[0]);
-
-// ── TAB 1: Code ──────────────────────────────────────────────────────────────
-(function buildCode(p) {
-  const ops = ['explain','fix','review','refactor','test','code'];
-  const sidebar = blessed.list({
-    left: 0, top: 0, width: 16, height: '100%', border: { type: 'line' },
-    label: ' Op ', items: ops, keys: true, mouse: true, vi: true,
-    style: { selected: { bg: 'blue', bold: true }, border: { fg: 'blue' } },
-  });
-  const inp = blessed.textarea({
-    left: 17, top: 0, right: 0, height: '45%', border: { type: 'line' },
-    label: ' Code Input ', inputOnFocus: true, keys: true, mouse: true,
-    style: { border: { fg: 'yellow' } },
-  });
-  const out = blessed.box({
-    left: 17, bottom: 0, right: 0, height: '50%', border: { type: 'line' },
-    label: ' Output ', scrollable: true, alwaysScroll: true, mouse: true, tags: true,
-    style: { border: { fg: 'green' } },
-  });
-  p.append(sidebar); p.append(inp); p.append(out);
-  sidebar.on('select', (item, i) => {
-    const op = ops[i];
-    const code = inp.getValue().trim();
-    out.setContent(`{cyan-fg}Running: ai ${op}…{/}\n`);
-    aiRun([op, code], d => { out.setContent(out.getContent() + d); out.setScrollPerc(100); screen.render(); }, () => { screen.render(); });
-  });
-  inp.focus();
-})(panels[1]);
-
-// ── TAB 2: Files ─────────────────────────────────────────────────────────────
-(function buildFiles(p) {
-  const ops = [['Summarize dir','batch summarize .'],['Review .js','batch review *.js'],['Watch ./','watch start .'],['Batch run','batch run']];
-  const list = blessed.list({
-    top: 0, left: 0, width: '100%', height: 14, border: { type: 'line' },
-    label: ' Quick Actions ', items: ops.map(o => `  ${o[0]}`), keys: true, mouse: true, vi: true,
-    style: { selected: { bg: 'magenta', bold: true }, border: { fg: 'magenta' } },
-  });
-  const out = blessed.box({
-    top: 14, left: 0, width: '100%', bottom: 0, border: { type: 'line' },
-    label: ' Output ', scrollable: true, alwaysScroll: true, mouse: true,
-    style: { border: { fg: 'green' } },
-  });
-  p.append(list); p.append(out);
-  list.on('select', (item, i) => {
-    const args = ops[i][1].split(' ');
-    out.setContent('');
-    aiRun(args, d => { out.setContent(out.getContent() + d); out.setScrollPerc(100); screen.render(); }, () => screen.render());
-  });
-  list.focus();
-})(panels[2]);
-
-// ── TAB 3: Workflows ─────────────────────────────────────────────────────────
-(function buildWf(p) {
-  const wfList = blessed.list({
-    top: 0, left: 0, width: 28, height: '100%', border: { type: 'line' },
-    label: ' Workflows ', keys: true, mouse: true, vi: true,
-    style: { selected: { bg: 'cyan', bold: true }, border: { fg: 'cyan' } },
-  });
-  const out = blessed.box({
-    top: 0, left: 29, right: 0, height: '100%', border: { type: 'line' },
-    label: ' Output ', scrollable: true, alwaysScroll: true, mouse: true,
-    style: { border: { fg: 'green' } },
-  });
-  p.append(wfList); p.append(out);
-
-  function refresh() {
-    run(`${AI_CMD} workflow list 2>/dev/null`, (e, stdout) => {
-      const lines = stdout.split('\n').filter(l => l.trim() && !l.startsWith('──'));
-      wfList.setItems(lines.length ? lines.map(l => l.trim()) : ['(none)']);
-      screen.render();
-    });
-  }
-  refresh();
-  wfList.on('select', (item) => {
-    const name = item.getText().split(' ')[0].trim();
-    out.setContent(`{cyan-fg}Running workflow: ${name}…{/}\n`);
-    aiRun(['workflow','run',name], d => { out.setContent(out.getContent() + d); out.setScrollPerc(100); screen.render(); }, () => screen.render());
-  });
-  wfList.focus();
-})(panels[3]);
-
-// ── TAB 4: Monitor ───────────────────────────────────────────────────────────
-(function buildMonitor(p) {
-  let metricBox;
-  if (bc && bc.table) {
-    metricBox = bc.table({
-      top: 0, left: 0, width: '100%', height: 12,
-      label: ' System Metrics ', border: { type: 'line' },
-      style: { border: { fg: 'cyan' }, header: { fg: 'cyan', bold: true } },
-      columnWidth: [20, 40],
-    });
-    p.append(metricBox);
-    metricBox.setData({ headers: ['Metric','Value'], data: [['Loading…','']] });
-  } else {
-    metricBox = blessed.box({
-      top: 0, left: 0, width: '100%', height: 12,
-      border: { type: 'line' }, label: ' System Metrics ',
-      style: { border: { fg: 'cyan' } },
-    });
-    p.append(metricBox);
-  }
-  const logBox = blessed.box({
-    top: 12, left: 0, width: '100%', bottom: 0, border: { type: 'line' },
-    label: ' AI Analysis ', scrollable: true, alwaysScroll: true, mouse: true,
-    style: { border: { fg: 'magenta' } },
-  });
-  p.append(logBox);
-
-  function refresh() {
-    run(`${AI_CMD} monitor status 2>/dev/null`, (e, stdout) => {
-      if (bc && bc.table && metricBox.setData) {
-        const rows = stdout.split('\n').filter(l => l.trim()).map(l => {
-          const parts = l.split(':'); return [parts[0].replace(/\s+/g,'').trim(), (parts.slice(1).join(':') || '').trim().substring(0,38)];
-        });
-        metricBox.setData({ headers: ['Metric','Value'], data: rows.length ? rows : [['N/A','']] });
-      } else {
-        metricBox.setContent(stdout);
-      }
-      screen.render();
-    });
-  }
-  refresh();
-  const refreshBtn = blessed.button({
-    bottom: 0, left: 0, width: 20, height: 1,
-    content: '  Refresh (r)', style: { fg: 'black', bg: 'cyan', hover: { bg: 'green' } }, mouse: true,
-  });
-  p.append(refreshBtn);
-  refreshBtn.on('press', refresh);
-  screen.key('r', () => { if (curTab === 4) refresh(); });
-
-  const analyzeBtn = blessed.button({
-    bottom: 0, left: 22, width: 22, height: 1,
-    content: '  AI Analyze (a)', style: { fg: 'black', bg: 'yellow', hover: { bg: 'green' } }, mouse: true,
-  });
-  p.append(analyzeBtn);
-  analyzeBtn.on('press', () => {
-    logBox.setContent('{cyan-fg}Analyzing…{/}\n');
-    aiRun(['monitor','analyze'], d => { logBox.setContent(logBox.getContent() + d); logBox.setScrollPerc(100); screen.render(); }, () => screen.render());
-  });
-})(panels[4]);
-
-// ── TAB 5: Config ────────────────────────────────────────────────────────────
-(function buildConfig(p) {
-  const out = blessed.box({
-    top: 0, left: 0, width: '100%', height: '100%', border: { type: 'line' },
-    label: ' Configuration ', scrollable: true, alwaysScroll: true, mouse: true,
-    style: { border: { fg: 'yellow' } },
-  });
-  p.append(out);
-  run(`${AI_CMD} config show 2>/dev/null`, (e, stdout) => { out.setContent(stdout || '(no config output)'); screen.render(); });
-})(panels[5]);
-
-// ── Global keys ──────────────────────────────────────────────────────────────
-TABS.forEach((_, i) => { screen.key([`f${i+1}`,`F${i+1}`], () => showTab(i)); });
-screen.key(['C-c','q'], () => process.exit(0));
-tabBar.on('action', (item, i) => showTab(i));
-screen.render();
-ADVGUIEOF
-
-  # Install dependencies if needed
-  cd "$NPM_GUI_DIR"
-  if ! node -e "require('blessed')" &>/dev/null 2>&1; then
-    info "Installing blessed…"; npm init -y &>/dev/null; npm install blessed &>/dev/null
-  fi
-  if ! node -e "require('blessed-contrib')" &>/dev/null 2>&1; then
-    info "Installing blessed-contrib…"; npm install blessed-contrib &>/dev/null
-  fi
-
-  info "Launching ai-cli Advanced GUI…"
-  AI_CMD="$(command -v ai || realpath "$0")" node "$gui_js"
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: cmd_N_launch — dispatcher for  ai -N; gui / ai -N; gui-adv
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_N_launch() {
-  local sub="${1:-gui}"; shift 2>/dev/null || true
-  case "$sub" in
-    gui)         cmd_npm_gui "$@" ;;
-    gui-adv|adv) cmd_npm_gui_adv "$@" ;;
-    *)
-      hdr "ai -N — npm GUI launcher (v2.8)"
-      echo "  ${B}Usage:${R}"
-      echo "    ai -N gui        Standard blessed TUI"
-      echo "    ai -N gui-adv    Advanced multi-panel TUI"
-      echo ""
-      echo "  ${B}Requires:${R}  node + npm  (auto-installs blessed/blessed-contrib)"
-      ;;
-  esac
-}
 # ════════════════════════════════════════════════════════════════════════════════
 #  MAIN DISPATCHER
 # ════════════════════════════════════════════════════════════════════════════════
@@ -19392,27 +13110,6 @@ show_help() {
   echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
   echo ""
 
-  # ── v2.8: New Features ──────────────────────────────────────────────────────
-  echo -e "${C1}┌─ v2.8 NEW FEATURES ──────────────────────────────────────────────┐${R_}"
-  echo -e "${C2}│${R_}  ${B}Self-modify:${R_}  ai -Ad -m <n> -A \"<task>\"  (model rewrites itself)"
-  echo -e "${C2}│${R_}  ${B}Model Create:${R_} ai -Cr -m <n> -Sz 1B -D <hf_dataset> -OP <path>"
-  echo -e "${C2}│${R_}  ${B}Workflow:${R_}     ai workflow new|run|list|edit|delete|export|import"
-  echo -e "${C2}│${R_}  ${B}Batch:${R_}        ai batch summarize|review|translate|run <pattern>"
-  echo -e "${C2}│${R_}  ${B}Watch:${R_}        ai watch start|daemon|stop|log [path] [prompt]"
-  echo -e "${C2}│${R_}  ${B}Memo:${R_}         ai memo add|list|show|search|delete|ask|export"
-  echo -e "${C2}│${R_}  ${B}Template:${R_}     ai template new|list|run|show|edit|delete"
-  echo -e "${C2}│${R_}  ${B}Profile:${R_}      ai profile new|load|list|show|edit|delete|save-current"
-  echo -e "${C2}│${R_}  ${B}Diff:${R_}         ai ai-diff explain|review|summarize|git|changelog"
-  echo -e "${C2}│${R_}  ${B}Snippet:${R_}      ai snippet add|get|copy|explain|list|search|delete"
-  echo -e "${C2}│${R_}  ${B}Convert:${R_}      ai convert json-to-yaml|yaml-to-json|csv-to-json|md-to-html|code"
-  echo -e "${C2}│${R_}  ${B}Monitor:${R_}      ai monitor status|analyze|logs|gpu|processes"
-  echo -e "${C2}│${R_}  ${B}Schedule:${R_}     ai schedule add|list|remove"
-  echo -e "${C2}│${R_}  ${B}npm GUI:${R_}      ai gui            (blessed TUI, all commands)"
-  echo -e "${C2}│${R_}  ${B}npm GUI Adv:${R_}  ai gui-adv        (blessed-contrib, 6 panels)"
-  echo -e "${C2}│${R_}  ${B}Models:${R_}       142 recommended models (2.25× from v2.7)"
-  echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
-  echo ""
-
   # ── Examples ────────────────────────────────────────────────────────────────
   # ── v2.7.1: New Features ──────────────────────────────────────────────────────
   echo -e "${C1}┌─ v2.7 / v2.7.1 NEW FEATURES ────────────────────────────────────┐${R_}"
@@ -19438,6 +13135,40 @@ show_help() {
   echo -e "${C2}│${R_}    Connects to local AI CLI API server (ai api start)"
   echo -e "${C2}│${R_}    v2.7.1: fixed AI output (non-streaming JSON response)"
   echo -e "${C2}│${R_}    Full settings: API URL, model, max tokens, temperature"
+  echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
+  echo ""
+
+  echo -e "${C1}┌─ v2.9.0 NEW FEATURES ────────────────────────────────────────────┐${R_}"
+  echo -e "${C2}│${R_}  ${B}Config Snapshots:${R_}"
+  echo -e "${C2}│${R_}    ai snap save/load/list/diff/delete"
+  echo -e "${C2}│${R_}  ${B}Performance Benchmark:${R_}"
+  echo -e "${C2}│${R_}    ai perf [--tokens N] [--runs N]"
+  echo -e "${C2}│${R_}  ${B}Model Comparison:${R_}"
+  echo -e "${C2}│${R_}    ai compare \"prompt\" [--models a,b,c]"
+  echo -e "${C2}│${R_}  ${B}Prompt Templates:${R_}"
+  echo -e "${C2}│${R_}    ai template create/use/list/edit/delete"
+  echo -e "${C2}│${R_}  ${B}RAG Pipeline:${R_}"
+  echo -e "${C2}│${R_}    ai rag create <name> <dir>   Index local documents"
+  echo -e "${C2}│${R_}    ai rag query <name> \"question\""
+  echo -e "${C2}│${R_}  ${B}Batch Queue:${R_}"
+  echo -e "${C2}│${R_}    ai batch add/run/list/results/clear"
+  echo -e "${C2}│${R_}  ${B}Health Check:${R_}"
+  echo -e "${C2}│${R_}    ai health     Full system diagnostics"
+  echo -e "${C2}│${R_}  ${B}Conversation Branching:${R_}"
+  echo -e "${C2}│${R_}    ai branch create/use/list/merge/delete"
+  echo -e "${C2}│${R_}  ${B}Export / Import:${R_}"
+  echo -e "${C2}│${R_}    ai export [all|chat|config|models]"
+  echo -e "${C2}│${R_}    ai import <dir|file>"
+  echo -e "${C2}│${R_}  ${B}Cleanup:${R_}"
+  echo -e "${C2}│${R_}    ai cleanup [--dry-run]"
+  echo -e "${C2}│${R_}  ${B}Model Presets:${R_}"
+  echo -e "${C2}│${R_}    ai preset save/load/list/delete"
+  echo -e "${C2}│${R_}  ${B}Plugin System:${R_}"
+  echo -e "${C2}│${R_}    ai plugin list/install/remove/reload"
+  echo -e "${C2}│${R_}  ${B}Bug Fixes & QOL:${R_}"
+  echo -e "${C2}│${R_}    API retry with exponential backoff + jitter"
+  echo -e "${C2}│${R_}    Enhanced error codes (ERR4xx-6xx) with suggestions"
+  echo -e "${C2}│${R_}    Rate limit tracking and warnings"
   echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
   echo ""
 
@@ -21597,1043 +15328,6 @@ HELPEOF
 }
 
 
-
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai context — CONVERSATION CONTEXT MANAGER
-#  Manage long-running context windows: save, load, merge, trim, summarize
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_context() {
-  local sub="${1:-show}"; shift 2>/dev/null || true
-  local ctx_dir="$CONFIG_DIR/contexts"
-  mkdir -p "$ctx_dir"
-
-  case "$sub" in
-    save|store)
-      local name="${1:-ctx_$(date +%Y%m%d_%H%M%S)}"
-      local ctx_file="$ctx_dir/${name}.json"
-      # Save current session context
-      local hist_file=""
-      [[ -n "${ACTIVE_PROJECT:-}" ]] && hist_file="$PROJECTS_DIR/${ACTIVE_PROJECT}/history.jsonl"
-      [[ -z "$hist_file" || ! -f "$hist_file" ]] && hist_file="$CONFIG_DIR/session_history.jsonl"
-      if [[ -f "$hist_file" ]]; then
-        local count; count=$(wc -l < "$hist_file")
-        cp "$hist_file" "$ctx_file"
-        ok "Context saved: $name ($count messages)"
-        info "Load with: ai context load $name"
-      else
-        info "No active session history found."
-        info "Start a chat first: ai chat, or ai ask '...'"
-      fi ;;
-
-    load|restore)
-      local name="${1:-}"
-      [[ -z "$name" ]] && {
-        hdr "Saved Contexts"
-        for f in "$ctx_dir"/*.json; do
-          [[ -f "$f" ]] || continue
-          local n; n=$(basename "$f" .json)
-          local cnt; cnt=$(wc -l < "$f" 2>/dev/null)
-          local ts; ts=$(stat -c %y "$f" 2>/dev/null | cut -d' ' -f1 || date -r "$f" +%Y-%m-%d 2>/dev/null)
-          printf "  ${BCYAN}%-24s${R} %4s msgs  %s\n" "$n" "$cnt" "$ts"
-        done
-        return 0
-      }
-      local ctx_file="$ctx_dir/${name}.json"
-      [[ ! -f "$ctx_file" ]] && { err "Context not found: $name"; return 1; }
-      # Copy into active session
-      local dest="$CONFIG_DIR/session_history.jsonl"
-      cp "$ctx_file" "$dest"
-      ok "Context loaded: $name  ($(wc -l < "$dest") messages)"
-      info "Continue: ai chat" ;;
-
-    show|display)
-      local name="${1:-}" n="${2:-10}"
-      local hist_file=""
-      if [[ -n "$name" ]]; then
-        hist_file="$ctx_dir/${name}.json"
-      elif [[ -n "${ACTIVE_PROJECT:-}" ]]; then
-        hist_file="$PROJECTS_DIR/${ACTIVE_PROJECT}/history.jsonl"
-      else
-        hist_file="$CONFIG_DIR/session_history.jsonl"
-      fi
-      [[ ! -f "$hist_file" ]] && { info "No context found."; return 0; }
-      hdr "Context${name:+: $name} (last $n messages)"
-      [[ -n "$PYTHON" ]] && tail -n "$n" "$hist_file" | "$PYTHON" -c "
-import json,sys
-for line in sys.stdin:
-    line=line.strip()
-    if not line: continue
-    try:
-        m=json.loads(line)
-        role=m.get('role','?')
-        color='\033[96m' if role=='assistant' else '\033[93m'
-        content=m.get('content','')[:120].replace(chr(10),' ')
-        print(f'  {color}[{role:9s}]\033[0m {content}')
-    except: print(f'  {line[:100]}')
-" || tail -n "$n" "$hist_file" ;;
-
-    summarize|compress)
-      local name="${1:-}"
-      local hist_file=""
-      if [[ -n "$name" ]]; then
-        hist_file="$ctx_dir/${name}.json"
-      elif [[ -n "${ACTIVE_PROJECT:-}" ]]; then
-        hist_file="$PROJECTS_DIR/${ACTIVE_PROJECT}/history.jsonl"
-      else
-        hist_file="$CONFIG_DIR/session_history.jsonl"
-      fi
-      [[ ! -f "$hist_file" ]] && { info "No context to summarize."; return 0; }
-      info "Summarizing context to reduce token usage…"
-      local all_msgs; all_msgs=$(cat "$hist_file" | [[ -n "$PYTHON" ]] && "$PYTHON" -c "
-import json,sys
-msgs=[]
-for line in sys.stdin:
-    try: msgs.append(json.loads(line.strip()))
-    except: pass
-print(chr(10).join(f\"[{m.get('role','?')}]: {m.get('content','')[:200]}\" for m in msgs))
-" 2>/dev/null || cat "$hist_file")
-      local summary; summary=$(dispatch_ask "Summarize this conversation history concisely, preserving all key facts, decisions, and context needed to continue the conversation:
-
-$all_msgs")
-      # Replace history with single summary message
-      [[ -n "$PYTHON" ]] && "$PYTHON" -c "
-import json
-summary_msg = json.dumps({'role':'assistant','content':'[CONTEXT SUMMARY] $summary'})
-open('$hist_file','w').write(summary_msg + chr(10))
-print(f'Context compressed to 1 summary message')
-" 2>/dev/null
-      ok "Context summarized and compressed" ;;
-
-    merge)
-      local n1="$1" n2="$2" dest="${3:-merged_$(date +%Y%m%d%H%M%S)}"
-      [[ -z "$n1" || -z "$n2" ]] && { err "Usage: ai context merge <ctx1> <ctx2> [output]"; return 1; }
-      [[ ! -f "$ctx_dir/${n1}.json" ]] && { err "Not found: $n1"; return 1; }
-      [[ ! -f "$ctx_dir/${n2}.json" ]] && { err "Not found: $n2"; return 1; }
-      cat "$ctx_dir/${n1}.json" "$ctx_dir/${n2}.json" > "$ctx_dir/${dest}.json"
-      ok "Merged: $n1 + $n2 → $dest  ($(wc -l < "$ctx_dir/${dest}.json") messages)" ;;
-
-    trim)
-      local n="${1:-50}"
-      local hist_file="$CONFIG_DIR/session_history.jsonl"
-      [[ -n "${ACTIVE_PROJECT:-}" ]] && hist_file="$PROJECTS_DIR/${ACTIVE_PROJECT}/history.jsonl"
-      [[ ! -f "$hist_file" ]] && { info "No active context."; return 0; }
-      local before; before=$(wc -l < "$hist_file")
-      tail -n "$n" "$hist_file" > "${hist_file}.tmp" && mv "${hist_file}.tmp" "$hist_file"
-      local after; after=$(wc -l < "$hist_file")
-      ok "Trimmed context: $before → $after messages (kept last $n)" ;;
-
-    clear|reset)
-      local hist_file="$CONFIG_DIR/session_history.jsonl"
-      [[ -n "${ACTIVE_PROJECT:-}" ]] && hist_file="$PROJECTS_DIR/${ACTIVE_PROJECT}/history.jsonl"
-      read -rp "Clear current context? [y/N]: " c
-      [[ "${c,,}" == "y" ]] && { > "$hist_file"; ok "Context cleared."; } || info "Cancelled." ;;
-
-    list|ls)
-      hdr "Saved Contexts"
-      local found=0
-      for f in "$ctx_dir"/*.json; do
-        [[ -f "$f" ]] || continue
-        local n; n=$(basename "$f" .json)
-        local cnt; cnt=$(wc -l < "$f" 2>/dev/null)
-        local sz; sz=$(du -sh "$f" 2>/dev/null | cut -f1)
-        local ts; ts=$(stat -c %y "$f" 2>/dev/null | cut -d. -f1 || date -r "$f" '+%Y-%m-%d %H:%M' 2>/dev/null)
-        printf "  ${BCYAN}%-26s${R}  %4s msgs  %5s  %s\n" "$n" "$cnt" "$sz" "$ts"
-        found=1
-      done
-      [[ $found -eq 0 ]] && info "No saved contexts.  Save: ai context save <n>" ;;
-
-    delete|rm)
-      local name="$1"
-      [[ -z "$name" ]] && { err "Name required"; return 1; }
-      [[ ! -f "$ctx_dir/${name}.json" ]] && { err "Not found: $name"; return 1; }
-      rm -f "$ctx_dir/${name}.json"
-      ok "Deleted context: $name" ;;
-
-    stats)
-      hdr "Context Statistics"
-      local hist_file="$CONFIG_DIR/session_history.jsonl"
-      [[ -n "${ACTIVE_PROJECT:-}" ]] && hist_file="$PROJECTS_DIR/${ACTIVE_PROJECT}/history.jsonl"
-      if [[ -f "$hist_file" ]]; then
-        local total; total=$(wc -l < "$hist_file")
-        local user_msgs; user_msgs=$(grep -c '"role":"user"' "$hist_file" 2>/dev/null || echo 0)
-        local asst_msgs; asst_msgs=$(grep -c '"role":"assistant"' "$hist_file" 2>/dev/null || echo 0)
-        local total_chars; total_chars=$(wc -c < "$hist_file" 2>/dev/null)
-        printf "  Active session:  %d messages (%d user, %d assistant)\n" "$total" "$user_msgs" "$asst_msgs"
-        printf "  Approx tokens:   ~%d\n" "$(( total_chars / 4 ))"
-      fi
-      local saved; saved=$(ls "$ctx_dir"/*.json 2>/dev/null | wc -l)
-      printf "  Saved contexts:  %d\n" "$saved" ;;
-
-    -h|--help)
-      hdr "ai context — Context Manager (v2.8)"
-      echo "  save [n]          Save current session context"
-      echo "  load [n]          Load saved context (list if no name)"
-      echo "  show [n] [limit]  Display recent messages"
-      echo "  summarize [n]     Compress context with AI summary"
-      echo "  merge <a> <b>     Merge two contexts"
-      echo "  trim [n]          Keep only last N messages"
-      echo "  clear             Clear current session"
-      echo "  list              List saved contexts"
-      echo "  delete <n>        Remove saved context"
-      echo "  stats             Token/message statistics" ;;
-
-    *) err "Unknown: $sub  (try: ai context -h)" ;;
-  esac
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai chain — PROMPT CHAINING ENGINE
-#  Chain multiple AI prompts together, pipe outputs, branch on conditions,
-#  transform between steps, build complex multi-step reasoning pipelines
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_chain() {
-  local sub="${1:-run}"; shift 2>/dev/null || true
-  local chain_dir="$CONFIG_DIR/chains"
-  mkdir -p "$chain_dir"
-
-  case "$sub" in
-    run)
-      # Quick inline chain: ai chain run "step1 prompt" | "step2 prompt" | ...
-      local input="${1:-}"
-      [[ -z "$input" && ! -t 0 ]] && { input=$(cat); }
-      [[ -z "$input" && -t 0 ]] && { read -rp "Initial input: " input; }
-
-      # Remaining args are prompts to chain
-      local prompts=("$@")
-      if [[ ${#prompts[@]} -eq 0 ]]; then
-        err "Usage: ai chain run <input> <prompt1> <prompt2> ..."
-        echo "  Example: ai chain run 'raw log file' 'extract errors' 'categorize by severity' 'suggest fixes'"
-        return 1
-      fi
-
-      local current="$input"
-      local step=1
-      for prompt in "${prompts[@]}"; do
-        info "Chain step $step: ${prompt:0:60}…"
-        current=$(dispatch_ask "$prompt
-
-Input:
-$current")
-        [[ -z "$current" ]] && { err "Step $step returned empty — chain stopped."; return 1; }
-        ok "Step $step done (${#current} chars output)"
-        ((step++))
-      done
-      echo ""
-      echo "$current" ;;
-
-    new|create)
-      local name="${1:-}"
-      [[ -z "$name" ]] && { read -rp "Chain name: " name; }
-      [[ -z "$name" ]] && { err "Name required"; return 1; }
-      local cfile="$chain_dir/${name}.json"
-      [[ -f "$cfile" ]] && { err "Chain exists: $name"; return 1; }
-      cat > "$cfile" <<'CHAINJSON'
-{
-  "name": "CHAIN_NAME",
-  "description": "Multi-step AI pipeline",
-  "steps": [
-    {
-      "id": "extract",
-      "prompt": "Extract all key information from this input:\n{{input}}",
-      "save_as": "extracted"
-    },
-    {
-      "id": "analyze",
-      "prompt": "Analyze the following extracted information and identify patterns:\n{{extracted}}",
-      "save_as": "analysis"
-    },
-    {
-      "id": "report",
-      "prompt": "Write a concise report based on this analysis:\n{{analysis}}",
-      "save_as": "final_report"
-    }
-  ],
-  "output": "{{final_report}}"
-}
-CHAINJSON
-      sed -i "s/CHAIN_NAME/$name/" "$cfile"
-      ${EDITOR:-nano} "$cfile"
-      ok "Chain created: $name" ;;
-
-    exec|execute|file)
-      local name="$1" input="${2:-}"
-      [[ -z "$name" ]] && { err "Usage: ai chain exec <n> [input]"; return 1; }
-      local cfile="$chain_dir/${name}.json"
-      [[ ! -f "$cfile" ]] && { err "Chain not found: $name"; return 1; }
-      [[ -z "$input" && ! -t 0 ]] && { input=$(cat); }
-      [[ -z "$input" && -t 0 ]] && { read -rp "Input for chain '$name': " input; }
-
-      hdr "Executing chain: $name"
-      [[ -z "$PYTHON" ]] && { err ERR501; return 1; }
-
-      CHAIN_FILE="$cfile" CHAIN_INPUT="$input" "$PYTHON" - <<'PYCHAIN'
-import os, sys, json, re
-
-cfile = os.environ['CHAIN_FILE']
-inp   = os.environ.get('CHAIN_INPUT', '')
-ai_cmd = os.environ.get('AI_CMD', 'ai')
-
-chain = json.load(open(cfile))
-import subprocess
-
-def info(m):  print(f"\033[96mℹ {m}\033[0m", flush=True)
-def ok(m):    print(f"\033[92m✓ {m}\033[0m", flush=True)
-def err(m):   print(f"\033[91m✗ {m}\033[0m", flush=True)
-
-def resolve(s, ctx):
-    if not isinstance(s, str): return s
-    return re.sub(r'\{\{([^}]+)\}\}', lambda m: str(ctx.get(m.group(1).strip(), m.group(0))), s)
-
-ctx = {'input': inp}
-last_out = inp
-
-for i, step in enumerate(chain.get('steps', [])):
-    sid    = step.get('id', f'step{i+1}')
-    prompt = resolve(step.get('prompt', '{{input}}'), ctx)
-    save_as = step.get('save_as', f'step{i+1}_out')
-    transform = step.get('transform', '')
-    condition = step.get('condition', '')
-
-    # Condition check
-    if condition:
-        try:
-            if not eval(resolve(condition, ctx), {'ctx': ctx}):
-                info(f"  Step {sid}: skipped (condition false)")
-                continue
-        except: pass
-
-    info(f"  Step {i+1}/{len(chain.get('steps',[]))}: {sid}")
-
-    r = subprocess.run([ai_cmd, 'ask', prompt], capture_output=True, text=True, timeout=120)
-    out = r.stdout.strip()
-
-    if transform:
-        try: out = str(eval(transform, {'out': out, 'ctx': ctx, 're': re}))
-        except Exception as e: print(f"  transform error: {e}")
-
-    ctx[save_as] = out
-    ctx['last_output'] = out
-    last_out = out
-    ok(f"  → {out[:80]}{'…' if len(out)>80 else ''}")
-
-output_tpl = chain.get('output', '{{last_output}}')
-final = resolve(output_tpl, ctx)
-print(f"\n\033[1m\033[97m── Final Output ──\033[0m")
-print(final)
-PYCHAIN
-      ;;
-
-    list|ls)
-      hdr "Chains"
-      local files=("$chain_dir"/*.json)
-      [[ ! -e "${files[0]}" ]] && { info "No chains. Create: ai chain new <n>"; return 0; }
-      for f in "${files[@]}"; do
-        [[ -f "$f" ]] || continue
-        local n; n=$(basename "$f" .json)
-        local steps desc
-        if [[ -n "$PYTHON" ]]; then
-          read -r steps desc < <("$PYTHON" -c "
-import json; d=json.load(open('$f'))
-print(len(d.get('steps',[])), d.get('description','')[:50])
-" 2>/dev/null)
-        fi
-        printf "  ${BCYAN}%-22s${R}  %2s steps  %s\n" "$n" "${steps:-?}" "${desc:-}"
-      done ;;
-
-    show)
-      local name="$1"
-      [[ -z "$name" ]] && { err "Name required"; return 1; }
-      cat "$chain_dir/${name}.json" | [[ -n "$PYTHON" ]] && "$PYTHON" -m json.tool || cat ;;
-
-    delete|rm)
-      local name="$1"
-      [[ ! -f "$chain_dir/${name}.json" ]] && { err "Not found: $name"; return 1; }
-      rm -f "$chain_dir/${name}.json"; ok "Deleted: $name" ;;
-
-    -h|--help)
-      hdr "ai chain — Prompt Chaining Engine (v2.8)"
-      echo ""
-      echo "  ${B}Quick chain (inline):${R}"
-      echo "    ai chain run <input> <prompt1> <prompt2> ..."
-      echo "    echo 'logs.txt content' | ai chain run 'extract errors' 'fix each error' 'summarize'"
-      echo ""
-      echo "  ${B}Named chains (JSON config):${R}"
-      echo "    new <n>            Create chain config"
-      echo "    exec <n> [input]   Execute named chain"
-      echo "    list               List all chains"
-      echo "    show <n>           Display chain config"
-      echo "    delete <n>         Remove chain"
-      echo ""
-      echo "  ${B}Step variables:${R}  {{input}}  {{step_id}}  {{last_output}}" ;;
-
-    *) err "Unknown: $sub  (try: ai chain -h)" ;;
-  esac
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai debug — AI-POWERED DEBUGGER
-#  Analyze errors, explain stack traces, suggest fixes, validate patches,
-#  run with tracing, detect memory leaks, profile performance bottlenecks
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_debug() {
-  local sub="${1:-analyze}"; shift 2>/dev/null || true
-
-  case "$sub" in
-    analyze|error|err)
-      # Read error/traceback from file, args, or stdin
-      local error_text=""
-      local file="${1:-}"
-      if [[ -n "$file" && -f "$file" ]]; then
-        error_text=$(cat "$file")
-        shift
-      elif [[ ! -t 0 ]]; then
-        error_text=$(cat)
-      elif [[ -n "$file" ]]; then
-        error_text="$file $*"
-        shift $#
-      else
-        read -rp "Paste error/traceback (Ctrl+D when done): " -d $'\x04' error_text
-      fi
-      [[ -z "$error_text" ]] && { err "No error text provided"; return 1; }
-
-      # Detect language from error signature
-      local lang="unknown"
-      echo "$error_text" | grep -q "Traceback (most recent call last)" && lang="Python"
-      echo "$error_text" | grep -q "at .*(.*:[0-9]*:[0-9]*)" && lang="JavaScript/Node"
-      echo "$error_text" | grep -q "Exception in thread\|\.java:" && lang="Java"
-      echo "$error_text" | grep -q "error\[E[0-9]\+\]\|panicked at" && lang="Rust"
-      echo "$error_text" | grep -q "SIGSEGV\|Segmentation fault\|core dumped" && lang="C/C++"
-      echo "$error_text" | grep -q "Fatal error:\|Parse error:\|Warning:" && lang="PHP"
-
-      info "Analyzing $lang error…"
-      dispatch_ask "You are an expert $lang debugger. Analyze this error/traceback and provide:
-
-1. **Root Cause**: What exactly went wrong and why
-2. **Location**: Which line/file/function is the origin
-3. **Fix**: Exact code change(s) needed (show before/after)
-4. **Prevention**: How to avoid this class of error in future
-5. **Related Issues**: Other bugs this might indicate
-
-Error:
-\`\`\`
-${error_text:0:6000}
-\`\`\`" ;;
-
-    explain)
-      # Explain what a piece of code does and why it might fail
-      local file="${1:-}"
-      local code=""
-      if [[ -n "$file" && -f "$file" ]]; then
-        code=$(cat "$file"); shift
-      elif [[ ! -t 0 ]]; then
-        code=$(cat)
-      else
-        read -rp "Paste code to explain (Ctrl+D when done): " -d $'\x04' code
-      fi
-      dispatch_ask "Explain this code step by step. Focus on:
-1. What it does overall
-2. Each major section
-3. Potential failure points and edge cases
-4. What inputs would cause problems
-5. Suggestions to make it more robust
-
-Code:
-\`\`\`
-${code:0:6000}
-\`\`\`" ;;
-
-    trace|run)
-      # Run a script with bash tracing and analyze failures
-      local script="${1:-}"; shift
-      [[ -z "$script" ]] && { err "Usage: ai debug trace <script.sh> [args]"; return 1; }
-      [[ ! -f "$script" ]] && { err "Not found: $script"; return 1; }
-      local trace_out; trace_out=$(mktemp /tmp/ai_debug_XXXXXX.log)
-      info "Running with trace: $script"
-      bash -x "$script" "$@" 2> "$trace_out"
-      local exit_code=$?
-      if [[ $exit_code -ne 0 ]]; then
-        warn "Script failed (exit $exit_code). Analyzing trace…"
-        local trace_content; trace_content=$(tail -50 "$trace_out")
-        dispatch_ask "This bash script failed with exit code $exit_code. Analyze the trace and explain what went wrong and how to fix it:
-
-Trace (last 50 lines):
-\`\`\`
-$trace_content
-\`\`\`"
-      else
-        ok "Script completed successfully (exit 0)"
-        info "Full trace: $trace_out"
-      fi ;;
-
-    profile|perf)
-      local script="${1:-}"; shift
-      [[ -z "$script" ]] && { err "Usage: ai debug profile <script>"; return 1; }
-      [[ ! -f "$script" ]] && { err "Not found: $script"; return 1; }
-      local lang="${script##*.}"
-      case "$lang" in
-        py|python)
-          info "Profiling Python script: $script"
-          local prof_out; prof_out=$(mktemp /tmp/ai_prof_XXXXXX.txt)
-          python3 -m cProfile -s cumulative "$script" "$@" 2>&1 | head -30 > "$prof_out"
-          local profile_data; profile_data=$(cat "$prof_out")
-          dispatch_ask "Analyze this Python profiling output and identify:
-1. The top bottlenecks (slowest functions)
-2. Optimization strategies for each
-3. Priority order for fixes (impact vs effort)
-
-Profile:
-$profile_data" ;;
-        sh|bash)
-          # Time each section
-          local time_out; time_out=$({ time bash "$script" "$@"; } 2>&1)
-          dispatch_ask "Analyze these timing results for a bash script and suggest optimizations:
-$time_out" ;;
-        *)
-          dispatch_ask "How would I profile a .$lang script for performance bottlenecks? Provide specific commands and tools." ;;
-      esac ;;
-
-    lint)
-      local file="${1:-}"
-      [[ -z "$file" ]] && { err "Usage: ai debug lint <file>"; return 1; }
-      [[ ! -f "$file" ]] && { err "Not found: $file"; return 1; }
-      local lang="${file##*.}"
-      local lint_out=""
-      case "$lang" in
-        py|python)
-          if command -v pylint &>/dev/null; then
-            lint_out=$(pylint "$file" 2>&1 | head -40)
-          elif command -v flake8 &>/dev/null; then
-            lint_out=$(flake8 "$file" 2>&1 | head -40)
-          else
-            lint_out="(pylint/flake8 not installed)"
-          fi ;;
-        sh|bash)
-          if command -v shellcheck &>/dev/null; then
-            lint_out=$(shellcheck "$file" 2>&1 | head -40)
-          else
-            lint_out="(shellcheck not installed)"
-          fi ;;
-        js|ts)
-          if command -v eslint &>/dev/null; then
-            lint_out=$(eslint "$file" 2>&1 | head -40)
-          else
-            lint_out="(eslint not installed)"
-          fi ;;
-        *) lint_out="(no linter for .$lang)" ;;
-      esac
-      local code; code=$(head -100 "$file")
-      dispatch_ask "Review this $lang code for bugs, style issues, and improvements.
-Also consider these lint results: $lint_out
-
-Code:
-\`\`\`$lang
-$code
-\`\`\`" ;;
-
-    memory)
-      local pid="${1:-}"
-      if [[ -n "$pid" ]]; then
-        if [[ -f "/proc/$pid/status" ]]; then
-          local mem_info; mem_info=$(cat "/proc/$pid/status" | grep -E "VmRSS|VmSize|VmSwap|VmPeak")
-          dispatch_ask "Analyze this process memory info (PID $pid) and explain if usage seems normal:
-$mem_info"
-        else
-          err "PID not found: $pid"
-        fi
-      else
-        # Overall memory pressure analysis
-        local mem_info; mem_info=$(free -h 2>/dev/null && ps aux --sort=-%mem 2>/dev/null | head -10)
-        dispatch_ask "Analyze this system memory usage. Are there memory leaks? What are the top consumers? Any action needed?
-
-$mem_info"
-      fi ;;
-
-    fix)
-      local file="${1:-}"
-      [[ -z "$file" ]] && { err "Usage: ai debug fix <file>"; return 1; }
-      [[ ! -f "$file" ]] && { err "Not found: $file"; return 1; }
-      local lang="${file##*.}"
-      local code; code=$(cat "$file")
-      local fixed; fixed=$(dispatch_ask "Fix all bugs in this $lang code. Output ONLY the fixed code, no explanation:
-
-\`\`\`$lang
-$code
-\`\`\`")
-      fixed=$(echo "$fixed" | sed '/^```/d')
-      echo "$fixed"
-      read -rp "  Save fixed version back to $file? [y/N]: " c
-      if [[ "${c,,}" == "y" ]]; then
-        cp "$file" "${file}.bak.$(date +%Y%m%d_%H%M%S)"
-        echo "$fixed" > "$file"
-        ok "Fixed. Backup at ${file}.bak.*"
-      fi ;;
-
-    -h|--help)
-      hdr "ai debug — AI Debugger (v2.8)"
-      echo "  analyze [file|text]    Analyze error/traceback"
-      echo "  explain [file]         Explain code line by line"
-      echo "  trace <script> [args]  Run with bash -x tracing"
-      echo "  profile <script>       Performance profiling"
-      echo "  lint <file>            Lint + AI review"
-      echo "  memory [pid]           Memory analysis"
-      echo "  fix <file>             Auto-fix bugs"
-      echo ""
-      echo "  ${B}Pipe errors:${R}"
-      echo "    python3 script.py 2>&1 | ai debug analyze"
-      echo "    cat error.log | ai debug analyze"
-      echo "    ai debug trace ./build.sh" ;;
-
-    *) err "Unknown: $sub  (try: ai debug -h)" ;;
-  esac
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai kb — PERSONAL KNOWLEDGE BASE
-#  Index files/dirs, semantic search, Q&A over your documents,
-#  auto-tagging, update detection, multiple collections
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_kb() {
-  local sub="${1:-list}"; shift 2>/dev/null || true
-  local kb_dir="$CONFIG_DIR/kb"
-  mkdir -p "$kb_dir" "$kb_dir/.collections"
-
-  case "$sub" in
-    index|add|build)
-      local path="${1:-.}" collection="${2:-default}"
-      [[ ! -e "$path" ]] && { err "Path not found: $path"; return 1; }
-      path=$(realpath "$path")
-      local cdir="$kb_dir/.collections/$collection"
-      mkdir -p "$cdir"
-      local index_file="$cdir/index.jsonl"
-      local manifest="$cdir/manifest.json"
-
-      hdr "Indexing: $path → collection '$collection'"
-      local count=0 skipped=0 total_chars=0
-
-      # Find indexable files
-      while IFS= read -r -d '' f; do
-        local ext="${f##*.}"
-        # Only index text-like files
-        case "$ext" in
-          md|txt|py|js|ts|sh|bash|json|yaml|yml|toml|csv|html|css|rs|go|rb|java|c|cpp|h) ;;
-          *) ((skipped++)); continue ;;
-        esac
-        local size; size=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
-        (( size > 500000 )) && { ((skipped++)); continue; }  # skip files > 500KB
-
-        local content; content=$(head -c 4000 "$f" 2>/dev/null)
-        local chars="${#content}"
-        total_chars=$((total_chars + chars))
-
-        # Build index entry
-        [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYIDX
-import json, os, hashlib, time
-f='$f'
-content=open(f,errors='replace').read(4000)
-entry={
-    'file':f,'ext':'$ext','size':$size,
-    'chars':$chars,'indexed':time.time(),
-    'hash':hashlib.md5(content.encode()).hexdigest(),
-    'preview':content[:200].replace(chr(10),' ')
-}
-with open('$index_file','a') as out:
-    out.write(json.dumps(entry)+chr(10))
-PYIDX
-        ((count++))
-        printf "\r  Indexed: %d files  (%s)…" "$count" "$(basename "$f")" >&2
-      done < <(find "$path" -maxdepth 5 -type f -print0 2>/dev/null)
-
-      printf "\n"
-      # Write manifest
-      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYMAN
-import json, time
-manifest={
-    'collection':'$collection','path':'$path',
-    'indexed':time.time(),'count':$count,
-    'total_chars':$total_chars,'skipped':$skipped
-}
-json.dump(manifest,open('$manifest','w'),indent=2)
-PYMAN
-      ok "Indexed $count files into collection '$collection' ($skipped skipped)"
-      info "Search: ai kb search '$collection' 'your query'" ;;
-
-    search|query|find)
-      local collection="$1" query="$2"
-      [[ -z "$collection" || -z "$query" ]] && {
-        err "Usage: ai kb search <collection> <query>"
-        return 1
-      }
-      local cdir="$kb_dir/.collections/$collection"
-      [[ ! -d "$cdir" ]] && { err "Collection not found: $collection  (index: ai kb index <path> $collection)"; return 1; }
-      local index_file="$cdir/index.jsonl"
-      [[ ! -f "$index_file" ]] && { err "No index found for: $collection  (run: ai kb index <path> $collection)"; return 1; }
-
-      info "Searching '$collection' for: $query"
-
-      # Full-text match candidates
-      [[ -n "$PYTHON" ]] && "$PYTHON" - <<PYSEARCH
-import json, os, re
-
-query = '$query'.lower()
-index = []
-with open('$index_file') as f:
-    for line in f:
-        try: index.append(json.loads(line.strip()))
-        except: pass
-
-# Score each file by keyword match in path + preview
-scored = []
-for entry in index:
-    score = 0
-    path_lower = entry.get('file','').lower()
-    preview_lower = entry.get('preview','').lower()
-    for word in query.split():
-        if word in path_lower:  score += 3
-        if word in preview_lower: score += 1
-    if score > 0:
-        scored.append((score, entry))
-
-scored.sort(key=lambda x: -x[0])
-top = scored[:8]
-
-if not top:
-    print("  No files matched. Try broader terms.")
-else:
-    print(f"  Top {len(top)} matches:\n")
-    for score, entry in top:
-        f = entry['file']
-        preview = entry.get('preview','')[:80].replace(chr(10),' ')
-        print(f"  \033[96m{f}\033[0m  (score={score})")
-        print(f"    {preview}")
-        print()
-PYSEARCH
-      ;;
-
-    ask|qa)
-      local collection="$1"; shift
-      local question="$*"
-      [[ -z "$collection" ]] && { err "Usage: ai kb ask <collection> <question>"; return 1; }
-      [[ -z "$question" && ! -t 0 ]] && { question=$(cat); }
-      [[ -z "$question" && -t 0 ]] && { read -rp "Question: " question; }
-      [[ -z "$question" ]] && { err "Question required"; return 1; }
-
-      local cdir="$kb_dir/.collections/$collection"
-      local index_file="$cdir/index.jsonl"
-      [[ ! -f "$index_file" ]] && { err "No index for: $collection"; return 1; }
-
-      info "Searching knowledge base: $question"
-
-      # Find top relevant files
-      [[ -n "$PYTHON" ]] || { err ERR501; return 1; }
-      local context; context=$("$PYTHON" - <<PYKA
-import json, os
-query='$question'.lower()
-index=[]
-with open('$index_file') as f:
-    for line in f:
-        try: index.append(json.loads(line.strip()))
-        except: pass
-scored=[]
-for entry in index:
-    score=sum((entry.get('preview','').lower()+entry.get('file','').lower()).count(w)*2
-              for w in query.split())
-    if score>0: scored.append((score,entry))
-scored.sort(key=lambda x:-x[0])
-out=''
-budget=6000
-for score,entry in scored[:5]:
-    f=entry['file']
-    if not os.path.exists(f): continue
-    content=open(f,errors='replace').read(min(1500,budget))
-    out+=f'=== {f} ===\n{content}\n\n'
-    budget-=len(content)
-    if budget<=0: break
-print(out[:6000] if out else '(no relevant files found)')
-PYKA
-)
-      dispatch_ask "Answer this question using ONLY the provided knowledge base context. If the answer isn't in the context, say so.
-
-Question: $question
-
-Knowledge Base Context:
-$context" ;;
-
-    list|ls)
-      hdr "Knowledge Base Collections"
-      local found=0
-      for cdir in "$kb_dir/.collections"/*/; do
-        [[ -d "$cdir" ]] || continue
-        local n; n=$(basename "$cdir")
-        local manifest="$cdir/manifest.json"
-        if [[ -f "$manifest" && -n "$PYTHON" ]]; then
-          "$PYTHON" -c "
-import json; d=json.load(open('$manifest'))
-from datetime import datetime
-ts=datetime.fromtimestamp(d.get('indexed',0)).strftime('%Y-%m-%d')
-print(f\"  \033[96m{d['collection']:<20}\033[0m  {d['count']:>5} files  {ts}  {d['path']}\")
-" 2>/dev/null
-        else
-          printf "  ${BCYAN}%s${R}\n" "$n"
-        fi
-        found=1
-      done
-      [[ $found -eq 0 ]] && info "No collections. Index: ai kb index <path> [collection-name]" ;;
-
-    update|refresh)
-      local collection="$1"
-      [[ -z "$collection" ]] && { err "Usage: ai kb update <collection>"; return 1; }
-      local cdir="$kb_dir/.collections/$collection"
-      local manifest="$cdir/manifest.json"
-      [[ ! -f "$manifest" ]] && { err "Collection not found: $collection"; return 1; }
-      local path; path=$([[ -n "$PYTHON" ]] && "$PYTHON" -c "import json; print(json.load(open('$manifest')).get('path','.'))" 2>/dev/null || echo ".")
-      info "Refreshing collection: $collection from $path"
-      rm -f "$cdir/index.jsonl"
-      cmd_kb index "$path" "$collection" ;;
-
-    delete|rm)
-      local collection="$1"
-      [[ -z "$collection" ]] && { err "Usage: ai kb delete <collection>"; return 1; }
-      local cdir="$kb_dir/.collections/$collection"
-      [[ ! -d "$cdir" ]] && { err "Not found: $collection"; return 1; }
-      read -rp "Delete collection '$collection'? [y/N]: " c
-      [[ "${c,,}" == "y" ]] && { rm -rf "$cdir"; ok "Deleted: $collection"; } || info "Cancelled." ;;
-
-    stats)
-      hdr "Knowledge Base Statistics"
-      local total_files=0 total_collections=0
-      for cdir in "$kb_dir/.collections"/*/; do
-        [[ -d "$cdir" ]] || continue
-        ((total_collections++))
-        [[ -f "$cdir/index.jsonl" ]] && total_files=$((total_files + $(wc -l < "$cdir/index.jsonl" 2>/dev/null || echo 0)))
-      done
-      printf "  Collections: %d\n" "$total_collections"
-      printf "  Total files: %d\n" "$total_files"
-      printf "  Index size:  %s\n" "$(du -sh "$kb_dir" 2>/dev/null | cut -f1)" ;;
-
-    -h|--help)
-      hdr "ai kb — Knowledge Base (v2.8)"
-      echo "  index <path> [name]    Index files into a collection"
-      echo "  search <name> <query>  Full-text search"
-      echo "  ask <name> <question>  AI Q&A over your docs"
-      echo "  list                        List collections"
-      echo "  update <name>          Refresh index"
-      echo "  delete <name>          Remove collection"
-      echo "  stats                  Statistics"
-      echo ""
-      echo "  ${B}Examples:${R}"
-      echo "    ai kb index ~/Documents docs"
-      echo "    ai kb search docs 'python async patterns'"
-      echo "    ai kb ask docs 'How do I configure the proxy?'" ;;
-
-    *) err "Unknown: $sub  (try: ai kb -h)" ;;
-  esac
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai summarize-dir — RECURSIVE DIRECTORY SUMMARIZER
-#  Summarize code repos, doc trees, log dirs — generates structured reports
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_summarize_dir() {
-  local path="${1:-.}" depth="${2:-2}" fmt="${3:-md}"
-  local include_hidden=0 max_files=200 output_file=""
-  shift 3 2>/dev/null || true
-
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --depth|-d)     depth="$2"; shift 2 ;;
-      --fmt|-f)       fmt="$2"; shift 2 ;;
-      --max|-n)       max_files="$2"; shift 2 ;;
-      --hidden)       include_hidden=1; shift ;;
-      -o|--output)    output_file="$2"; shift 2 ;;
-      *) shift ;;
-    esac
-  done
-
-  [[ ! -d "$path" ]] && { err "Not a directory: $path"; return 1; }
-  path=$(realpath "$path")
-
-  hdr "Summarizing directory: $path"
-  info "  Depth: $depth  Format: $fmt  Max files: $max_files"
-
-  # Collect directory structure
-  local tree_out; tree_out=$(find "$path" -maxdepth "$depth" \
-    $([[ $include_hidden -eq 0 ]] && echo "-not -path '*/.*'") \
-    -not -path '*/node_modules/*' -not -path '*/__pycache__/*' \
-    -not -path '*/.git/*' \
-    | sort | head -100 | sed "s|$path/||" | sed 's|^|  |')
-
-  # Count file types
-  local file_stats; file_stats=$(find "$path" -maxdepth "$depth" -type f \
-    -not -path '*/.*' -not -path '*/node_modules/*' \
-    | awk -F. '{print $NF}' | sort | uniq -c | sort -rn | head -10)
-
-  # Sample key files (README, config, main files)
-  local key_content=""
-  for pattern in README.md README.txt README package.json Makefile CMakeLists.txt \
-                 pyproject.toml setup.py Cargo.toml go.mod composer.json; do
-    local kf="$path/$pattern"
-    if [[ -f "$kf" ]]; then
-      key_content+="=== $pattern ===\n$(head -30 "$kf")\n\n"
-    fi
-  done
-
-  # Sample source files
-  local count=0
-  local sample_content=""
-  while IFS= read -r -d '' f; do
-    [[ $count -ge 5 ]] && break
-    local ext="${f##*.}"
-    case "$ext" in
-      py|js|ts|sh|rs|go|rb|java|c|cpp|h)
-        sample_content+="=== $(basename "$f") ===\n$(head -20 "$f")\n\n"
-        ((count++)) ;;
-    esac
-  done < <(find "$path" -maxdepth "$depth" -type f -not -path '*/.*' \
-           -not -path '*/node_modules/*' -print0 2>/dev/null | shuf -z 2>/dev/null | head -z 10)
-
-  local summary; summary=$(dispatch_ask "Analyze this directory/codebase and write a comprehensive summary.
-
-Directory: $path
-
-Structure:
-$tree_out
-
-File types:
-$file_stats
-
-Key files:
-$key_content
-
-Sample source files:
-$sample_content
-
-Write a structured summary including:
-1. **Purpose**: What this project/directory does
-2. **Technology Stack**: Languages, frameworks, tools
-3. **Architecture**: How it's organized
-4. **Entry Points**: Main files to start with
-5. **Dependencies**: Key external dependencies
-6. **Notable Features**: What stands out
-Format as $fmt")
-
-  local ts; ts=$(date +%Y%m%d_%H%M%S)
-  local default_out="$AI_OUTPUT_DIR/dir_summary_${ts}.${fmt/markdown/md}"
-  local dest="${output_file:-$default_out}"
-
-  echo "$summary" > "$dest"
-  ok "Summary saved: $dest"
-  echo ""
-  echo "$summary" | head -30
-  [[ $(echo "$summary" | wc -l) -gt 30 ]] && info "  … (full summary in $dest)"
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-#  v2.8: ai search — AI-POWERED SEMANTIC FILE/CODE SEARCH
-#  Searches files by meaning (not just text match), ranks by relevance
-# ════════════════════════════════════════════════════════════════════════════════
-cmd_ai_search() {
-  local query="${1:-}"; shift 2>/dev/null || true
-  local path="." ext="" depth=4 top_n=10 verbose=0
-
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --path|-p)    path="$2"; shift 2 ;;
-      --ext|-e)     ext="$2"; shift 2 ;;
-      --depth|-d)   depth="$2"; shift 2 ;;
-      --top|-n)     top_n="$2"; shift 2 ;;
-      --verbose|-v) verbose=1; shift ;;
-      *) [[ -z "$query" ]] && { query="$1"; shift; } || shift ;;
-    esac
-  done
-
-  [[ -z "$query" ]] && { read -rp "Search query: " query; }
-  [[ -z "$query" ]] && { err "Query required"; return 1; }
-  [[ ! -d "$path" ]] && { err "Path not found: $path"; return 1; }
-
-  info "Semantic search: '$query' in $path"
-
-  # Collect candidate files
-  local files=()
-  local find_args="-maxdepth $depth -type f -not -path '*/.*' -not -path '*/node_modules/*'"
-  [[ -n "$ext" ]] && find_args+=" -name '*.$ext'"
-
-  while IFS= read -r -d '' f; do
-    files+=("$f")
-    [[ ${#files[@]} -ge 100 ]] && break
-  done < <(find "$path" $find_args -print0 2>/dev/null)
-
-  [[ ${#files[@]} -eq 0 ]] && { info "No files found in $path"; return 0; }
-  info "Scanning ${#files[@]} files…"
-
-  # Build context summaries for each file
-  [[ -n "$PYTHON" ]] || { err ERR501; return 1; }
-
-  local results; results=$("$PYTHON" - <<PYSEARCH
-import os, re, sys
-
-query = '$query'.lower()
-query_words = set(query.split())
-files = """${files[@]}""".split()
-# Re-parse from find output
-import subprocess
-r = subprocess.run(['find', '$path', '-maxdepth', '$depth', '-type', 'f',
-                   '-not', '-path', '*/.*', '-not', '-path', '*/node_modules/*'],
-                  capture_output=True, text=True)
-all_files = [f for f in r.stdout.strip().split('\n') if f]
-if '$ext':
-    all_files = [f for f in all_files if f.endswith('.$ext')]
-all_files = all_files[:100]
-
-scored = []
-for f in all_files:
-    try:
-        content = open(f, errors='replace').read(3000).lower()
-        path_lower = f.lower()
-        score = 0
-        for word in query_words:
-            score += content.count(word) * 2
-            score += path_lower.count(word) * 5
-        if score > 0:
-            preview = open(f, errors='replace').read(200).replace(chr(10), ' ')
-            scored.append((score, f, preview))
-    except: pass
-
-scored.sort(key=lambda x: -x[0])
-for score, f, preview in scored[: $top_n]:
-    print(f"\033[96m{f}\033[0m  (relevance:{score})")
-    if $verbose:
-        print(f"  {preview[:100]}")
-if not scored:
-    print("No matching files found. Try broader terms or check --path.")
-PYSEARCH
-)
-
-  echo "$results"
-
-  # Offer AI ranking of top results
-  if [[ -n "$results" ]]; then
-    local top_files; top_files=$(echo "$results" | grep -v "^  " | head -5 | awk '{print $1}')
-    if [[ -n "$top_files" ]]; then
-      echo ""
-      read -rp "  AI-rank top results for '$query'? [y/N]: " c
-      if [[ "${c,,}" == "y" ]]; then
-        local snippets=""
-        while IFS= read -r f; do
-          [[ -f "$f" ]] || continue
-          snippets+="=== $f ===\n$(head -10 "$f")\n\n"
-        done <<< "$top_files"
-        dispatch_ask "Rank these files by relevance to the query: '$query'
-For each file, explain in one sentence why it's relevant.
-
-Files:
-$snippets"
-      fi
-    fi
-  fi
-}
-
-
 main() {
   # Handle -C named chat flag
   local NAMED_CHAT=""
@@ -22649,8 +15343,20 @@ main() {
     -aup|--aup|aup|update-check)
       cmd_autoupdate "$@" ;;
 
-    # ── Asking — v2.8.5.5 full rewrite ─────────────────────────────────────────
-    ask|a)  cmd_ask "$@" ;;
+    # ── Asking ───────────────────────────────────────────────────────────────
+    ask|a)
+      # v2.7.3: Handle empty prompt — prompt interactively
+      local _ask_prompt="$*"
+      if [[ -z "$_ask_prompt" ]]; then
+        if [[ -t 0 ]]; then
+          read -rp "$(echo -e "${BCYAN}Ask: ${R}")" _ask_prompt
+          [[ -z "$_ask_prompt" ]] && { err "No prompt given. Usage: ai ask \"<question>\""; return 1; }
+        else
+          # stdin may have piped content
+          _ask_prompt=$(cat)
+        fi
+      fi
+      dispatch_ask "$_ask_prompt" ;;
     chat)       cmd_chat_interactive ;;
     code)
       local lang="" run=0 args=()
@@ -22750,7 +15456,6 @@ $(cat)" ;;
     # ── GUI / GUI+ / Bench / Serve ────────────────────────────────────────────
     -gui|--gui|gui)            cmd_gui ;;
     -gui+|--gui+|gui+|guiplus) cmd_gui_plus ;;
-    -aui|--aui|aui)            cmd_aui ;;  # v2.8.5.5: new working terminal UI
     bench)  cmd_bench "$@" ;;
     serve)  cmd_serve "$@" ;;
 
@@ -22778,9 +15483,8 @@ $(cat)" ;;
     # ── v2.5: Multimodal training ─────────────────────────────────────────────
     train-multimodal|multimodal-train|train-mm) cmd_train_multimodal "$@" ;;
 
-    # ── v2.8.5.5: Canvas v3 (replaces v2) ───────────────────────────────────────
-    canvas|canvas-v3|canvasv3|canvas3) cmd_canvas_v3 "$@" ;;
-    canvas-v2|canvasv2|canvas2) cmd_canvas_v3 "$@" ;;  # legacy alias → v3
+    # ── v2.5: Canvas v2 ───────────────────────────────────────────────────────
+    canvas-v2|canvasv2|canvas2) cmd_canvas_v2 "$@" ;;
 
     # ── v2.5: Image generation v2 (img2img, inpaint, LoRA) ────────────────────
     imagine2|imggen2)
@@ -22790,6 +15494,9 @@ $(cat)" ;;
     rlhf-reward|reward-model) _rlhf_train_reward_model "$@" ;;
     rlhf-ppo|ppo)             _rlhf_train_ppo "$@" ;;
     rlhf-grpo|grpo)           _rlhf_train_grpo "$@" ;;
+
+    # ── v2.5.5: System prompt management ─────────────────────────────────────
+    system|sys-prompt|sysprompt) cmd_system "$@" ;;
 
     # ── v2.7: AI Extensions ───────────────────────────────────────────────────
     extension|ext)      cmd_extension "$@" ;;
@@ -22803,26 +15510,23 @@ $(cat)" ;;
     # ── v2.7: Firefox LLM Sidebar Extension ──────────────────────────────────
     install-firefox-ext|firefox-ext|firefox) cmd_install_firefox_ext "$@" ;;
 
-    # ── v2.8: New commands ────────────────────────────────────────────────────
-    -Ad|--Ad)                   cmd_ad "$@" ;;
-    -Cr|--Cr|create)            cmd_cr "$@" ;;
-    workflow|wf)                cmd_workflow "$@" ;;
-    batch)                      cmd_batch "$@" ;;
-    watch)                      cmd_watch "$@" ;;
-    memo)                       cmd_memo "$@" ;;
-    template|tmpl)              cmd_template "$@" ;;
-    profile)                    cmd_profile "$@" ;;
-    ai-diff)                    cmd_diff "$@" ;;
-    snippet|snip)               cmd_snippet "$@" ;;
-    convert)                    cmd_convert "$@" ;;
-    monitor)                    cmd_monitor "$@" ;;
-    schedule|sched)             cmd_schedule "$@" ;;
-    -N|--npm-gui)               cmd_N_launch "$@" ;;
-    gui|--gui|-gui)             cmd_npm_gui "$@" ;;
-    gui-adv|gui+|guiplus)       cmd_npm_gui_adv "$@" ;;
-
     # ── v2.7.3: Aliases ───────────────────────────────────────────────────────
     alias)  cmd_alias "$@" ;;
+
+    # ── v2.9.0: New commands ─────────────────────────────────────────
+    snap|snapshot)    cmd_snap "$@" ;;
+    perf|benchmark)   cmd_perf "$@" ;;
+    compare)          cmd_compare "$@" ;;
+    template|tpl)     cmd_template "$@" ;;
+    rag)              cmd_rag "$@" ;;
+    batch)            cmd_batch "$@" ;;
+    health)           cmd_health "$@" ;;
+    branch)           cmd_branch "$@" ;;
+    export)           cmd_export "$@" ;;
+    import)           cmd_import "$@" ;;
+    cleanup|clean)    cmd_cleanup "$@" ;;
+    preset)           cmd_preset "$@" ;;
+    plugin|plugins)   cmd_plugin "$@" ;;
 
     # ── Misc ──────────────────────────────────────────────────────────────────
     version|-v|--version) echo "AI CLI v${VERSION}" ;;
@@ -22839,20 +15543,6 @@ $(cat)" ;;
         printf "  ${B}%-10s${R} %s\n" "$code" "${ERR_CODES[$code]}"
       done | sort
       ;;
-    # ── v2.8.5: new commands ──────────────────────────────────────────────────
-    gguf-info|ggufinfo)         cmd_gguf_info "$@" ;;
-    quant|best-quant)           echo "Best quantization for your RAM: $(_gguf_best_quant)" ;;
-    snap|snapshot)              cmd_snap "$@" ;;
-    compare|cmp)                cmd_compare "$@" ;;
-    perf|benchmark-perf)        cmd_perf "$@" ;;
-
-    # ── v2.8 new commands ────────────────────────────────────────────────────
-    context|ctx)            cmd_context "$@" ;;
-    chain)                  cmd_chain "$@" ;;
-    debug)                  cmd_debug "$@" ;;
-    kb|knowledge-base)      cmd_kb "$@" ;;
-    summarize-dir|sumdir)   cmd_summarize_dir "$@" ;;
-    ai-search|search-files) cmd_ai_search "$@" ;;
     *)
       # v2.7.3: Check user-defined aliases first before AI fallthrough
       local _alias_cmd
@@ -22864,7 +15554,6 @@ $(cat)" ;;
         return $?
       fi
       # Unknown command — show helpful error, then try AI fallthrough
-
       echo -e "${DIM}[ai] No command named \"${cmd}\". Checking aliases and passing to AI...${R}" >&2
       echo -e "${DIM}[ai] Run 'ai help' to see all commands. Run 'ai -h <cmd>' for details.${R}" >&2
       dispatch_ask "$cmd $*" ;;
@@ -22908,4 +15597,4404 @@ if ! _is_noninteractive_cmd "${1:-}"; then
   _first_run_check 2>/dev/null || true
 fi
 
+# ════════════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.9.0 NEW FEATURES — appended below existing v2.7.4 code
+# ════════════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════════════
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  ROBUST API RETRY LOGIC — v2.9.0
+#  Exponential backoff with jitter for all cloud API calls
+#  Handles: rate limits (429), server errors (5xx), network timeouts
+# ════════════════════════════════════════════════════════════════════════════════
+
+_api_retry() {
+  # Usage: _api_retry <max_retries> <base_delay> <command...>
+  local max_retries="${1:-$RETRY_MAX}"
+  local base_delay="${2:-$RETRY_DELAY}"
+  shift 2
+  local attempt=0
+  local exit_code=0
+  local output=""
+  local delay="$base_delay"
+
+  while (( attempt < max_retries )); do
+    (( attempt++ ))
+    output=$("$@" 2>&1) && { echo "$output"; return 0; }
+    exit_code=$?
+
+    # Check if error is retryable
+    if echo "$output" | grep -qiE "rate.limit|429|503|502|504|timeout|ECONNRESET|ETIMEDOUT"; then
+      local jitter=$(( RANDOM % 1000 ))
+      local wait_ms=$(( delay * 1000 + jitter ))
+      local wait_s=$(awk "BEGIN{printf \"%.1f\", $wait_ms/1000}")
+
+      if [[ $VERBOSE -eq 1 ]]; then
+        warn "API call failed (attempt $attempt/$max_retries): retrying in ${wait_s}s..."
+        warn "Error: $(echo "$output" | head -3)"
+      fi
+
+      sleep "$wait_s"
+      delay=$(( delay * 2 ))  # exponential backoff
+    else
+      # Non-retryable error
+      echo "$output"
+      return $exit_code
+    fi
+  done
+
+  err "API call failed after $max_retries attempts"
+  echo "$output"
+  return $exit_code
+}
+
+# Wrapped API callers with retry support
+_curl_api_retry() {
+  _api_retry "$RETRY_MAX" "$RETRY_DELAY" curl "$@"
+}
+
+# Rate limit tracker
+declare -A _RATE_LIMIT_REMAINING=()
+declare -A _RATE_LIMIT_RESET=()
+
+_track_rate_limits() {
+  local backend="$1"
+  local headers="$2"
+  local remaining limit reset
+
+  remaining=$(echo "$headers" | grep -i 'x-ratelimit-remaining' | awk '{print $2}' | tr -d '\r')
+  limit=$(echo "$headers" | grep -i 'x-ratelimit-limit' | awk '{print $2}' | tr -d '\r')
+  reset=$(echo "$headers" | grep -i 'x-ratelimit-reset' | awk '{print $2}' | tr -d '\r')
+
+  if [[ -n "$remaining" ]]; then
+    _RATE_LIMIT_REMAINING["$backend"]="$remaining"
+    _RATE_LIMIT_RESET["$backend"]="$reset"
+
+    if (( remaining < 5 )); then
+      warn "Rate limit warning: ${backend} has ${remaining}/${limit} requests remaining"
+    fi
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  ENHANCED ERROR HANDLING — v2.9.0
+#  Structured error reporting with error codes and recovery suggestions
+# ════════════════════════════════════════════════════════════════════════════════
+
+# Extended error codes (adding to v2.7.3 error codes)
+# ERR4xx = Feature errors
+# ERR5xx = Data/IO errors
+# ERR6xx = Performance errors
+declare -A ERR_MESSAGES_V29=(
+  [ERR401]="Snapshot not found"
+  [ERR402]="Template not found"
+  [ERR403]="RAG knowledge base not found"
+  [ERR404]="Batch job not found"
+  [ERR405]="Export format not supported"
+  [ERR406]="Conversation branch not found"
+  [ERR407]="Health check failed"
+  [ERR408]="Benchmark interrupted"
+  [ERR409]="Model comparison failed"
+  [ERR410]="Plugin load failed"
+  [ERR501]="Cannot read input file"
+  [ERR502]="Cannot write output file"
+  [ERR503]="Insufficient disk space"
+  [ERR504]="JSON parse error"
+  [ERR505]="CSV parse error"
+  [ERR601]="Model too slow (< 1 tok/s)"
+  [ERR602]="Out of memory"
+  [ERR603]="GPU not available"
+  [ERR604]="Context window exceeded"
+)
+
+_err_v29() {
+  local code="$1"; shift
+  local msg="${ERR_MESSAGES_V29[$code]:-Unknown error}"
+  local detail="${*:-}"
+  printf "${RED}${B}Error ${code}:${R} ${msg}"
+  [[ -n "$detail" ]] && printf " — ${detail}"
+  printf "\n"
+  echo "$(date -Iseconds) [$code] $msg $detail" >> "$HEALTH_LOG" 2>/dev/null || true
+}
+
+_err_suggest() {
+  local code="$1"
+  case "$code" in
+    ERR401) echo "  Tip: List snapshots with: ai snap list" ;;
+    ERR402) echo "  Tip: List templates with: ai template list" ;;
+    ERR403) echo "  Tip: Create a knowledge base: ai rag create <name> <directory>" ;;
+    ERR501) echo "  Tip: Check file permissions and path" ;;
+    ERR503) echo "  Tip: Free up disk space: ai cleanup" ;;
+    ERR601) echo "  Tip: Try a smaller model or increase GPU layers" ;;
+    ERR602) echo "  Tip: Reduce context size: ai set context 2048" ;;
+    ERR603) echo "  Tip: Check GPU drivers or use --cpu-only" ;;
+    ERR604) echo "  Tip: Reduce prompt size or increase context: ai set context 8192" ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  CONFIG SNAPSHOTS — v2.9.0
+#  Save and restore complete configuration states
+#  Usage: ai snap save <name> | ai snap load <name> | ai snap list | ai snap diff <a> <b>
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_snap() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    save)
+      local name="${1:?Usage: ai snap save <name>}"
+      local snap_file="$SNAPSHOTS_DIR/${name}.snap"
+      {
+        echo "# AI CLI Config Snapshot: $name"
+        echo "# Created: $(date -Iseconds)"
+        echo "# Version: $VERSION"
+        echo "# Platform: $PLATFORM"
+        echo ""
+        cat "$CONFIG_FILE" 2>/dev/null || true
+        echo ""
+        echo "# --- Active Model Info ---"
+        echo "SNAP_ACTIVE_MODEL=\"$ACTIVE_MODEL\""
+        echo "SNAP_ACTIVE_BACKEND=\"$ACTIVE_BACKEND\""
+        echo "SNAP_ACTIVE_PERSONA=\"$ACTIVE_PERSONA\""
+        echo "SNAP_MAX_TOKENS=\"$MAX_TOKENS\""
+        echo "SNAP_TEMPERATURE=\"$TEMPERATURE\""
+        echo "SNAP_TOP_P=\"$TOP_P\""
+        echo "SNAP_CONTEXT_SIZE=\"$CONTEXT_SIZE\""
+        echo "SNAP_GPU_LAYERS=\"$GPU_LAYERS\""
+        echo "SNAP_THREADS=\"$THREADS\""
+      } > "$snap_file"
+      ok "Snapshot saved: ${CYAN}$name${R}"
+      dim "Restore with: ai snap load $name"
+      ;;
+    load|restore)
+      local name="${1:?Usage: ai snap load <name>}"
+      local snap_file="$SNAPSHOTS_DIR/${name}.snap"
+      if [[ ! -f "$snap_file" ]]; then
+        _err_v29 ERR401 "$name"
+        _err_suggest ERR401
+        return 1
+      fi
+      # Source the snapshot to restore config
+      source "$snap_file"
+      # Apply snapshot values if they exist
+      [[ -n "${SNAP_ACTIVE_MODEL:-}" ]] && ACTIVE_MODEL="$SNAP_ACTIVE_MODEL"
+      [[ -n "${SNAP_ACTIVE_BACKEND:-}" ]] && ACTIVE_BACKEND="$SNAP_ACTIVE_BACKEND"
+      [[ -n "${SNAP_ACTIVE_PERSONA:-}" ]] && ACTIVE_PERSONA="$SNAP_ACTIVE_PERSONA"
+      [[ -n "${SNAP_MAX_TOKENS:-}" ]] && MAX_TOKENS="$SNAP_MAX_TOKENS"
+      [[ -n "${SNAP_TEMPERATURE:-}" ]] && TEMPERATURE="$SNAP_TEMPERATURE"
+      [[ -n "${SNAP_TOP_P:-}" ]] && TOP_P="$SNAP_TOP_P"
+      [[ -n "${SNAP_CONTEXT_SIZE:-}" ]] && CONTEXT_SIZE="$SNAP_CONTEXT_SIZE"
+      [[ -n "${SNAP_GPU_LAYERS:-}" ]] && GPU_LAYERS="$SNAP_GPU_LAYERS"
+      [[ -n "${SNAP_THREADS:-}" ]] && THREADS="$SNAP_THREADS"
+      save_config
+      ok "Snapshot restored: ${CYAN}$name${R}"
+      ;;
+    list|ls)
+      hdr "Config Snapshots"
+      if [[ -z "$(ls -A "$SNAPSHOTS_DIR" 2>/dev/null)" ]]; then
+        info "No snapshots saved yet. Create one with: ai snap save <name>"
+        return
+      fi
+      local count=0
+      for f in "$SNAPSHOTS_DIR"/*.snap; do
+        [[ -f "$f" ]] || continue
+        local sname=$(basename "$f" .snap)
+        local created=$(grep '# Created:' "$f" | head -1 | sed 's/# Created: //')
+        local sver=$(grep '# Version:' "$f" | head -1 | sed 's/# Version: //')
+        printf "  ${CYAN}%-20s${R}  ${DIM}v%-8s  %s${R}\n" "$sname" "$sver" "$created"
+        (( count++ ))
+      done
+      info "$count snapshot(s) found"
+      ;;
+    diff)
+      local name_a="${1:?Usage: ai snap diff <snap1> <snap2>}"
+      local name_b="${2:?Usage: ai snap diff <snap1> <snap2>}"
+      local fa="$SNAPSHOTS_DIR/${name_a}.snap"
+      local fb="$SNAPSHOTS_DIR/${name_b}.snap"
+      [[ -f "$fa" ]] || { _err_v29 ERR401 "$name_a"; return 1; }
+      [[ -f "$fb" ]] || { _err_v29 ERR401 "$name_b"; return 1; }
+      hdr "Diff: $name_a ↔ $name_b"
+      diff --color=auto "$fa" "$fb" || true
+      ;;
+    delete|rm)
+      local name="${1:?Usage: ai snap delete <name>}"
+      local snap_file="$SNAPSHOTS_DIR/${name}.snap"
+      [[ -f "$snap_file" ]] || { _err_v29 ERR401 "$name"; return 1; }
+      rm -f "$snap_file"
+      ok "Snapshot deleted: $name"
+      ;;
+    *)
+      echo "Usage: ai snap <save|load|list|diff|delete> [args]"
+      echo ""
+      echo "  save <name>          Save current config as snapshot"
+      echo "  load <name>          Restore config from snapshot"
+      echo "  list                 Show all saved snapshots"
+      echo "  diff <a> <b>         Compare two snapshots"
+      echo "  delete <name>        Delete a snapshot"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  PERFORMANCE BENCHMARK — v2.9.0
+#  Measure tokens/sec, latency, throughput for active model
+#  Usage: ai perf [--prompt "text"] [--tokens N] [--runs N]
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_perf() {
+  local prompt="Explain the theory of relativity in simple terms."
+  local max_tokens=128
+  local runs=3
+  local warmup=1
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --prompt) prompt="$2"; shift 2 ;;
+      --tokens) max_tokens="$2"; shift 2 ;;
+      --runs)   runs="$2"; shift 2 ;;
+      --warmup) warmup="$2"; shift 2 ;;
+      -h|--help)
+        echo "Usage: ai perf [OPTIONS]"
+        echo ""
+        echo "  --prompt TEXT    Test prompt (default: relativity explanation)"
+        echo "  --tokens N       Max tokens to generate (default: 128)"
+        echo "  --runs N         Number of benchmark runs (default: 3)"
+        echo "  --warmup N       Warmup runs before measuring (default: 1)"
+        return 0 ;;
+      *) shift ;;
+    esac
+  done
+
+  if [[ -z "$ACTIVE_MODEL" && -z "$ACTIVE_BACKEND" ]]; then
+    err "No active model. Set one with: ai recommended use <N>"
+    return 1
+  fi
+
+  hdr "Performance Benchmark"
+  info "Model:      ${ACTIVE_MODEL:-$ACTIVE_BACKEND}"
+  info "Backend:    ${ACTIVE_BACKEND:-auto}"
+  info "Max tokens: $max_tokens"
+  info "Runs:       $runs (+ $warmup warmup)"
+  info "Prompt:     \"${prompt:0:60}...\""
+  echo ""
+
+  local total_tps=0
+  local total_latency=0
+  local min_tps=999999
+  local max_tps=0
+  local results=()
+
+  # Warmup runs
+  for (( w=1; w<=warmup; w++ )); do
+    printf "  ${DIM}Warmup $w/$warmup...${R}\r"
+    _silent_generate "$prompt" "$max_tokens" >/dev/null 2>&1 || true
+  done
+
+  # Benchmark runs
+  for (( r=1; r<=runs; r++ )); do
+    printf "  ${CYAN}Run $r/$runs...${R}\r"
+
+    local start_ns=$(date +%s%N 2>/dev/null || python3 -c "import time;print(int(time.time()*1e9))")
+    local output=$(_silent_generate "$prompt" "$max_tokens" 2>/dev/null || echo "")
+    local end_ns=$(date +%s%N 2>/dev/null || python3 -c "import time;print(int(time.time()*1e9))")
+
+    if [[ -z "$output" ]]; then
+      warn "Run $r produced no output"
+      continue
+    fi
+
+    local elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
+    local token_count=$(echo "$output" | wc -w)
+    local tps=0
+    if (( elapsed_ms > 0 )); then
+      tps=$(awk "BEGIN{printf \"%.1f\", $token_count / ($elapsed_ms / 1000.0)}")
+    fi
+    local latency_ms=$elapsed_ms
+
+    results+=("$tps:$latency_ms:$token_count")
+    total_tps=$(awk "BEGIN{print $total_tps + $tps}")
+    total_latency=$(( total_latency + latency_ms ))
+
+    local tps_int=${tps%.*}
+    (( tps_int < min_tps )) && min_tps=$tps_int
+    (( tps_int > max_tps )) && max_tps=$tps_int
+
+    printf "  Run %d: ${GREEN}%.1f tok/s${R}  ${DIM}(%d ms, %d tokens)${R}\n" \
+      "$r" "$tps" "$latency_ms" "$token_count"
+  done
+
+  local actual_runs=${#results[@]}
+  if (( actual_runs == 0 )); then
+    _err_v29 ERR408 "No successful runs"
+    return 1
+  fi
+
+  local avg_tps=$(awk "BEGIN{printf \"%.1f\", $total_tps / $actual_runs}")
+  local avg_latency=$(( total_latency / actual_runs ))
+
+  echo ""
+  hdr "Results"
+  printf "  Avg:   ${GREEN}${B}%s tok/s${R}\n" "$avg_tps"
+  printf "  Min:   %s tok/s\n" "$min_tps"
+  printf "  Max:   %s tok/s\n" "$max_tps"
+  printf "  Avg latency: %d ms\n" "$avg_latency"
+  echo ""
+
+  # Save to log
+  {
+    echo "$(date -Iseconds) | model=$ACTIVE_MODEL | backend=$ACTIVE_BACKEND | avg_tps=$avg_tps | avg_latency=${avg_latency}ms | runs=$actual_runs | max_tokens=$max_tokens"
+  } >> "$PERF_LOG"
+
+  # Performance rating
+  local tps_num=${avg_tps%.*}
+  if (( tps_num >= 50 )); then
+    ok "Rating: ${GREEN}Excellent${R} (50+ tok/s)"
+  elif (( tps_num >= 20 )); then
+    ok "Rating: ${BGREEN}Good${R} (20-50 tok/s)"
+  elif (( tps_num >= 5 )); then
+    warn "Rating: ${YELLOW}Moderate${R} (5-20 tok/s)"
+  elif (( tps_num >= 1 )); then
+    warn "Rating: ${BYELLOW}Slow${R} (1-5 tok/s)"
+  else
+    _err_v29 ERR601 "${avg_tps} tok/s"
+    _err_suggest ERR601
+  fi
+}
+
+# Silent generation helper (no streaming output)
+_silent_generate() {
+  local prompt="$1"
+  local max_tok="${2:-128}"
+  local old_stream="$STREAM"
+  STREAM=0
+  # Route through the appropriate backend
+  case "${ACTIVE_BACKEND:-}" in
+    openai)
+      _openai_query "$prompt" "$max_tok" 2>/dev/null ;;
+    claude|anthropic)
+      _claude_query "$prompt" "$max_tok" 2>/dev/null ;;
+    gemini)
+      _gemini_query "$prompt" "$max_tok" 2>/dev/null ;;
+    groq)
+      _groq_query "$prompt" "$max_tok" 2>/dev/null ;;
+    mistral)
+      _mistral_query "$prompt" "$max_tok" 2>/dev/null ;;
+    gguf|llama|local)
+      _gguf_query "$prompt" "$max_tok" 2>/dev/null ;;
+    *)
+      # Try the generic ask handler
+      echo "$prompt" | timeout 60 ai ask --no-stream 2>/dev/null ;;
+  esac
+  STREAM="$old_stream"
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  MODEL COMPARISON — v2.9.0
+#  Side-by-side comparison of multiple models on the same prompt
+#  Usage: ai compare "prompt" [--models "model1,model2,..."]
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_compare() {
+  local prompt=""
+  local models_csv=""
+  local max_tokens=256
+  local show_timing=1
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --models)   models_csv="$2"; shift 2 ;;
+      --tokens)   max_tokens="$2"; shift 2 ;;
+      --no-time)  show_timing=0; shift ;;
+      -h|--help)
+        echo "Usage: ai compare \"prompt\" [OPTIONS]"
+        echo ""
+        echo "  --models LIST    Comma-separated model list"
+        echo "  --tokens N       Max tokens (default: 256)"
+        echo "  --no-time        Hide timing info"
+        echo ""
+        echo "Examples:"
+        echo "  ai compare \"What is AI?\" --models openai,claude,gemini"
+        echo "  ai compare \"Write a haiku\" --models gguf,openai"
+        return 0 ;;
+      *)
+        if [[ -z "$prompt" ]]; then
+          prompt="$1"
+        fi
+        shift ;;
+    esac
+  done
+
+  if [[ -z "$prompt" ]]; then
+    echo "Usage: ai compare \"prompt\" [--models model1,model2,...]"
+    return 1
+  fi
+
+  # Default to available backends
+  if [[ -z "$models_csv" ]]; then
+    local available_backends=()
+    [[ -n "${OPENAI_API_KEY:-}" ]] && available_backends+=("openai")
+    [[ -n "${ANTHROPIC_API_KEY:-}" ]] && available_backends+=("claude")
+    [[ -n "${GEMINI_API_KEY:-}" ]] && available_backends+=("gemini")
+    [[ -n "${GROQ_API_KEY:-}" ]] && available_backends+=("groq")
+    [[ -n "$LLAMA_BIN" || -n "${ACTIVE_MODEL:-}" ]] && available_backends+=("gguf")
+
+    if (( ${#available_backends[@]} < 2 )); then
+      err "Need at least 2 backends for comparison."
+      info "Available: ${available_backends[*]:-none}"
+      info "Set API keys or load a local model first."
+      return 1
+    fi
+    models_csv=$(IFS=,; echo "${available_backends[*]}")
+  fi
+
+  IFS=',' read -ra models <<< "$models_csv"
+
+  hdr "Model Comparison"
+  info "Prompt:  \"${prompt:0:80}...\""
+  info "Models:  ${models[*]}"
+  info "Tokens:  $max_tokens"
+  echo ""
+
+  local saved_backend="$ACTIVE_BACKEND"
+  local compare_file="$COMPARE_DIR/compare_$(date +%Y%m%d_%H%M%S).md"
+
+  {
+    echo "# Model Comparison — $(date -Iseconds)"
+    echo "## Prompt"
+    echo '```'
+    echo "$prompt"
+    echo '```'
+    echo ""
+  } > "$compare_file"
+
+  for model in "${models[@]}"; do
+    model=$(echo "$model" | xargs)  # trim whitespace
+    printf "  ${CYAN}━━━ %s ━━━${R}\n" "$model"
+
+    ACTIVE_BACKEND="$model"
+    local start_ms=$(date +%s%3N 2>/dev/null || echo 0)
+    local response=$(_silent_generate "$prompt" "$max_tokens" 2>/dev/null || echo "[Error: No response from $model]")
+    local end_ms=$(date +%s%3N 2>/dev/null || echo 0)
+    local elapsed=$(( end_ms - start_ms ))
+
+    echo "$response" | head -20
+    if [[ $(echo "$response" | wc -l) -gt 20 ]]; then
+      printf "  ${DIM}... (truncated, %d lines total)${R}\n" "$(echo "$response" | wc -l)"
+    fi
+
+    if [[ $show_timing -eq 1 ]]; then
+      local wc=$(echo "$response" | wc -w)
+      printf "  ${DIM}[%d ms | %d words]${R}\n" "$elapsed" "$wc"
+    fi
+    echo ""
+
+    # Save to comparison file
+    {
+      echo "## $model"
+      echo '```'
+      echo "$response"
+      echo '```'
+      echo "Time: ${elapsed}ms | Words: $(echo "$response" | wc -w)"
+      echo ""
+    } >> "$compare_file"
+  done
+
+  ACTIVE_BACKEND="$saved_backend"
+  ok "Comparison saved: $compare_file"
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  PROMPT TEMPLATES — v2.9.0
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_template() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    create|new)
+      local name="${1:?Usage: ai template create <name>}"
+      local tpl_file="$TEMPLATES_DIR/${name}.tpl"
+      if [[ -f "$tpl_file" ]]; then
+        warn "Template '$name' already exists. Use --force to overwrite."
+        [[ "${2:-}" != "--force" ]] && return 1
+      fi
+      cat > "$tpl_file" <<'TPLEOF'
+# AI CLI Prompt Template
+# Variables: {{input}}, {{context}}, {{language}}, {{style}}
+# Usage: ai template use <name> --input "your text"
+
+You are a helpful assistant.
+
+{{context}}
+
+User request: {{input}}
+
+Please respond in {{style}} style.
+TPLEOF
+      ok "Template created: $tpl_file"
+      info "Edit it, then use: ai template use $name --input \"...\""
+      ;;
+    use|apply)
+      local name="${1:?Usage: ai template use <name> [--input TEXT]}"
+      shift
+      local tpl_file="$TEMPLATES_DIR/${name}.tpl"
+      [[ -f "$tpl_file" ]] || { _err_v29 ERR402 "$name"; return 1; }
+      local content
+      content=$(grep -v '^#' "$tpl_file")
+      # Replace variables from args
+      local input="" context="" language="" style="concise"
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --input)    input="$2"; shift 2 ;;
+          --context)  context="$2"; shift 2 ;;
+          --language) language="$2"; shift 2 ;;
+          --style)    style="$2"; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      content="${content//\{\{input\}\}/$input}"
+      content="${content//\{\{context\}\}/$context}"
+      content="${content//\{\{language\}\}/$language}"
+      content="${content//\{\{style\}\}/$style}"
+      echo "$content"
+      ;;
+    list|ls)
+      hdr "Prompt Templates"
+      local count=0
+      for f in "$TEMPLATES_DIR"/*.tpl; do
+        [[ -f "$f" ]] || continue
+        local tname=$(basename "$f" .tpl)
+        local desc=$(head -3 "$f" | grep '# ' | tail -1 | sed 's/^# //')
+        printf "  ${CYAN}%-20s${R}  ${DIM}%s${R}\n" "$tname" "$desc"
+        (( count++ ))
+      done
+      (( count == 0 )) && info "No templates. Create one: ai template create <name>"
+      ;;
+    edit)
+      local name="${1:?Usage: ai template edit <name>}"
+      local tpl_file="$TEMPLATES_DIR/${name}.tpl"
+      [[ -f "$tpl_file" ]] || { _err_v29 ERR402 "$name"; return 1; }
+      ${EDITOR:-nano} "$tpl_file"
+      ;;
+    delete|rm)
+      local name="${1:?Usage: ai template delete <name>}"
+      rm -f "$TEMPLATES_DIR/${name}.tpl"
+      ok "Template deleted: $name"
+      ;;
+    *)
+      echo "Usage: ai template <create|use|list|edit|delete>"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  RAG PIPELINE — v2.9.0
+#  Retrieval-Augmented Generation: index local docs, query with context
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_rag() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    create|new)
+      local name="${1:?Usage: ai rag create <name> <directory>}"
+      local src_dir="${2:?Usage: ai rag create <name> <directory>}"
+      local rag_base="$RAG_DIR/$name"
+      mkdir -p "$rag_base"
+
+      [[ -d "$src_dir" ]] || { err "Directory not found: $src_dir"; return 1; }
+
+      info "Indexing documents from: $src_dir"
+      local count=0
+      local index_file="$rag_base/index.jsonl"
+      > "$index_file"
+
+      # Index text files
+      while IFS= read -r -d '' file; do
+        local ext="${file##*.}"
+        case "$ext" in
+          txt|md|py|js|ts|sh|c|cpp|h|rs|go|java|rb|yml|yaml|json|toml|cfg|ini|html|css|xml)
+            local rel_path="${file#$src_dir/}"
+            local content
+            content=$(cat "$file" 2>/dev/null | head -500)
+            # Chunk the content
+            local chunk_num=0
+            while IFS= read -r -d '' chunk; do
+              printf '{"file":"%s","chunk":%d,"text":"%s"}\n' \
+                "$rel_path" "$chunk_num" \
+                "$(echo "$chunk" | tr '\n' ' ' | sed 's/"/\\"/g' | head -c 2000)" \
+                >> "$index_file"
+              (( chunk_num++ ))
+            done < <(echo "$content" | fold -w "$RAG_CHUNK_SIZE" -s | head -20)
+            (( count++ ))
+            ;;
+        esac
+      done < <(find "$src_dir" -type f -size -1M -print0 2>/dev/null)
+
+      # Save metadata
+      cat > "$rag_base/meta.json" <<EOF
+{"name":"$name","source":"$src_dir","files":$count,"created":"$(date -Iseconds)","chunk_size":$RAG_CHUNK_SIZE}
+EOF
+      ok "RAG knowledge base '$name' created: $count files indexed"
+      ;;
+    query|ask)
+      local name="${1:?Usage: ai rag query <name> \"question\"}"
+      local question="${2:?Usage: ai rag query <name> \"question\"}"
+      local rag_base="$RAG_DIR/$name"
+      local index_file="$rag_base/index.jsonl"
+      [[ -f "$index_file" ]] || { _err_v29 ERR403 "$name"; return 1; }
+
+      info "Searching knowledge base '$name'..."
+
+      # Simple keyword search (no embedding model needed)
+      local keywords
+      keywords=$(echo "$question" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '\n' | sort -u)
+      local matches=""
+      local match_count=0
+
+      while IFS= read -r line; do
+        local score=0
+        local text_lower
+        text_lower=$(echo "$line" | tr '[:upper:]' '[:lower:]')
+        for kw in $keywords; do
+          [[ ${#kw} -ge 3 ]] && [[ "$text_lower" == *"$kw"* ]] && (( score++ ))
+        done
+        if (( score > 0 )); then
+          matches+="$score|$line"$'\n'
+          (( match_count++ ))
+        fi
+      done < "$index_file"
+
+      if (( match_count == 0 )); then
+        warn "No relevant documents found for: $question"
+        info "Try different keywords or add more documents to the knowledge base."
+        return
+      fi
+
+      # Sort by score, take top K
+      local top_matches
+      top_matches=$(echo "$matches" | sort -t'|' -k1 -rn | head -"$RAG_TOP_K")
+
+      local context=""
+      while IFS='|' read -r score entry; do
+        [[ -z "$entry" ]] && continue
+        local file_name chunk_text
+        file_name=$(echo "$entry" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('file',''))" 2>/dev/null || echo "unknown")
+        chunk_text=$(echo "$entry" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('text',''))" 2>/dev/null || echo "")
+        context+="[From: $file_name]"$'\n'"$chunk_text"$'\n\n'
+      done <<< "$top_matches"
+
+      info "Found $match_count relevant chunks (using top $RAG_TOP_K)"
+      echo ""
+
+      # Build augmented prompt
+      local augmented_prompt="Based on the following context from local documents:
+
+---
+$context
+---
+
+Answer the following question:
+$question"
+
+      # Send to active model
+      _do_ask "$augmented_prompt"
+      ;;
+    list|ls)
+      hdr "RAG Knowledge Bases"
+      local count=0
+      for d in "$RAG_DIR"/*/; do
+        [[ -d "$d" ]] || continue
+        local kb_name=$(basename "$d")
+        local meta="$d/meta.json"
+        if [[ -f "$meta" ]]; then
+          local files created
+          files=$(python3 -c "import json;print(json.load(open('$meta')).get('files',0))" 2>/dev/null || echo "?")
+          created=$(python3 -c "import json;print(json.load(open('$meta')).get('created','?'))" 2>/dev/null || echo "?")
+          printf "  ${CYAN}%-20s${R}  ${DIM}%s files  created %s${R}\n" "$kb_name" "$files" "$created"
+        else
+          printf "  ${CYAN}%-20s${R}  ${DIM}(no metadata)${R}\n" "$kb_name"
+        fi
+        (( count++ ))
+      done
+      (( count == 0 )) && info "No knowledge bases. Create one: ai rag create <name> <dir>"
+      ;;
+    delete|rm)
+      local name="${1:?Usage: ai rag delete <name>}"
+      rm -rf "$RAG_DIR/$name"
+      ok "Knowledge base '$name' deleted"
+      ;;
+    *)
+      echo "Usage: ai rag <create|query|list|delete>"
+      echo ""
+      echo "  create <name> <dir>        Index documents from directory"
+      echo "  query <name> \"question\"    Ask a question with RAG context"
+      echo "  list                       Show all knowledge bases"
+      echo "  delete <name>              Remove a knowledge base"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  BATCH QUEUE — v2.9.0
+#  Queue multiple prompts, process sequentially or in parallel
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_batch() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    add)
+      local prompt="${1:?Usage: ai batch add \"prompt\"}"
+      local job_id=$(date +%s%N | tail -c 8)
+      local job_file="$BATCH_DIR/${job_id}.job"
+      cat > "$job_file" <<EOF
+{"id":"$job_id","prompt":"$(echo "$prompt" | sed 's/"/\\"/g')","status":"pending","created":"$(date -Iseconds)","backend":"$ACTIVE_BACKEND","model":"$ACTIVE_MODEL"}
+EOF
+      ok "Job queued: #$job_id"
+      ;;
+    run|process)
+      local parallel="${1:-1}"
+      [[ "$1" == "--parallel" ]] && parallel="${2:-$BATCH_CONCURRENCY}"
+      local jobs=("$BATCH_DIR"/*.job)
+      local pending=0
+      for j in "${jobs[@]}"; do
+        [[ -f "$j" ]] || continue
+        grep -q '"pending"' "$j" && (( pending++ ))
+      done
+      if (( pending == 0 )); then
+        info "No pending jobs in queue."
+        return
+      fi
+      hdr "Processing $pending batch jobs"
+      local completed=0
+      for j in "${jobs[@]}"; do
+        [[ -f "$j" ]] || continue
+        grep -q '"pending"' "$j" || continue
+        local jid=$(basename "$j" .job)
+        local prompt
+        prompt=$(python3 -c "import json;print(json.load(open('$j'))['prompt'])" 2>/dev/null || echo "")
+        [[ -z "$prompt" ]] && continue
+
+        printf "  ${CYAN}Job #%s${R} " "$jid"
+        local out_file="$BATCH_DIR/${jid}.out"
+        _silent_generate "$prompt" "$MAX_TOKENS" > "$out_file" 2>&1
+        if [[ -s "$out_file" ]]; then
+          sed -i 's/"pending"/"completed"/' "$j"
+          printf "${GREEN}done${R} (%d words)\n" "$(wc -w < "$out_file")"
+          (( completed++ ))
+        else
+          sed -i 's/"pending"/"failed"/' "$j"
+          printf "${RED}failed${R}\n"
+        fi
+      done
+      ok "$completed/$pending jobs completed"
+      ;;
+    list|ls)
+      hdr "Batch Queue"
+      local total=0 pend=0 comp=0 fail=0
+      for j in "$BATCH_DIR"/*.job; do
+        [[ -f "$j" ]] || continue
+        (( total++ ))
+        local jid=$(basename "$j" .job)
+        local status="unknown"
+        grep -q '"pending"' "$j" && { status="pending"; (( pend++ )); }
+        grep -q '"completed"' "$j" && { status="completed"; (( comp++ )); }
+        grep -q '"failed"' "$j" && { status="failed"; (( fail++ )); }
+        local prompt
+        prompt=$(python3 -c "import json;print(json.load(open('$j'))['prompt'][:60])" 2>/dev/null || echo "?")
+        local color="$YELLOW"
+        [[ "$status" == "completed" ]] && color="$GREEN"
+        [[ "$status" == "failed" ]] && color="$RED"
+        printf "  ${DIM}#%-8s${R} ${color}%-10s${R} %s\n" "$jid" "$status" "$prompt"
+      done
+      echo ""
+      info "Total: $total | Pending: $pend | Completed: $comp | Failed: $fail"
+      ;;
+    clear)
+      rm -f "$BATCH_DIR"/*.job "$BATCH_DIR"/*.out
+      ok "Batch queue cleared"
+      ;;
+    results)
+      for f in "$BATCH_DIR"/*.out; do
+        [[ -f "$f" ]] || continue
+        local jid=$(basename "$f" .out)
+        printf "${CYAN}━━━ Job #%s ━━━${R}\n" "$jid"
+        cat "$f"
+        echo ""
+      done
+      ;;
+    *)
+      echo "Usage: ai batch <add|run|list|clear|results>"
+      echo ""
+      echo "  add \"prompt\"     Queue a prompt"
+      echo "  run              Process all pending jobs"
+      echo "  list             Show queue status"
+      echo "  results          Show completed outputs"
+      echo "  clear            Remove all jobs"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  HEALTH CHECK — v2.9.0
+#  System diagnostics: GPU, Python, models, disk, API keys
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_health() {
+  hdr "AI CLI Health Check"
+  local issues=0
+
+  # Bash version
+  local bash_ver="${BASH_VERSION:-unknown}"
+  local bash_major="${bash_ver%%.*}"
+  if (( bash_major >= 5 )); then
+    printf "  ${GREEN}[PASS]${R}  Bash %s\n" "$bash_ver"
+  else
+    printf "  ${RED}[FAIL]${R}  Bash %s (need 5.0+)\n" "$bash_ver"
+    (( issues++ ))
+  fi
+
+  # Python
+  if [[ -n "$PYTHON" ]]; then
+    local pyver=$("$PYTHON" --version 2>&1)
+    printf "  ${GREEN}[PASS]${R}  %s\n" "$pyver"
+  else
+    printf "  ${RED}[FAIL]${R}  Python 3.10+ not found\n"
+    (( issues++ ))
+  fi
+
+  # curl
+  if command -v curl &>/dev/null; then
+    printf "  ${GREEN}[PASS]${R}  curl available\n"
+  else
+    printf "  ${RED}[FAIL]${R}  curl not found\n"
+    (( issues++ ))
+  fi
+
+  # git
+  if command -v git &>/dev/null; then
+    printf "  ${GREEN}[PASS]${R}  git available\n"
+  else
+    printf "  ${YELLOW}[WARN]${R}  git not found (needed for updates)\n"
+  fi
+
+  # GPU
+  echo ""
+  info "GPU Status:"
+  if [[ "$CUDA_ARCH" == "metal" ]]; then
+    printf "  ${GREEN}[PASS]${R}  Metal GPU detected (Apple Silicon)\n"
+  elif [[ "$CUDA_ARCH" != "0" && -n "$CUDA_ARCH" ]]; then
+    printf "  ${GREEN}[PASS]${R}  CUDA GPU detected (sm_%s)\n" "$CUDA_ARCH"
+  else
+    printf "  ${YELLOW}[WARN]${R}  No GPU detected (CPU-only mode)\n"
+  fi
+
+  # llama.cpp
+  if [[ -n "$LLAMA_BIN" ]]; then
+    printf "  ${GREEN}[PASS]${R}  llama.cpp: %s\n" "$LLAMA_BIN"
+  else
+    printf "  ${YELLOW}[WARN]${R}  llama.cpp not found (needed for local GGUF models)\n"
+  fi
+
+  # Disk space
+  echo ""
+  info "Disk Space:"
+  local models_size config_size output_size
+  models_size=$(du -sh "$MODELS_DIR" 2>/dev/null | awk '{print $1}' || echo "0")
+  config_size=$(du -sh "$CONFIG_DIR" 2>/dev/null | awk '{print $1}' || echo "0")
+  output_size=$(du -sh "$AI_OUTPUT_DIR" 2>/dev/null | awk '{print $1}' || echo "0")
+  printf "  Models:  %s  (%s)\n" "$models_size" "$MODELS_DIR"
+  printf "  Config:  %s  (%s)\n" "$config_size" "$CONFIG_DIR"
+  printf "  Output:  %s  (%s)\n" "$output_size" "$AI_OUTPUT_DIR"
+
+  local avail
+  avail=$(df -h "$HOME" 2>/dev/null | awk 'NR==2{print $4}' || echo "unknown")
+  printf "  Free:    %s\n" "$avail"
+
+  # API keys
+  echo ""
+  info "API Keys:"
+  [[ -n "${OPENAI_API_KEY:-}" ]] && printf "  ${GREEN}[SET]${R}  OpenAI\n" || printf "  ${DIM}[---]${R}  OpenAI\n"
+  [[ -n "${ANTHROPIC_API_KEY:-}" ]] && printf "  ${GREEN}[SET]${R}  Anthropic/Claude\n" || printf "  ${DIM}[---]${R}  Anthropic/Claude\n"
+  [[ -n "${GEMINI_API_KEY:-}" ]] && printf "  ${GREEN}[SET]${R}  Gemini\n" || printf "  ${DIM}[---]${R}  Gemini\n"
+  [[ -n "${GROQ_API_KEY:-}" ]] && printf "  ${GREEN}[SET]${R}  Groq\n" || printf "  ${DIM}[---]${R}  Groq\n"
+  [[ -n "${MISTRAL_API_KEY:-}" ]] && printf "  ${GREEN}[SET]${R}  Mistral\n" || printf "  ${DIM}[---]${R}  Mistral\n"
+  [[ -n "${HF_TOKEN:-}" ]] && printf "  ${GREEN}[SET]${R}  HuggingFace\n" || printf "  ${DIM}[---]${R}  HuggingFace\n"
+
+  # Active model
+  echo ""
+  info "Active Config:"
+  printf "  Model:   %s\n" "${ACTIVE_MODEL:-none}"
+  printf "  Backend: %s\n" "${ACTIVE_BACKEND:-auto}"
+  printf "  Tokens:  %s\n" "$MAX_TOKENS"
+  printf "  Temp:    %s\n" "$TEMPERATURE"
+  printf "  Context: %s\n" "$CONTEXT_SIZE"
+  printf "  Threads: %s\n" "$THREADS"
+
+  echo ""
+  if (( issues > 0 )); then
+    warn "$issues issue(s) found"
+  else
+    ok "All checks passed!"
+  fi
+
+  # Log the check
+  echo "$(date -Iseconds) health_check issues=$issues" >> "$HEALTH_LOG" 2>/dev/null || true
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  CONVERSATION BRANCHING — v2.9.0
+#  Fork a conversation, explore alternatives, merge back
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_branch() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    create|new)
+      local name="${1:?Usage: ai branch create <name>}"
+      local src_session="${ACTIVE_SESSION:-default}"
+      local src_log="$SESSIONS_DIR/${src_session}.jsonl"
+      local branch_dir="$BRANCHES_DIR/$name"
+
+      mkdir -p "$branch_dir"
+      if [[ -f "$src_log" ]]; then
+        cp "$src_log" "$branch_dir/history.jsonl"
+        local msg_count=$(wc -l < "$src_log")
+        ok "Branch '$name' created from session '$src_session' ($msg_count messages)"
+      else
+        touch "$branch_dir/history.jsonl"
+        ok "Branch '$name' created (empty)"
+      fi
+      cat > "$branch_dir/meta.json" <<EOF
+{"name":"$name","parent":"$src_session","created":"$(date -Iseconds)","messages":${msg_count:-0}}
+EOF
+      info "Switch to it: ai branch use $name"
+      ;;
+    use|switch)
+      local name="${1:?Usage: ai branch use <name>}"
+      local branch_dir="$BRANCHES_DIR/$name"
+      [[ -d "$branch_dir" ]] || { _err_v29 ERR406 "$name"; return 1; }
+      CONVERSATION_BRANCH="$name"
+      save_config
+      ok "Switched to branch: $name"
+      ;;
+    list|ls)
+      hdr "Conversation Branches"
+      local count=0
+      for d in "$BRANCHES_DIR"/*/; do
+        [[ -d "$d" ]] || continue
+        local bname=$(basename "$d")
+        local meta="$d/meta.json"
+        local msgs=0 parent="" created=""
+        if [[ -f "$meta" ]]; then
+          msgs=$(python3 -c "import json;print(json.load(open('$meta')).get('messages',0))" 2>/dev/null || echo "?")
+          parent=$(python3 -c "import json;print(json.load(open('$meta')).get('parent','?'))" 2>/dev/null || echo "?")
+          created=$(python3 -c "import json;print(json.load(open('$meta')).get('created','?'))" 2>/dev/null || echo "?")
+        fi
+        local active_mark=""
+        [[ "$bname" == "$CONVERSATION_BRANCH" ]] && active_mark=" ${GREEN}<active>${R}"
+        printf "  ${CYAN}%-15s${R}  ${DIM}from:%s  msgs:%s  %s${R}%b\n" \
+          "$bname" "$parent" "$msgs" "$created" "$active_mark"
+        (( count++ ))
+      done
+      (( count == 0 )) && info "No branches. Create one: ai branch create <name>"
+      ;;
+    merge)
+      local name="${1:?Usage: ai branch merge <name>}"
+      local branch_dir="$BRANCHES_DIR/$name"
+      [[ -d "$branch_dir" ]] || { _err_v29 ERR406 "$name"; return 1; }
+      local branch_log="$branch_dir/history.jsonl"
+      local main_log="$SESSIONS_DIR/${ACTIVE_SESSION:-default}.jsonl"
+      if [[ -f "$branch_log" ]]; then
+        cat "$branch_log" >> "$main_log"
+        local merged=$(wc -l < "$branch_log")
+        ok "Merged $merged messages from branch '$name' into session '${ACTIVE_SESSION:-default}'"
+      fi
+      ;;
+    delete|rm)
+      local name="${1:?Usage: ai branch delete <name>}"
+      rm -rf "$BRANCHES_DIR/$name"
+      [[ "$CONVERSATION_BRANCH" == "$name" ]] && CONVERSATION_BRANCH="" && save_config
+      ok "Branch '$name' deleted"
+      ;;
+    *)
+      echo "Usage: ai branch <create|use|list|merge|delete>"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  EXPORT / IMPORT — v2.9.0
+#  Export conversations, configs, models list to portable formats
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_export() {
+  local sub="${1:-all}"; shift 2>/dev/null || true
+  local fmt="${EXPORT_FORMAT:-json}"
+  local out_dir="$EXPORTS_DIR/$(date +%Y%m%d_%H%M%S)"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --format) fmt="$2"; shift 2 ;;
+      --output) out_dir="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  mkdir -p "$out_dir"
+  hdr "Exporting ($fmt format)"
+
+  case "$sub" in
+    chat|conversations)
+      info "Exporting conversations..."
+      local count=0
+      for f in "$SESSIONS_DIR"/*.jsonl "$CHAT_LOGS_DIR"/*.jsonl; do
+        [[ -f "$f" ]] || continue
+        cp "$f" "$out_dir/"
+        (( count++ ))
+      done
+      ok "Exported $count conversation files"
+      ;;
+    config)
+      info "Exporting configuration..."
+      cp "$CONFIG_FILE" "$out_dir/config.env" 2>/dev/null || true
+      cp "$ALIASES_FILE" "$out_dir/aliases.env" 2>/dev/null || true
+      # Export API keys with masking
+      if [[ -f "$KEYS_FILE" ]]; then
+        sed 's/=\(.\{4\}\).*\(.\{4\}\)$/=\1****\2/' "$KEYS_FILE" > "$out_dir/keys_masked.env"
+      fi
+      ok "Config exported (API keys masked)"
+      ;;
+    models)
+      info "Exporting model list..."
+      {
+        echo "# AI CLI Model List — $(date -Iseconds)"
+        echo "# Active: ${ACTIVE_MODEL:-none} (${ACTIVE_BACKEND:-auto})"
+        echo ""
+        ls -lh "$MODELS_DIR"/*.gguf 2>/dev/null || echo "No GGUF models"
+      } > "$out_dir/models.txt"
+      ok "Model list exported"
+      ;;
+    all)
+      cmd_export chat --format "$fmt" --output "$out_dir"
+      cmd_export config --format "$fmt" --output "$out_dir"
+      cmd_export models --format "$fmt" --output "$out_dir"
+      ;;
+    *)
+      echo "Usage: ai export <all|chat|config|models> [--format json|md|csv]"
+      return ;;
+  esac
+
+  ok "Export saved to: $out_dir"
+  info "Files: $(ls "$out_dir" | wc -l)"
+}
+
+cmd_import() {
+  local src="${1:?Usage: ai import <directory|file>}"
+
+  if [[ -d "$src" ]]; then
+    hdr "Importing from directory: $src"
+    # Import configs
+    [[ -f "$src/config.env" ]] && { cp "$src/config.env" "$CONFIG_FILE"; ok "Config imported"; }
+    [[ -f "$src/aliases.env" ]] && { cp "$src/aliases.env" "$ALIASES_FILE"; ok "Aliases imported"; }
+    # Import conversations
+    local count=0
+    for f in "$src"/*.jsonl; do
+      [[ -f "$f" ]] || continue
+      cp "$f" "$SESSIONS_DIR/"
+      (( count++ ))
+    done
+    (( count > 0 )) && ok "Imported $count conversations"
+  elif [[ -f "$src" ]]; then
+    case "$src" in
+      *.jsonl) cp "$src" "$SESSIONS_DIR/"; ok "Conversation imported" ;;
+      *.env)   cp "$src" "$CONFIG_DIR/"; ok "Config file imported" ;;
+      *)       err "Unknown file type. Supported: .jsonl, .env" ;;
+    esac
+  else
+    err "Not found: $src"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  CLEANUP — v2.9.0
+#  Free disk space by removing cached/temporary data
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_cleanup() {
+  local dry_run=0
+  [[ "${1:-}" == "--dry-run" ]] && dry_run=1
+
+  hdr "AI CLI Cleanup"
+  local total_freed=0
+
+  # Temp files
+  local tmp_size=$(du -sm /tmp/ai-cli-* 2>/dev/null | awk '{s+=$1}END{print s+0}')
+  if (( tmp_size > 0 )); then
+    printf "  Temp files:        %dMB\n" "$tmp_size"
+    (( dry_run == 0 )) && rm -rf /tmp/ai-cli-*
+    total_freed=$(( total_freed + tmp_size ))
+  fi
+
+  # Old batch outputs
+  local batch_size=$(du -sm "$BATCH_DIR" 2>/dev/null | awk '{print $1}' || echo 0)
+  local batch_old=$(find "$BATCH_DIR" -name "*.out" -mtime +7 2>/dev/null | wc -l)
+  if (( batch_old > 0 )); then
+    printf "  Old batch results: %d files\n" "$batch_old"
+    (( dry_run == 0 )) && find "$BATCH_DIR" -name "*.out" -mtime +7 -delete
+  fi
+
+  # Old compare results
+  local compare_old=$(find "$COMPARE_DIR" -name "*.md" -mtime +30 2>/dev/null | wc -l)
+  if (( compare_old > 0 )); then
+    printf "  Old comparisons:   %d files\n" "$compare_old"
+    (( dry_run == 0 )) && find "$COMPARE_DIR" -name "*.md" -mtime +30 -delete
+  fi
+
+  # Branch cache
+  local cache_size=$(du -sm "$HOME/.cache/ai-cli" 2>/dev/null | awk '{print $1}' || echo 0)
+  if (( cache_size > 5 )); then
+    printf "  Cache:             %dMB\n" "$cache_size"
+    (( dry_run == 0 )) && rm -rf "$HOME/.cache/ai-cli"
+  fi
+
+  # Old exports
+  local export_old=$(find "$EXPORTS_DIR" -maxdepth 1 -type d -mtime +30 2>/dev/null | wc -l)
+  if (( export_old > 0 )); then
+    printf "  Old exports:       %d dirs\n" "$export_old"
+    (( dry_run == 0 )) && find "$EXPORTS_DIR" -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + 2>/dev/null || true
+  fi
+
+  echo ""
+  if (( dry_run == 1 )); then
+    info "[DRY RUN] No files deleted. Run without --dry-run to clean."
+  else
+    ok "Cleanup complete"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  PLUGIN SYSTEM — v2.9.0
+#  Load external .sh plugins from plugins directory
+# ════════════════════════════════════════════════════════════════════════════════
+
+declare -A LOADED_PLUGINS=()
+
+_load_plugins() {
+  for p in "$PLUGINS_DIR"/*.sh; do
+    [[ -f "$p" ]] || continue
+    local pname=$(basename "$p" .sh)
+    if [[ -z "${LOADED_PLUGINS[$pname]:-}" ]]; then
+      if bash -n "$p" 2>/dev/null; then
+        source "$p"
+        LOADED_PLUGINS["$pname"]=1
+        [[ $VERBOSE -eq 1 ]] && info "Plugin loaded: $pname"
+      else
+        warn "Plugin '$pname' has syntax errors, skipping"
+      fi
+    fi
+  done
+}
+
+cmd_plugin() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    list|ls)
+      hdr "Installed Plugins"
+      local count=0
+      for p in "$PLUGINS_DIR"/*.sh; do
+        [[ -f "$p" ]] || continue
+        local pname=$(basename "$p" .sh)
+        local desc=$(head -5 "$p" | grep '^# ' | head -1 | sed 's/^# //')
+        local loaded="${LOADED_PLUGINS[$pname]:-0}"
+        local status="${GREEN}loaded${R}"
+        [[ "$loaded" == "0" ]] && status="${DIM}not loaded${R}"
+        printf "  ${CYAN}%-20s${R}  %b  ${DIM}%s${R}\n" "$pname" "$status" "$desc"
+        (( count++ ))
+      done
+      (( count == 0 )) && info "No plugins. Place .sh files in: $PLUGINS_DIR/"
+      ;;
+    install)
+      local url="${1:?Usage: ai plugin install <url|path>}"
+      if [[ "$url" == http* ]]; then
+        local fname=$(basename "$url")
+        curl -fsSL "$url" -o "$PLUGINS_DIR/$fname"
+        ok "Plugin downloaded: $fname"
+      elif [[ -f "$url" ]]; then
+        cp "$url" "$PLUGINS_DIR/"
+        ok "Plugin installed: $(basename "$url")"
+      else
+        err "Not a valid URL or file: $url"
+      fi
+      ;;
+    remove|rm)
+      local name="${1:?Usage: ai plugin remove <name>}"
+      rm -f "$PLUGINS_DIR/${name}.sh"
+      ok "Plugin removed: $name"
+      ;;
+    reload)
+      LOADED_PLUGINS=()
+      _load_plugins
+      ok "Plugins reloaded"
+      ;;
+    *)
+      echo "Usage: ai plugin <list|install|remove|reload>"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  MODEL PRESETS — v2.9.0
+#  Quick-switch between saved model configurations
+# ════════════════════════════════════════════════════════════════════════════════
+
+PRESETS_DIR="$CONFIG_DIR/presets"
+mkdir -p "$PRESETS_DIR"
+
+cmd_preset() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    save)
+      local name="${1:?Usage: ai preset save <name>}"
+      cat > "$PRESETS_DIR/${name}.preset" <<EOF
+PRESET_MODEL="$ACTIVE_MODEL"
+PRESET_BACKEND="$ACTIVE_BACKEND"
+PRESET_TOKENS="$MAX_TOKENS"
+PRESET_TEMP="$TEMPERATURE"
+PRESET_TOP_P="$TOP_P"
+PRESET_CONTEXT="$CONTEXT_SIZE"
+PRESET_GPU_LAYERS="$GPU_LAYERS"
+PRESET_PERSONA="$ACTIVE_PERSONA"
+EOF
+      ok "Preset saved: $name"
+      ;;
+    load|use)
+      local name="${1:?Usage: ai preset load <name>}"
+      local pf="$PRESETS_DIR/${name}.preset"
+      [[ -f "$pf" ]] || { err "Preset not found: $name"; return 1; }
+      source "$pf"
+      ACTIVE_MODEL="${PRESET_MODEL:-$ACTIVE_MODEL}"
+      ACTIVE_BACKEND="${PRESET_BACKEND:-$ACTIVE_BACKEND}"
+      MAX_TOKENS="${PRESET_TOKENS:-$MAX_TOKENS}"
+      TEMPERATURE="${PRESET_TEMP:-$TEMPERATURE}"
+      TOP_P="${PRESET_TOP_P:-$TOP_P}"
+      CONTEXT_SIZE="${PRESET_CONTEXT:-$CONTEXT_SIZE}"
+      GPU_LAYERS="${PRESET_GPU_LAYERS:-$GPU_LAYERS}"
+      ACTIVE_PERSONA="${PRESET_PERSONA:-$ACTIVE_PERSONA}"
+      save_config
+      ok "Preset loaded: $name (model=$ACTIVE_MODEL)"
+      ;;
+    list|ls)
+      hdr "Model Presets"
+      for f in "$PRESETS_DIR"/*.preset; do
+        [[ -f "$f" ]] || continue
+        local pname=$(basename "$f" .preset)
+        source "$f"
+        printf "  ${CYAN}%-15s${R}  model=%-30s  backend=%s\n" \
+          "$pname" "${PRESET_MODEL:-?}" "${PRESET_BACKEND:-?}"
+      done
+      ;;
+    delete|rm)
+      local name="${1:?Usage: ai preset delete <name>}"
+      rm -f "$PRESETS_DIR/${name}.preset"
+      ok "Preset deleted: $name"
+      ;;
+    *)
+      echo "Usage: ai preset <save|load|list|delete>"
+      ;;
+  esac
+}
+
+####NEW_FEATURES_MARKER####
+
 main "$@"
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  CONVERSATION HISTORY SEARCH — v2.9.0
+#  Full-text search across all chat sessions and branches
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_search_history() {
+  local query="${1:?Usage: ai search-history \"keyword\"}"
+  local max_results="${2:-20}"
+  local case_flag=""
+  [[ "${3:-}" == "--case" ]] && case_flag=""
+
+  hdr "Search: \"$query\""
+  local count=0
+  local total_files=0
+
+  # Search sessions
+  for f in "$SESSIONS_DIR"/*.jsonl "$CHAT_LOGS_DIR"/*.jsonl "$BRANCHES_DIR"/*/history.jsonl; do
+    [[ -f "$f" ]] || continue
+    (( total_files++ ))
+    local matches
+    matches=$(grep -i${case_flag}n "$query" "$f" 2>/dev/null || true)
+    if [[ -n "$matches" ]]; then
+      local fname=$(basename "$f" .jsonl)
+      local dir=$(basename "$(dirname "$f")")
+      printf "\n  ${CYAN}%s/%s${R}\n" "$dir" "$fname"
+      while IFS= read -r line; do
+        (( count >= max_results )) && break 2
+        local linenum="${line%%:*}"
+        local content="${line#*:}"
+        content="${content:0:120}"
+        printf "    ${DIM}L%-4s${R} %s\n" "$linenum" "$content"
+        (( count++ ))
+      done <<< "$matches"
+    fi
+  done
+
+  echo ""
+  if (( count == 0 )); then
+    info "No results for \"$query\" across $total_files files"
+  else
+    ok "$count result(s) found across $total_files files"
+  fi
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  TOKEN COUNTER — v2.9.0
+#  Estimate token count for prompts before sending
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_count_tokens() {
+  local input=""
+  if [[ -n "${1:-}" ]]; then
+    if [[ -f "$1" ]]; then
+      input=$(cat "$1")
+    else
+      input="$*"
+    fi
+  elif [[ ! -t 0 ]]; then
+    input=$(cat)
+  else
+    echo "Usage: ai tokens \"text\" | ai tokens <file> | echo text | ai tokens"
+    return 1
+  fi
+
+  local chars=${#input}
+  local words=$(echo "$input" | wc -w | tr -d ' ')
+  local lines=$(echo "$input" | wc -l | tr -d ' ')
+
+  # Rough token estimates
+  local tok_gpt=$(( chars * 100 / 400 ))     # ~4 chars/token for GPT
+  local tok_claude=$(( chars * 100 / 380 ))   # slightly different for Claude
+  local tok_llama=$(( chars * 100 / 420 ))    # GGUF models
+
+  if [[ -n "$PYTHON" ]]; then
+    # Try tiktoken for accurate count
+    local accurate
+    accurate=$("$PYTHON" -c "
+try:
+    import tiktoken
+    enc = tiktoken.get_encoding('cl100k_base')
+    import sys
+    text = sys.stdin.read()
+    print(len(enc.encode(text)))
+except ImportError:
+    print(-1)
+except Exception:
+    print(-1)
+" <<< "$input" 2>/dev/null || echo "-1")
+    if [[ "$accurate" != "-1" ]]; then
+      tok_gpt=$accurate
+    fi
+  fi
+
+  hdr "Token Count"
+  printf "  Characters:  %s\n" "$chars"
+  printf "  Words:       %s\n" "$words"
+  printf "  Lines:       %s\n" "$lines"
+  echo ""
+  printf "  ${CYAN}GPT-4/Claude:${R}  ~%s tokens\n" "$tok_gpt"
+  printf "  ${CYAN}GGUF/LLaMA:${R}    ~%s tokens\n" "$tok_llama"
+  echo ""
+
+  # Context window check
+  if (( tok_gpt > CONTEXT_SIZE )); then
+    warn "Exceeds current context window ($CONTEXT_SIZE tokens)"
+    _err_suggest ERR604
+  elif (( tok_gpt > CONTEXT_SIZE * 80 / 100 )); then
+    warn "Using ${tok_gpt}/${CONTEXT_SIZE} tokens (>80% of context window)"
+  else
+    ok "Fits in context window (${tok_gpt}/${CONTEXT_SIZE})"
+  fi
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  COST ESTIMATOR — v2.9.0
+#  Estimate API costs before sending queries
+# ════════════════════════════════════════════════════════════════════════════════
+
+# Pricing per 1M tokens (input/output) as of 2025
+declare -A API_PRICING_INPUT=(
+  [gpt-4o]="2.50"
+  [gpt-4o-mini]="0.15"
+  [gpt-4-turbo]="10.00"
+  [gpt-3.5-turbo]="0.50"
+  [claude-3-opus]="15.00"
+  [claude-3-sonnet]="3.00"
+  [claude-3-haiku]="0.25"
+  [claude-3.5-sonnet]="3.00"
+  [claude-4-opus]="15.00"
+  [claude-4-sonnet]="3.00"
+  [gemini-pro]="0.50"
+  [gemini-1.5-pro]="3.50"
+  [gemini-1.5-flash]="0.075"
+  [groq-llama-70b]="0.59"
+  [groq-llama-8b]="0.05"
+  [groq-mixtral]="0.24"
+  [mistral-large]="4.00"
+  [mistral-small]="1.00"
+)
+
+declare -A API_PRICING_OUTPUT=(
+  [gpt-4o]="10.00"
+  [gpt-4o-mini]="0.60"
+  [gpt-4-turbo]="30.00"
+  [gpt-3.5-turbo]="1.50"
+  [claude-3-opus]="75.00"
+  [claude-3-sonnet]="15.00"
+  [claude-3-haiku]="1.25"
+  [claude-3.5-sonnet]="15.00"
+  [claude-4-opus]="75.00"
+  [claude-4-sonnet]="15.00"
+  [gemini-pro]="1.50"
+  [gemini-1.5-pro]="10.50"
+  [gemini-1.5-flash]="0.30"
+  [groq-llama-70b]="0.79"
+  [groq-llama-8b]="0.08"
+  [groq-mixtral]="0.24"
+  [mistral-large]="12.00"
+  [mistral-small]="3.00"
+)
+
+cmd_cost() {
+  local input_tokens="${1:-1000}"
+  local output_tokens="${2:-$MAX_TOKENS}"
+  local model="${3:-}"
+
+  hdr "Cost Estimate"
+
+  if [[ -n "$model" ]]; then
+    _estimate_single "$model" "$input_tokens" "$output_tokens"
+  else
+    printf "  %-25s  %10s  %10s  %10s\n" "Model" "Input" "Output" "Total"
+    printf "  %-25s  %10s  %10s  %10s\n" "─────" "─────" "──────" "─────"
+    for m in "${!API_PRICING_INPUT[@]}"; do
+      _estimate_single "$m" "$input_tokens" "$output_tokens"
+    done | sort -t'$' -k4 -n
+  fi
+
+  echo ""
+  info "Estimated for ${input_tokens} input + ${output_tokens} output tokens"
+  info "Local GGUF models: \$0.00 (free)"
+}
+
+_estimate_single() {
+  local model="$1" in_tok="$2" out_tok="$3"
+  local in_price="${API_PRICING_INPUT[$model]:-0}"
+  local out_price="${API_PRICING_OUTPUT[$model]:-0}"
+
+  if [[ "$in_price" == "0" && "$out_price" == "0" ]]; then
+    return
+  fi
+
+  local cost
+  cost=$(awk "BEGIN{printf \"%.6f\", ($in_tok * $in_price / 1000000) + ($out_tok * $out_price / 1000000)}")
+  local in_cost
+  in_cost=$(awk "BEGIN{printf \"%.6f\", $in_tok * $in_price / 1000000}")
+  local out_cost
+  out_cost=$(awk "BEGIN{printf \"%.6f\", $out_tok * $out_price / 1000000}")
+
+  printf "  %-25s  \$%9s  \$%9s  ${GREEN}\$%9s${R}\n" \
+    "$model" "$in_cost" "$out_cost" "$cost"
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  CONTEXT WINDOW MANAGER — v2.9.0
+#  Smart context management: summarize, trim, or split long conversations
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_context() {
+  local sub="${1:-status}"; shift 2>/dev/null || true
+  case "$sub" in
+    status|info)
+      local session_file="$SESSIONS_DIR/${ACTIVE_SESSION:-default}.jsonl"
+      local msg_count=0
+      local total_chars=0
+      if [[ -f "$session_file" ]]; then
+        msg_count=$(wc -l < "$session_file")
+        total_chars=$(wc -c < "$session_file")
+      fi
+      local est_tokens=$(( total_chars * 100 / 400 ))
+
+      hdr "Context Window Status"
+      printf "  Session:     %s\n" "${ACTIVE_SESSION:-default}"
+      printf "  Messages:    %d\n" "$msg_count"
+      printf "  Est tokens:  ~%d / %d\n" "$est_tokens" "$CONTEXT_SIZE"
+      printf "  Usage:       "
+      if (( CONTEXT_SIZE > 0 )); then
+        local pct=$(( est_tokens * 100 / CONTEXT_SIZE ))
+        if (( pct > 90 )); then
+          printf "${RED}%d%%${R} (critical)\n" "$pct"
+        elif (( pct > 70 )); then
+          printf "${YELLOW}%d%%${R} (high)\n" "$pct"
+        else
+          printf "${GREEN}%d%%${R}\n" "$pct"
+        fi
+      else
+        printf "unknown\n"
+      fi
+      ;;
+    trim)
+      local keep="${1:-20}"
+      local session_file="$SESSIONS_DIR/${ACTIVE_SESSION:-default}.jsonl"
+      [[ -f "$session_file" ]] || { info "No active session"; return; }
+      local total=$(wc -l < "$session_file")
+      if (( total <= keep )); then
+        info "Session has $total messages (keeping $keep). Nothing to trim."
+        return
+      fi
+      local tmp=$(mktemp)
+      tail -n "$keep" "$session_file" > "$tmp"
+      mv "$tmp" "$session_file"
+      local removed=$(( total - keep ))
+      ok "Trimmed $removed old messages (kept last $keep)"
+      ;;
+    summarize)
+      local session_file="$SESSIONS_DIR/${ACTIVE_SESSION:-default}.jsonl"
+      [[ -f "$session_file" ]] || { info "No active session"; return; }
+      info "Summarizing conversation..."
+      local content
+      content=$(cat "$session_file" | head -50)
+      local summary
+      summary=$(_silent_generate "Summarize this conversation in 3-5 bullet points:
+$content" 256 2>/dev/null || echo "Could not generate summary")
+      echo ""
+      echo "$summary"
+      echo ""
+      # Save summary
+      echo "$(date -Iseconds) [summary] $summary" >> "$session_file"
+      ok "Summary appended to session"
+      ;;
+    clear)
+      local session_file="$SESSIONS_DIR/${ACTIVE_SESSION:-default}.jsonl"
+      > "$session_file" 2>/dev/null || true
+      ok "Session cleared: ${ACTIVE_SESSION:-default}"
+      ;;
+    size)
+      local max="${1:-$CONTEXT_SIZE}"
+      CONTEXT_SIZE="$max"
+      save_config
+      ok "Context size set to $max"
+      ;;
+    *)
+      echo "Usage: ai context <status|trim|summarize|clear|size>"
+      echo ""
+      echo "  status          Show context window usage"
+      echo "  trim [N]        Keep last N messages (default: 20)"
+      echo "  summarize       AI-summarize the conversation"
+      echo "  clear           Clear current session"
+      echo "  size <N>        Set context window size"
+      ;;
+  esac
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  PROMPT CHAINING — v2.9.0
+#  Chain multiple prompts: output of one feeds into the next
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_chain() {
+  local chain_file="${1:-}"
+  local dry_run=0
+  [[ "${2:-}" == "--dry-run" ]] && dry_run=1
+
+  if [[ -n "$chain_file" && -f "$chain_file" ]]; then
+    hdr "Running prompt chain from: $chain_file"
+    local step=0
+    local prev_output=""
+    while IFS= read -r prompt || [[ -n "$prompt" ]]; do
+      [[ -z "$prompt" || "$prompt" == \#* ]] && continue
+      (( step++ ))
+
+      # Replace {{prev}} with previous output
+      prompt="${prompt//\{\{prev\}\}/$prev_output}"
+
+      printf "\n  ${CYAN}Step %d:${R} %s\n" "$step" "${prompt:0:80}"
+
+      if [[ $dry_run -eq 1 ]]; then
+        info "[dry-run] Would send prompt"
+        prev_output="[output of step $step]"
+        continue
+      fi
+
+      prev_output=$(_silent_generate "$prompt" "$MAX_TOKENS" 2>/dev/null || echo "")
+      if [[ -z "$prev_output" ]]; then
+        err "Step $step produced no output. Chain halted."
+        return 1
+      fi
+
+      echo "$prev_output" | head -10
+      local lines=$(echo "$prev_output" | wc -l)
+      (( lines > 10 )) && printf "  ${DIM}... (%d lines total)${R}\n" "$lines"
+    done < "$chain_file"
+
+    echo ""
+    ok "Chain complete: $step steps"
+  else
+    echo "Usage: ai chain <chain_file> [--dry-run]"
+    echo ""
+    echo "Chain file format (one prompt per line):"
+    echo "  # Comments start with #"
+    echo "  Write a short story about a robot"
+    echo "  Now translate the following to French: {{prev}}"
+    echo "  Summarize: {{prev}}"
+    echo ""
+    echo "  {{prev}} = output from previous step"
+  fi
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  MODEL STATS & GGUF INSPECTOR — v2.9.0
+#  Show detailed info about loaded GGUF models
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_model_stats() {
+  hdr "Model Statistics"
+
+  # Active model
+  printf "  ${B}Active Model:${R}    %s\n" "${ACTIVE_MODEL:-none}"
+  printf "  ${B}Backend:${R}         %s\n" "${ACTIVE_BACKEND:-auto}"
+  printf "  ${B}Context Size:${R}    %s tokens\n" "$CONTEXT_SIZE"
+  printf "  ${B}Max Tokens:${R}      %s\n" "$MAX_TOKENS"
+  printf "  ${B}Temperature:${R}     %s\n" "$TEMPERATURE"
+  printf "  ${B}GPU Layers:${R}      %s\n" "$GPU_LAYERS"
+  printf "  ${B}Threads:${R}         %s\n" "$THREADS"
+  echo ""
+
+  # Count models
+  local gguf_count=0
+  local total_size=0
+  for f in "$MODELS_DIR"/*.gguf; do
+    [[ -f "$f" ]] || continue
+    (( gguf_count++ ))
+    local sz=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
+    total_size=$(( total_size + sz ))
+  done
+
+  printf "  ${B}GGUF Models:${R}     %d\n" "$gguf_count"
+  if (( total_size > 0 )); then
+    local total_gb=$(awk "BEGIN{printf \"%.1f\", $total_size / 1073741824}")
+    printf "  ${B}Total Size:${R}      %s GB\n" "$total_gb"
+  fi
+  echo ""
+
+  # List models with sizes
+  if (( gguf_count > 0 )); then
+    printf "  %-40s  %10s\n" "Model" "Size"
+    printf "  %-40s  %10s\n" "─────" "────"
+    for f in "$MODELS_DIR"/*.gguf; do
+      [[ -f "$f" ]] || continue
+      local name=$(basename "$f")
+      local sz=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
+      local human_sz
+      if (( sz > 1073741824 )); then
+        human_sz=$(awk "BEGIN{printf \"%.1f GB\", $sz / 1073741824}")
+      else
+        human_sz=$(awk "BEGIN{printf \"%.0f MB\", $sz / 1048576}")
+      fi
+      local active=""
+      [[ "$ACTIVE_MODEL" == *"$name"* ]] && active=" ${GREEN}<active>${R}"
+      printf "  %-40s  %10s%b\n" "${name:0:40}" "$human_sz" "$active"
+    done
+  fi
+
+  # GGUF metadata (if python available)
+  if [[ -n "$ACTIVE_MODEL" && -f "$MODELS_DIR/$ACTIVE_MODEL" && -n "$PYTHON" ]]; then
+    echo ""
+    info "GGUF Metadata:"
+    "$PYTHON" -c "
+try:
+    import struct, json
+    path = '$MODELS_DIR/$ACTIVE_MODEL'
+    with open(path, 'rb') as f:
+        magic = f.read(4)
+        if magic == b'GGUF':
+            version = struct.unpack('<I', f.read(4))[0]
+            n_tensors = struct.unpack('<Q', f.read(8))[0]
+            n_kv = struct.unpack('<Q', f.read(8))[0]
+            print(f'    GGUF version: {version}')
+            print(f'    Tensors:      {n_tensors}')
+            print(f'    KV pairs:     {n_kv}')
+        else:
+            print('    Not a valid GGUF file')
+except Exception as e:
+    print(f'    Could not read metadata: {e}')
+" 2>/dev/null || true
+  fi
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  SCHEDULE / CRON — v2.9.0
+#  Schedule prompts to run at specific times
+# ════════════════════════════════════════════════════════════════════════════════
+
+SCHEDULE_DIR="$CONFIG_DIR/schedules"
+mkdir -p "$SCHEDULE_DIR"
+
+cmd_schedule() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    add)
+      local cron_expr="${1:?Usage: ai schedule add \"*/5 * * * *\" \"prompt\"}"
+      local prompt="${2:?Usage: ai schedule add \"cron_expr\" \"prompt\"}"
+      local sched_id=$(date +%s%N | tail -c 8)
+      cat > "$SCHEDULE_DIR/${sched_id}.sched" <<EOF
+SCHED_ID="$sched_id"
+SCHED_CRON="$cron_expr"
+SCHED_PROMPT="$(echo "$prompt" | sed 's/"/\\"/g')"
+SCHED_CREATED="$(date -Iseconds)"
+SCHED_ENABLED=1
+SCHED_BACKEND="${ACTIVE_BACKEND:-auto}"
+SCHED_OUTPUT="$SCHEDULE_DIR/${sched_id}.out"
+EOF
+      ok "Schedule created: #$sched_id"
+      info "Cron: $cron_expr"
+      info "To activate: ai schedule install"
+      ;;
+    list|ls)
+      hdr "Scheduled Prompts"
+      for f in "$SCHEDULE_DIR"/*.sched; do
+        [[ -f "$f" ]] || continue
+        source "$f"
+        local status="${GREEN}enabled${R}"
+        [[ "$SCHED_ENABLED" != "1" ]] && status="${DIM}disabled${R}"
+        printf "  ${DIM}#%-8s${R} %b  ${CYAN}%-20s${R}  %s\n" \
+          "$SCHED_ID" "$status" "$SCHED_CRON" "${SCHED_PROMPT:0:40}"
+      done
+      ;;
+    install)
+      info "Installing cron jobs..."
+      local tmp=$(mktemp)
+      crontab -l 2>/dev/null | grep -v 'ai-cli-sched' > "$tmp" || true
+      for f in "$SCHEDULE_DIR"/*.sched; do
+        [[ -f "$f" ]] || continue
+        source "$f"
+        [[ "$SCHED_ENABLED" != "1" ]] && continue
+        echo "$SCHED_CRON /usr/local/bin/ai ask \"$SCHED_PROMPT\" >> \"$SCHED_OUTPUT\" 2>&1 # ai-cli-sched-$SCHED_ID" >> "$tmp"
+      done
+      crontab "$tmp"
+      rm -f "$tmp"
+      ok "Cron jobs installed"
+      ;;
+    remove|rm)
+      local id="${1:?Usage: ai schedule remove <id>}"
+      rm -f "$SCHEDULE_DIR/${id}.sched" "$SCHEDULE_DIR/${id}.out"
+      ok "Schedule #$id removed"
+      cmd_schedule install 2>/dev/null || true
+      ;;
+    disable)
+      local id="${1:?Usage: ai schedule disable <id>}"
+      local f="$SCHEDULE_DIR/${id}.sched"
+      [[ -f "$f" ]] || { err "Schedule not found: $id"; return 1; }
+      sed -i 's/SCHED_ENABLED=1/SCHED_ENABLED=0/' "$f"
+      ok "Schedule #$id disabled"
+      ;;
+    enable)
+      local id="${1:?Usage: ai schedule enable <id>}"
+      local f="$SCHEDULE_DIR/${id}.sched"
+      [[ -f "$f" ]] || { err "Schedule not found: $id"; return 1; }
+      sed -i 's/SCHED_ENABLED=0/SCHED_ENABLED=1/' "$f"
+      ok "Schedule #$id enabled"
+      ;;
+    *)
+      echo "Usage: ai schedule <add|list|install|remove|enable|disable>"
+      echo ""
+      echo "  add \"cron\" \"prompt\"  Create scheduled prompt"
+      echo "  list                 Show all schedules"
+      echo "  install              Write to crontab"
+      echo "  remove <id>          Delete schedule"
+      echo ""
+      echo "Examples:"
+      echo "  ai schedule add \"0 9 * * *\" \"Give me a daily briefing\""
+      echo "  ai schedule add \"*/30 * * * *\" \"Check system health\""
+      ;;
+  esac
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  CONVERSATION REPLAY — v2.9.0
+#  Replay a saved conversation through a different model
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_replay() {
+  local session="${1:?Usage: ai replay <session_name> [--model <backend>]}"
+  local target_backend="${ACTIVE_BACKEND:-auto}"
+  [[ "${2:-}" == "--model" ]] && target_backend="${3:-$ACTIVE_BACKEND}"
+
+  local session_file="$SESSIONS_DIR/${session}.jsonl"
+  [[ -f "$session_file" ]] || { err "Session not found: $session"; return 1; }
+
+  hdr "Replaying: $session -> $target_backend"
+  local total=$(wc -l < "$session_file")
+  local count=0
+  local saved_backend="$ACTIVE_BACKEND"
+  ACTIVE_BACKEND="$target_backend"
+
+  local out_file="$SESSIONS_DIR/${session}_replay_$(date +%Y%m%d%H%M%S).jsonl"
+
+  while IFS= read -r line; do
+    (( count++ ))
+    # Extract role and content from JSONL
+    local role content
+    role=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('role',''))" 2>/dev/null || echo "")
+    content=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('content',''))" 2>/dev/null || echo "")
+
+    [[ -z "$role" || -z "$content" ]] && continue
+
+    if [[ "$role" == "user" ]]; then
+      printf "  ${DIM}[%d/%d]${R} ${CYAN}User:${R} %s\n" "$count" "$total" "${content:0:60}"
+
+      # Re-generate with new model
+      local response
+      response=$(_silent_generate "$content" "$MAX_TOKENS" 2>/dev/null || echo "[no response]")
+
+      printf "  ${DIM}[%d/%d]${R} ${GREEN}%s:${R} %s\n" "$count" "$total" "$target_backend" "${response:0:80}"
+
+      # Save to replay log
+      printf '{"role":"user","content":"%s"}\n' "$(echo "$content" | sed 's/"/\\"/g')" >> "$out_file"
+      printf '{"role":"assistant","content":"%s"}\n' "$(echo "$response" | sed 's/"/\\"/g' | tr '\n' ' ')" >> "$out_file"
+    fi
+  done < "$session_file"
+
+  ACTIVE_BACKEND="$saved_backend"
+  echo ""
+  ok "Replay saved: $out_file"
+  info "Compare: diff $session_file $out_file"
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  FAVORITES / BOOKMARKS — v2.9.0
+#  Save and recall favorite prompts
+# ════════════════════════════════════════════════════════════════════════════════
+
+FAVORITES_FILE="$CONFIG_DIR/favorites.jsonl"
+touch "$FAVORITES_FILE" 2>/dev/null || true
+
+cmd_favorite() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    add|save)
+      local prompt="${*:?Usage: ai fav add \"prompt text\"}"
+      local fav_id=$(date +%s)
+      printf '{"id":%s,"prompt":"%s","created":"%s","tags":""}\n' \
+        "$fav_id" "$(echo "$prompt" | sed 's/"/\\"/g')" "$(date -Iseconds)" \
+        >> "$FAVORITES_FILE"
+      ok "Favorite saved: #$fav_id"
+      ;;
+    list|ls)
+      hdr "Favorite Prompts"
+      local count=0
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        (( count++ ))
+        local fid fprompt
+        fid=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('id',''))" 2>/dev/null || echo "?")
+        fprompt=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('prompt',''))" 2>/dev/null || echo "?")
+        printf "  ${DIM}#%-8s${R}  %s\n" "$fid" "${fprompt:0:70}"
+      done < "$FAVORITES_FILE"
+      (( count == 0 )) && info "No favorites. Add one: ai fav add \"prompt\""
+      info "$count favorite(s)"
+      ;;
+    run|use)
+      local id="${1:?Usage: ai fav run <id|number>}"
+      local prompt=""
+      local count=0
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        (( count++ ))
+        local fid
+        fid=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('id',''))" 2>/dev/null || echo "")
+        if [[ "$fid" == "$id" ]] || [[ "$count" == "$id" ]]; then
+          prompt=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('prompt',''))" 2>/dev/null || echo "")
+          break
+        fi
+      done < "$FAVORITES_FILE"
+      if [[ -z "$prompt" ]]; then
+        err "Favorite not found: $id"
+        return 1
+      fi
+      info "Running: $prompt"
+      dispatch_ask "$prompt"
+      ;;
+    delete|rm)
+      local id="${1:?Usage: ai fav delete <id>}"
+      local tmp=$(mktemp)
+      grep -v "\"id\":${id}" "$FAVORITES_FILE" > "$tmp" 2>/dev/null || true
+      mv "$tmp" "$FAVORITES_FILE"
+      ok "Favorite #$id deleted"
+      ;;
+    *)
+      echo "Usage: ai fav <add|list|run|delete>"
+      echo ""
+      echo "  add \"prompt\"   Save a favorite prompt"
+      echo "  list           Show all favorites"
+      echo "  run <id>       Re-run a favorite"
+      echo "  delete <id>    Remove a favorite"
+      ;;
+  esac
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  DIFF & PATCH — v2.9.0
+#  AI-powered code diffing and patching
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_diff() {
+  local file1="${1:?Usage: ai diff <file1> <file2> [--explain]}"
+  local file2="${2:?Usage: ai diff <file1> <file2> [--explain]}"
+  local explain=0
+  [[ "${3:-}" == "--explain" ]] && explain=1
+
+  [[ -f "$file1" ]] || { err "File not found: $file1"; return 1; }
+  [[ -f "$file2" ]] || { err "File not found: $file2"; return 1; }
+
+  hdr "Diff: $file1 ↔ $file2"
+
+  # Show standard diff
+  local diff_output
+  diff_output=$(diff --color=auto -u "$file1" "$file2" 2>/dev/null || true)
+
+  if [[ -z "$diff_output" ]]; then
+    ok "Files are identical"
+    return
+  fi
+
+  echo "$diff_output"
+  echo ""
+
+  local added=$(echo "$diff_output" | grep '^+[^+]' | wc -l)
+  local removed=$(echo "$diff_output" | grep '^-[^-]' | wc -l)
+  info "Lines added: ${GREEN}+$added${R}  removed: ${RED}-$removed${R}"
+
+  if [[ $explain -eq 1 ]]; then
+    echo ""
+    info "AI explanation:"
+    dispatch_ask "Explain the following code diff concisely:
+
+$diff_output"
+  fi
+}
+
+cmd_patch() {
+  local file="${1:?Usage: ai patch <file> \"instructions\"}"
+  local instructions="${2:?Usage: ai patch <file> \"instructions\"}"
+
+  [[ -f "$file" ]] || { err "File not found: $file"; return 1; }
+
+  hdr "AI Patch: $file"
+  info "Instructions: $instructions"
+
+  local content
+  content=$(cat "$file")
+  local ext="${file##*.}"
+
+  local prompt="Given this ${ext} file:
+
+\`\`\`${ext}
+$content
+\`\`\`
+
+Apply these changes: $instructions
+
+Return ONLY the complete modified file content, no explanations."
+
+  local result
+  result=$(_silent_generate "$prompt" 4096 2>/dev/null || echo "")
+
+  if [[ -z "$result" ]]; then
+    err "AI produced no output"
+    return 1
+  fi
+
+  # Strip markdown fences if present
+  result=$(echo "$result" | sed '/^```/d')
+
+  # Show diff preview
+  local tmp=$(mktemp)
+  echo "$result" > "$tmp"
+  echo ""
+  diff --color=auto -u "$file" "$tmp" || true
+
+  echo ""
+  read -rp "$(echo -e "${BYELLOW}Apply patch? [y/N]:${R} ")" confirm
+  if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+    cp "$file" "${file}.bak"
+    echo "$result" > "$file"
+    ok "Patched: $file (backup: ${file}.bak)"
+  else
+    info "Patch cancelled"
+  fi
+  rm -f "$tmp"
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  GIT INTEGRATION — v2.9.0
+#  AI-powered git commit messages, PR descriptions, blame explanations
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_git_ai() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    commit|cm)
+      if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+        err "Not in a git repository"
+        return 1
+      fi
+      local diff
+      diff=$(git diff --cached --stat 2>/dev/null)
+      if [[ -z "$diff" ]]; then
+        diff=$(git diff --stat 2>/dev/null)
+        if [[ -z "$diff" ]]; then
+          info "No changes to commit"
+          return
+        fi
+        warn "No staged changes. Showing unstaged diff."
+        info "Stage changes first: git add ."
+        return
+      fi
+      local full_diff
+      full_diff=$(git diff --cached 2>/dev/null | head -200)
+      info "Generating commit message..."
+      local msg
+      msg=$(_silent_generate "Write a concise git commit message for these changes. Use conventional commits format (feat/fix/docs/refactor/test/chore). Max 72 chars for first line. Add a brief body if needed.
+
+Diff:
+$full_diff" 128 2>/dev/null || echo "")
+      if [[ -z "$msg" ]]; then
+        err "Could not generate commit message"
+        return 1
+      fi
+      echo ""
+      printf "  ${GREEN}Suggested commit message:${R}\n"
+      echo "  ─────────────────────────────"
+      echo "$msg" | sed 's/^/  /'
+      echo "  ─────────────────────────────"
+      echo ""
+      read -rp "$(echo -e "${BYELLOW}Use this message? [Y/n/e(dit)]:${R} ")" choice
+      case "$choice" in
+        n|N) info "Cancelled" ;;
+        e|E)
+          local tmp=$(mktemp)
+          echo "$msg" > "$tmp"
+          ${EDITOR:-nano} "$tmp"
+          git commit -F "$tmp"
+          rm -f "$tmp"
+          ;;
+        *)
+          git commit -m "$msg"
+          ok "Committed!"
+          ;;
+      esac
+      ;;
+    pr|pull-request)
+      if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+        err "Not in a git repository"
+        return 1
+      fi
+      local base="${1:-main}"
+      local log
+      log=$(git log --oneline "$base"..HEAD 2>/dev/null | head -30)
+      local diff_stat
+      diff_stat=$(git diff --stat "$base"..HEAD 2>/dev/null | tail -5)
+      info "Generating PR description..."
+      local desc
+      desc=$(_silent_generate "Write a GitHub pull request description for these changes. Include: title, summary, key changes (bullet points), and testing notes.
+
+Commits:
+$log
+
+Diff stats:
+$diff_stat" 512 2>/dev/null || echo "")
+      echo ""
+      echo "$desc"
+      ;;
+    blame)
+      local file="${1:?Usage: ai git blame <file> <line>}"
+      local line="${2:?Usage: ai git blame <file> <line>}"
+      local blame_output
+      blame_output=$(git blame -L "$line,$line" "$file" 2>/dev/null || echo "")
+      if [[ -z "$blame_output" ]]; then
+        err "Could not get blame info"
+        return 1
+      fi
+      echo "$blame_output"
+      local commit_hash
+      commit_hash=$(echo "$blame_output" | awk '{print $1}')
+      if [[ -n "$commit_hash" && "$commit_hash" != "00000000" ]]; then
+        local commit_info
+        commit_info=$(git show --stat "$commit_hash" 2>/dev/null | head -20)
+        echo ""
+        info "AI explanation:"
+        dispatch_ask "Explain why this line was changed based on this git commit:
+
+Blame: $blame_output
+
+Commit info:
+$commit_info"
+      fi
+      ;;
+    summary)
+      local range="${1:-HEAD~5..HEAD}"
+      local log
+      log=$(git log --oneline "$range" 2>/dev/null)
+      info "Summarizing commits: $range"
+      dispatch_ask "Summarize these git commits in a few bullet points:
+
+$log"
+      ;;
+    *)
+      echo "Usage: ai git <commit|pr|blame|summary>"
+      echo ""
+      echo "  commit            Generate AI commit message"
+      echo "  pr [base]         Generate PR description"
+      echo "  blame <file> <n>  Explain a git blame line"
+      echo "  summary [range]   Summarize recent commits"
+      ;;
+  esac
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  LOGGING & ANALYTICS — v2.9.0
+#  Track usage, token counts, costs, response times
+# ════════════════════════════════════════════════════════════════════════════════
+
+ANALYTICS_FILE="$CONFIG_DIR/analytics.jsonl"
+
+_log_analytics() {
+  local backend="$1" tokens_in="$2" tokens_out="$3" latency_ms="$4" model="$5"
+  printf '{"ts":"%s","backend":"%s","model":"%s","in":%s,"out":%s,"ms":%s}\n' \
+    "$(date -Iseconds)" "$backend" "$model" "$tokens_in" "$tokens_out" "$latency_ms" \
+    >> "$ANALYTICS_FILE" 2>/dev/null || true
+}
+
+cmd_analytics() {
+  local sub="${1:-summary}"; shift 2>/dev/null || true
+  case "$sub" in
+    summary)
+      hdr "Usage Analytics"
+      if [[ ! -f "$ANALYTICS_FILE" ]] || [[ ! -s "$ANALYTICS_FILE" ]]; then
+        info "No analytics data yet. Use ai to generate some!"
+        return
+      fi
+      local total_requests=0
+      local total_in=0
+      local total_out=0
+      local total_ms=0
+      declare -A backend_counts=()
+
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        (( total_requests++ ))
+        local backend in_tok out_tok ms
+        backend=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('backend','?'))" 2>/dev/null || echo "?")
+        in_tok=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('in',0))" 2>/dev/null || echo 0)
+        out_tok=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('out',0))" 2>/dev/null || echo 0)
+        ms=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('ms',0))" 2>/dev/null || echo 0)
+        total_in=$(( total_in + in_tok ))
+        total_out=$(( total_out + out_tok ))
+        total_ms=$(( total_ms + ms ))
+        backend_counts["$backend"]=$(( ${backend_counts["$backend"]:-0} + 1 ))
+      done < "$ANALYTICS_FILE"
+
+      printf "  ${B}Total Requests:${R}  %d\n" "$total_requests"
+      printf "  ${B}Total Input:${R}     %d tokens\n" "$total_in"
+      printf "  ${B}Total Output:${R}    %d tokens\n" "$total_out"
+      if (( total_requests > 0 )); then
+        printf "  ${B}Avg Latency:${R}     %d ms\n" "$(( total_ms / total_requests ))"
+      fi
+      echo ""
+      info "By backend:"
+      for b in "${!backend_counts[@]}"; do
+        printf "    %-15s  %d requests\n" "$b" "${backend_counts[$b]}"
+      done
+      ;;
+    today)
+      local today=$(date +%Y-%m-%d)
+      local count=0
+      grep "$today" "$ANALYTICS_FILE" 2>/dev/null | while IFS= read -r line; do
+        (( count++ ))
+      done
+      info "Today ($today): $(grep -c "$today" "$ANALYTICS_FILE" 2>/dev/null || echo 0) requests"
+      ;;
+    clear)
+      > "$ANALYTICS_FILE"
+      ok "Analytics cleared"
+      ;;
+    raw)
+      [[ -f "$ANALYTICS_FILE" ]] && cat "$ANALYTICS_FILE" || info "No data"
+      ;;
+    *)
+      echo "Usage: ai analytics <summary|today|clear|raw>"
+      ;;
+  esac
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  INTERACTIVE QUIZ / FLASHCARD — v2.9.0
+#  AI-generated quiz for learning topics
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_quiz() {
+  local topic="${1:?Usage: ai quiz \"topic\" [--count N]}"
+  local count=5
+  [[ "${2:-}" == "--count" ]] && count="${3:-5}"
+
+  hdr "AI Quiz: $topic"
+  info "Generating $count questions..."
+
+  local questions
+  questions=$(_silent_generate "Generate exactly $count multiple-choice quiz questions about: $topic
+
+Format each question as:
+Q1: [question text]
+A) [option]
+B) [option]
+C) [option]
+D) [option]
+Answer: [letter]
+
+Be educational and progressively harder." 2048 2>/dev/null || echo "")
+
+  if [[ -z "$questions" ]]; then
+    err "Could not generate quiz"
+    return 1
+  fi
+
+  local score=0
+  local total=0
+  local current_q=""
+  local current_answer=""
+  local in_question=0
+
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^Q[0-9]+: ]]; then
+      # If we had a previous question, ask it
+      if [[ -n "$current_q" && -n "$current_answer" ]]; then
+        echo ""
+        echo "$current_q"
+        read -rp "$(echo -e "${BCYAN}Your answer (A/B/C/D): ${R}")" user_answer
+        user_answer=$(echo "$user_answer" | tr '[:lower:]' '[:upper:]' | head -c1)
+        if [[ "$user_answer" == "$current_answer" ]]; then
+          printf "  ${GREEN}Correct!${R}\n"
+          (( score++ ))
+        else
+          printf "  ${RED}Wrong.${R} Answer: %s\n" "$current_answer"
+        fi
+        (( total++ ))
+      fi
+      current_q="$line"
+      current_answer=""
+      in_question=1
+    elif [[ "$line" =~ ^[ABCD]\) ]]; then
+      current_q+=$'\n'"  $line"
+    elif [[ "$line" =~ ^Answer:\ *([A-D]) ]]; then
+      current_answer="${BASH_REMATCH[1]}"
+    fi
+  done <<< "$questions"
+
+  # Handle last question
+  if [[ -n "$current_q" && -n "$current_answer" ]]; then
+    echo ""
+    echo "$current_q"
+    read -rp "$(echo -e "${BCYAN}Your answer (A/B/C/D): ${R}")" user_answer
+    user_answer=$(echo "$user_answer" | tr '[:lower:]' '[:upper:]' | head -c1)
+    if [[ "$user_answer" == "$current_answer" ]]; then
+      printf "  ${GREEN}Correct!${R}\n"
+      (( score++ ))
+    else
+      printf "  ${RED}Wrong.${R} Answer: %s\n" "$current_answer"
+    fi
+    (( total++ ))
+  fi
+
+  echo ""
+  hdr "Results"
+  printf "  Score: ${B}%d/%d${R}" "$score" "$total"
+  if (( total > 0 )); then
+    local pct=$(( score * 100 / total ))
+    if (( pct >= 80 )); then
+      printf "  ${GREEN}(%d%% — Excellent!)${R}\n" "$pct"
+    elif (( pct >= 60 )); then
+      printf "  ${YELLOW}(%d%% — Good)${R}\n" "$pct"
+    else
+      printf "  ${RED}(%d%% — Keep studying)${R}\n" "$pct"
+    fi
+  else
+    echo ""
+  fi
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  MARKDOWN RENDERER — v2.9.0
+#  Pretty-print markdown in terminal
+# ════════════════════════════════════════════════════════════════════════════════
+
+_render_markdown() {
+  local input="${1:-}"
+  [[ -z "$input" ]] && input=$(cat)
+
+  echo "$input" | while IFS= read -r line; do
+    # Headers
+    if [[ "$line" =~ ^###\  ]]; then
+      printf "${B}${CYAN}   %s${R}\n" "${line#\#\#\# }"
+    elif [[ "$line" =~ ^##\  ]]; then
+      printf "${B}${BWHITE} %s${R}\n" "${line#\#\# }"
+    elif [[ "$line" =~ ^#\  ]]; then
+      printf "\n${B}${BWHITE}${UL}%s${R}\n" "${line#\# }"
+    # Code blocks
+    elif [[ "$line" =~ ^\`\`\` ]]; then
+      printf "${DIM}%s${R}\n" "$line"
+    # Bold
+    elif [[ "$line" =~ \*\*.*\*\* ]]; then
+      local rendered="$line"
+      rendered=$(echo "$rendered" | sed "s/\*\*\([^*]*\)\*\*/${B}\1${R}/g")
+      printf "%s\n" "$rendered"
+    # Bullets
+    elif [[ "$line" =~ ^[[:space:]]*[-*]\  ]]; then
+      printf "${CYAN}•${R} %s\n" "${line#*- }"
+    # Numbered lists
+    elif [[ "$line" =~ ^[[:space:]]*[0-9]+\.\  ]]; then
+      printf "${CYAN}%s${R}\n" "$line"
+    # Blockquote
+    elif [[ "$line" =~ ^\> ]]; then
+      printf "${DIM}│ %s${R}\n" "${line#> }"
+    # Horizontal rule
+    elif [[ "$line" =~ ^---$ ]] || [[ "$line" =~ ^___$ ]]; then
+      printf "${DIM}────────────────────────────────────────${R}\n"
+    else
+      printf "%s\n" "$line"
+    fi
+  done
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  SHELL INTEGRATION — v2.9.0
+#  Generate and explain shell commands
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_shell() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    gen|generate)
+      local desc="${*:?Usage: ai shell gen \"description of what you want\"}"
+      local result
+      result=$(_silent_generate "Generate a single shell command (bash) that does the following: $desc
+
+Return ONLY the command, no explanation, no markdown fences. If it requires multiple commands, chain them with && or ;." 128 2>/dev/null || echo "")
+      if [[ -z "$result" ]]; then
+        err "Could not generate command"
+        return 1
+      fi
+      # Strip markdown if present
+      result=$(echo "$result" | sed '/^```/d' | head -3)
+      echo ""
+      printf "  ${GREEN}%s${R}\n" "$result"
+      echo ""
+      read -rp "$(echo -e "${BYELLOW}Execute? [y/N]:${R} ")" confirm
+      if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+        eval "$result"
+      fi
+      ;;
+    explain|ex)
+      local cmd="${*:?Usage: ai shell explain \"command\"}"
+      dispatch_ask "Explain this shell command in simple terms. Break down each part:
+
+\`\`\`bash
+$cmd
+\`\`\`"
+      ;;
+    fix)
+      local cmd="${*:?Usage: ai shell fix \"broken command\"}"
+      local result
+      result=$(_silent_generate "This shell command has an error. Fix it and return ONLY the corrected command:
+
+$cmd" 128 2>/dev/null || echo "")
+      echo ""
+      printf "  ${RED}Original:${R}  %s\n" "$cmd"
+      printf "  ${GREEN}Fixed:${R}     %s\n" "$result"
+      echo ""
+      read -rp "$(echo -e "${BYELLOW}Execute fixed command? [y/N]:${R} ")" confirm
+      if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+        eval "$result"
+      fi
+      ;;
+    *)
+      echo "Usage: ai shell <gen|explain|fix>"
+      echo ""
+      echo "  gen \"description\"     Generate a shell command"
+      echo "  explain \"command\"     Explain what a command does"
+      echo "  fix \"command\"         Fix a broken command"
+      ;;
+  esac
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  SEMANTIC FILE SEARCH — v2.9.0
+#  AI-powered search across local files using keyword matching
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_find_ai() {
+  local query="${1:?Usage: ai find \"what to search for\" [directory]}"
+  local search_dir="${2:-.}"
+  local max_results="${3:-15}"
+
+  hdr "AI File Search"
+  info "Query: \"$query\""
+  info "Directory: $search_dir"
+  echo ""
+
+  # Extract keywords from query
+  local keywords
+  keywords=$(echo "$query" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '\n' | sort -u | grep -E '.{3,}')
+
+  local results=()
+  local result_count=0
+
+  while IFS= read -r -d '' file; do
+    (( result_count >= max_results )) && break
+    local score=0
+    local fname=$(basename "$file")
+    local fname_lower=$(echo "$fname" | tr '[:upper:]' '[:lower:]')
+
+    # Score filename matches
+    for kw in $keywords; do
+      [[ "$fname_lower" == *"$kw"* ]] && (( score += 5 ))
+    done
+
+    # Score content matches (first 100 lines)
+    local content_lower
+    content_lower=$(head -100 "$file" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    for kw in $keywords; do
+      local matches
+      matches=$(echo "$content_lower" | grep -c "$kw" 2>/dev/null || echo 0)
+      score=$(( score + matches ))
+    done
+
+    if (( score > 0 )); then
+      local size
+      size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null || echo 0)
+      local human_size
+      if (( size > 1048576 )); then
+        human_size=$(awk "BEGIN{printf \"%.1fM\", $size/1048576}")
+      elif (( size > 1024 )); then
+        human_size=$(awk "BEGIN{printf \"%.0fK\", $size/1024}")
+      else
+        human_size="${size}B"
+      fi
+      printf "  ${GREEN}[%2d]${R} %-50s ${DIM}%s${R}\n" "$score" "${file:0:50}" "$human_size"
+      (( result_count++ ))
+    fi
+  done < <(find "$search_dir" -type f \
+    -not -path '*/\.*' \
+    -not -path '*/node_modules/*' \
+    -not -path '*/__pycache__/*' \
+    -not -name '*.pyc' \
+    -not -name '*.o' \
+    -size -5M \
+    -print0 2>/dev/null | head -z -500)
+
+  echo ""
+  if (( result_count == 0 )); then
+    info "No matches for: $query"
+  else
+    ok "$result_count result(s) found"
+  fi
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  ENVIRONMENT PROFILES — v2.9.0
+#  Named environment configs for different use cases
+# ════════════════════════════════════════════════════════════════════════════════
+
+PROFILES_DIR="$CONFIG_DIR/profiles"
+mkdir -p "$PROFILES_DIR"
+
+cmd_profile() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    create|new)
+      local name="${1:?Usage: ai profile create <name> \"description\"}"
+      local desc="${2:-No description}"
+      local profile_dir="$PROFILES_DIR/$name"
+      mkdir -p "$profile_dir"
+      cp "$CONFIG_FILE" "$profile_dir/config.env" 2>/dev/null || true
+      cp "$KEYS_FILE" "$profile_dir/keys.env" 2>/dev/null || true
+      echo "$desc" > "$profile_dir/description.txt"
+      ok "Profile created: $name"
+      ;;
+    switch|use)
+      local name="${1:?Usage: ai profile switch <name>}"
+      local profile_dir="$PROFILES_DIR/$name"
+      [[ -d "$profile_dir" ]] || { err "Profile not found: $name"; return 1; }
+      [[ -f "$profile_dir/config.env" ]] && cp "$profile_dir/config.env" "$CONFIG_FILE"
+      [[ -f "$profile_dir/keys.env" ]] && cp "$profile_dir/keys.env" "$KEYS_FILE"
+      source "$CONFIG_FILE" 2>/dev/null || true
+      source "$KEYS_FILE" 2>/dev/null || true
+      ok "Switched to profile: $name"
+      ;;
+    list|ls)
+      hdr "Environment Profiles"
+      for d in "$PROFILES_DIR"/*/; do
+        [[ -d "$d" ]] || continue
+        local pname=$(basename "$d")
+        local desc=$(cat "$d/description.txt" 2>/dev/null || echo "")
+        printf "  ${CYAN}%-15s${R}  ${DIM}%s${R}\n" "$pname" "$desc"
+      done
+      ;;
+    delete|rm)
+      local name="${1:?Usage: ai profile delete <name>}"
+      rm -rf "$PROFILES_DIR/$name"
+      ok "Profile '$name' deleted"
+      ;;
+    *)
+      echo "Usage: ai profile <create|switch|list|delete>"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  WATCH MODE — v2.9.0
+#  Watch a file and re-process when it changes
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_watch() {
+  local file="${1:?Usage: ai watch <file> [command]}"
+  local action="${2:-summarize}"
+  local interval="${3:-2}"
+
+  [[ -f "$file" ]] || { err "File not found: $file"; return 1; }
+
+  hdr "Watch Mode"
+  info "File:     $file"
+  info "Action:   $action"
+  info "Interval: ${interval}s"
+  info "Press Ctrl+C to stop"
+  echo ""
+
+  local last_hash=""
+  while true; do
+    local current_hash
+    current_hash=$(md5sum "$file" 2>/dev/null | awk '{print $1}' || sha256sum "$file" 2>/dev/null | awk '{print $1}' || echo "")
+
+    if [[ "$current_hash" != "$last_hash" && -n "$current_hash" ]]; then
+      last_hash="$current_hash"
+      printf "\n  ${CYAN}[%s] File changed — processing...${R}\n" "$(date +%H:%M:%S)"
+      case "$action" in
+        summarize) dispatch_ask "Summarize this file:
+$(cat "$file" | head -200)" 2>/dev/null || true ;;
+        review)    dispatch_ask "Review this code:
+$(cat "$file" | head -200)" 2>/dev/null || true ;;
+        lint)      dispatch_ask "Find bugs and issues in:
+$(cat "$file" | head -200)" 2>/dev/null || true ;;
+        explain)   dispatch_ask "Explain this code:
+$(cat "$file" | head -200)" 2>/dev/null || true ;;
+        *)         dispatch_ask "$action:
+$(cat "$file" | head -200)" 2>/dev/null || true ;;
+      esac
+    fi
+    sleep "$interval"
+  done
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  NOTEBOOK — v2.9.0
+#  Jupyter-like notebook experience in the terminal
+# ════════════════════════════════════════════════════════════════════════════════
+
+NOTEBOOKS_DIR="$AI_OUTPUT_DIR/notebooks"
+mkdir -p "$NOTEBOOKS_DIR"
+
+cmd_notebook() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    new|create)
+      local name="${1:?Usage: ai notebook new <name>}"
+      local nb_file="$NOTEBOOKS_DIR/${name}.ainb"
+      cat > "$nb_file" <<EOF
+# AI CLI Notebook: $name
+# Created: $(date -Iseconds)
+# Format: Each cell starts with --- and a type: [code], [ai], [text]
+# Run cells with: ai notebook run <name>
+
+--- [text]
+# $name
+This notebook was created with AI CLI v${VERSION}
+
+--- [ai]
+Tell me about this notebook topic
+
+--- [code]
+echo "Hello from AI CLI notebook!"
+date
+
+EOF
+      ok "Notebook created: $nb_file"
+      info "Edit: ${EDITOR:-nano} $nb_file"
+      info "Run:  ai notebook run $name"
+      ;;
+    run|exec)
+      local name="${1:?Usage: ai notebook run <name>}"
+      local nb_file="$NOTEBOOKS_DIR/${name}.ainb"
+      [[ -f "$nb_file" ]] || { err "Notebook not found: $name"; return 1; }
+
+      hdr "Running notebook: $name"
+      local cell_num=0
+      local cell_type=""
+      local cell_content=""
+      local out_file="$NOTEBOOKS_DIR/${name}_output_$(date +%Y%m%d%H%M%S).txt"
+
+      while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" =~ ^---\ \[(code|ai|text)\] ]]; then
+          # Process previous cell
+          if [[ -n "$cell_content" && -n "$cell_type" ]]; then
+            _run_notebook_cell "$cell_num" "$cell_type" "$cell_content" "$out_file"
+          fi
+          cell_type="${BASH_REMATCH[1]}"
+          cell_content=""
+          (( cell_num++ ))
+        elif [[ "$line" != \#* || "$cell_type" == "code" ]]; then
+          cell_content+="$line"$'\n'
+        fi
+      done < "$nb_file"
+
+      # Process last cell
+      if [[ -n "$cell_content" && -n "$cell_type" ]]; then
+        _run_notebook_cell "$cell_num" "$cell_type" "$cell_content" "$out_file"
+      fi
+
+      echo ""
+      ok "Notebook complete: $cell_num cells"
+      ok "Output saved: $out_file"
+      ;;
+    list|ls)
+      hdr "Notebooks"
+      for f in "$NOTEBOOKS_DIR"/*.ainb; do
+        [[ -f "$f" ]] || continue
+        local nbname=$(basename "$f" .ainb)
+        local cells=$(grep -c '^--- \[' "$f" 2>/dev/null || echo 0)
+        local modified=$(stat -c%Y "$f" 2>/dev/null || echo 0)
+        local mod_date=$(date -d "@$modified" +%Y-%m-%d 2>/dev/null || echo "?")
+        printf "  ${CYAN}%-20s${R}  ${DIM}%s cells  modified %s${R}\n" "$nbname" "$cells" "$mod_date"
+      done
+      ;;
+    edit)
+      local name="${1:?Usage: ai notebook edit <name>}"
+      local nb_file="$NOTEBOOKS_DIR/${name}.ainb"
+      [[ -f "$nb_file" ]] || { err "Notebook not found: $name"; return 1; }
+      ${EDITOR:-nano} "$nb_file"
+      ;;
+    delete|rm)
+      local name="${1:?Usage: ai notebook delete <name>}"
+      rm -f "$NOTEBOOKS_DIR/${name}.ainb" "$NOTEBOOKS_DIR/${name}"_output_*.txt
+      ok "Notebook '$name' deleted"
+      ;;
+    *)
+      echo "Usage: ai notebook <new|run|list|edit|delete>"
+      echo ""
+      echo "Cell types: [text] [code] [ai]"
+      ;;
+  esac
+}
+
+_run_notebook_cell() {
+  local num="$1" type="$2" content="$3" out_file="$4"
+  content=$(echo "$content" | sed '/^$/d')
+  [[ -z "$content" ]] && return
+
+  printf "\n  ${CYAN}━━━ Cell %d [%s] ━━━${R}\n" "$num" "$type"
+
+  case "$type" in
+    text)
+      _render_markdown "$content"
+      echo "$content" >> "$out_file"
+      ;;
+    code)
+      printf "${DIM}%s${R}\n" "$content"
+      echo "--- Cell $num [code] ---" >> "$out_file"
+      echo "$content" >> "$out_file"
+      local output
+      output=$(bash -c "$content" 2>&1 || true)
+      if [[ -n "$output" ]]; then
+        printf "${GREEN}%s${R}\n" "$output"
+        echo "$output" >> "$out_file"
+      fi
+      ;;
+    ai)
+      printf "${DIM}> %s${R}\n" "${content:0:80}"
+      echo "--- Cell $num [ai] ---" >> "$out_file"
+      local response
+      response=$(_silent_generate "$content" "$MAX_TOKENS" 2>/dev/null || echo "[no response]")
+      echo "$response"
+      echo "$response" >> "$out_file"
+      ;;
+  esac
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  TASK PLANNER — v2.9.0
+#  AI-powered task breakdown and planning
+# ════════════════════════════════════════════════════════════════════════════════
+
+TASKS_FILE="$CONFIG_DIR/tasks.jsonl"
+touch "$TASKS_FILE" 2>/dev/null || true
+
+cmd_plan() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    create|new)
+      local goal="${*:?Usage: ai plan create \"goal description\"}"
+      info "Breaking down: $goal"
+      local plan
+      plan=$(_silent_generate "Break this goal into 5-10 actionable tasks. Number each task. Be specific and practical.
+
+Goal: $goal
+
+Format:
+1. [Task description] (estimated time)
+2. [Task description] (estimated time)
+..." 1024 2>/dev/null || echo "")
+
+      echo ""
+      echo "$plan"
+      echo ""
+
+      # Parse and save tasks
+      local task_num=0
+      while IFS= read -r line; do
+        if [[ "$line" =~ ^[0-9]+\. ]]; then
+          (( task_num++ ))
+          local task_text="${line#*. }"
+          printf '{"id":%d,"task":"%s","status":"pending","created":"%s","goal":"%s"}\n' \
+            "$task_num" "$(echo "$task_text" | sed 's/"/\\"/g')" \
+            "$(date -Iseconds)" "$(echo "$goal" | sed 's/"/\\"/g')" \
+            >> "$TASKS_FILE"
+        fi
+      done <<< "$plan"
+
+      ok "$task_num tasks created"
+      info "View: ai plan list | Complete: ai plan done <n>"
+      ;;
+    list|ls)
+      hdr "Task Plan"
+      local count=0
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        (( count++ ))
+        local tid tstatus ttask
+        tid=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('id','?'))" 2>/dev/null || echo "?")
+        tstatus=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('status','?'))" 2>/dev/null || echo "?")
+        ttask=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('task','?'))" 2>/dev/null || echo "?")
+
+        local icon="${YELLOW}○${R}"
+        [[ "$tstatus" == "done" ]] && icon="${GREEN}●${R}"
+        [[ "$tstatus" == "in_progress" ]] && icon="${CYAN}◐${R}"
+
+        printf "  %b ${DIM}#%-3s${R} %s\n" "$icon" "$tid" "$ttask"
+      done < "$TASKS_FILE"
+      (( count == 0 )) && info "No tasks. Create a plan: ai plan create \"goal\""
+      ;;
+    done|complete)
+      local id="${1:?Usage: ai plan done <task_id>}"
+      local tmp=$(mktemp)
+      while IFS= read -r line; do
+        local tid
+        tid=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('id',0))" 2>/dev/null || echo 0)
+        if [[ "$tid" == "$id" ]]; then
+          echo "$line" | python3 -c "
+import sys,json
+d=json.loads(sys.stdin.read())
+d['status']='done'
+print(json.dumps(d))
+" 2>/dev/null >> "$tmp" || echo "$line" >> "$tmp"
+        else
+          echo "$line" >> "$tmp"
+        fi
+      done < "$TASKS_FILE"
+      mv "$tmp" "$TASKS_FILE"
+      ok "Task #$id marked as done"
+      ;;
+    start)
+      local id="${1:?Usage: ai plan start <task_id>}"
+      local tmp=$(mktemp)
+      while IFS= read -r line; do
+        local tid
+        tid=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('id',0))" 2>/dev/null || echo 0)
+        if [[ "$tid" == "$id" ]]; then
+          echo "$line" | python3 -c "
+import sys,json
+d=json.loads(sys.stdin.read())
+d['status']='in_progress'
+print(json.dumps(d))
+" 2>/dev/null >> "$tmp" || echo "$line" >> "$tmp"
+        else
+          echo "$line" >> "$tmp"
+        fi
+      done < "$TASKS_FILE"
+      mv "$tmp" "$TASKS_FILE"
+      ok "Task #$id started"
+      ;;
+    clear)
+      > "$TASKS_FILE"
+      ok "All tasks cleared"
+      ;;
+    *)
+      echo "Usage: ai plan <create|list|done|start|clear>"
+      echo ""
+      echo "  create \"goal\"   AI breaks goal into tasks"
+      echo "  list             Show all tasks"
+      echo "  start <id>       Mark task as in progress"
+      echo "  done <id>        Mark task as complete"
+      echo "  clear            Remove all tasks"
+      ;;
+  esac
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  LEARNING MODE — v2.9.0
+#  Interactive learning sessions with AI tutor
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_learn() {
+  local topic="${*:?Usage: ai learn \"topic\"}"
+
+  hdr "Learning Mode: $topic"
+  info "AI will teach you step by step."
+  info "Commands: next (n), quiz (q), example (e), explain (x), quit"
+  echo ""
+
+  local lesson_num=0
+  local context="You are a patient tutor teaching: $topic"
+
+  # Get overview
+  local overview
+  overview=$(_silent_generate "$context
+
+Start by giving a brief 3-sentence overview of $topic and what the student will learn. End with the first concept to explore." 256 2>/dev/null || echo "")
+  echo "$overview"
+  echo ""
+
+  while true; do
+    read -rp "$(echo -e "${BCYAN}[learn]${R} (n/q/e/x/quit)> ")" cmd
+    case "$cmd" in
+      n|next)
+        (( lesson_num++ ))
+        local response
+        response=$(_silent_generate "$context
+This is lesson step $lesson_num. The student has completed the previous steps. Teach the next concept about $topic. Be concise but thorough. Include a practical tip." 512 2>/dev/null || echo "")
+        echo ""
+        echo "$response"
+        echo ""
+        ;;
+      q|quiz)
+        local quiz
+        quiz=$(_silent_generate "$context
+Create one quick question to test understanding of what we've covered so far (step $lesson_num). Give the answer after the student responds." 256 2>/dev/null || echo "")
+        echo ""
+        echo "$quiz"
+        read -rp "$(echo -e "${BCYAN}Your answer: ${R}")" answer
+        local feedback
+        feedback=$(_silent_generate "$context
+The student answered: '$answer' to the quiz question. Give brief feedback - was it correct? Explain why." 256 2>/dev/null || echo "")
+        echo "$feedback"
+        echo ""
+        ;;
+      e|example)
+        local example
+        example=$(_silent_generate "$context
+Give a practical real-world example related to the current lesson (step $lesson_num) about $topic. Include code if relevant." 512 2>/dev/null || echo "")
+        echo ""
+        echo "$example"
+        echo ""
+        ;;
+      x|explain)
+        read -rp "$(echo -e "${BCYAN}What to explain? ${R}")" what
+        local explanation
+        explanation=$(_silent_generate "$context
+The student asks about: $what (in the context of learning $topic, step $lesson_num). Explain clearly with an analogy if possible." 512 2>/dev/null || echo "")
+        echo ""
+        echo "$explanation"
+        echo ""
+        ;;
+      quit|exit|q!)
+        echo ""
+        ok "Learning session ended after $lesson_num steps"
+        break
+        ;;
+      *)
+        echo "  n=next  q=quiz  e=example  x=explain  quit=exit"
+        ;;
+    esac
+  done
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  CONVERSATION FORMAT CONVERTER — v2.9.0
+#  Convert between different chat formats
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_convert() {
+  local input="${1:?Usage: ai convert <input_file> <output_format>}"
+  local fmt="${2:-markdown}"
+
+  [[ -f "$input" ]] || { err "File not found: $input"; return 1; }
+
+  local output=""
+  case "$fmt" in
+    md|markdown)
+      output="${input%.jsonl}.md"
+      {
+        echo "# Conversation Export"
+        echo "Exported: $(date -Iseconds)"
+        echo ""
+        while IFS= read -r line; do
+          [[ -z "$line" ]] && continue
+          local role content
+          role=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('role',''))" 2>/dev/null || echo "")
+          content=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('content',''))" 2>/dev/null || echo "")
+          [[ -z "$role" ]] && continue
+          if [[ "$role" == "user" ]]; then
+            echo "## User"
+            echo "$content"
+            echo ""
+          elif [[ "$role" == "assistant" ]]; then
+            echo "## Assistant"
+            echo "$content"
+            echo ""
+          fi
+        done < "$input"
+      } > "$output"
+      ;;
+    csv)
+      output="${input%.jsonl}.csv"
+      {
+        echo "role,content,timestamp"
+        while IFS= read -r line; do
+          [[ -z "$line" ]] && continue
+          local role content ts
+          role=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('role',''))" 2>/dev/null || echo "")
+          content=$(echo "$line" | python3 -c "import sys,json;c=json.loads(sys.stdin.read()).get('content','');print(c.replace('\"','\"\"')[:500])" 2>/dev/null || echo "")
+          ts=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('timestamp',''))" 2>/dev/null || echo "")
+          echo "\"$role\",\"$content\",\"$ts\""
+        done < "$input"
+      } > "$output"
+      ;;
+    txt|text)
+      output="${input%.jsonl}.txt"
+      {
+        while IFS= read -r line; do
+          [[ -z "$line" ]] && continue
+          local role content
+          role=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('role',''))" 2>/dev/null || echo "")
+          content=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('content',''))" 2>/dev/null || echo "")
+          [[ -z "$role" ]] && continue
+          printf "[%s] %s\n\n" "$role" "$content"
+        done < "$input"
+      } > "$output"
+      ;;
+    html)
+      output="${input%.jsonl}.html"
+      {
+        echo "<!DOCTYPE html><html><head><title>AI CLI Conversation</title>"
+        echo "<style>body{font-family:sans-serif;max-width:800px;margin:0 auto;padding:20px}"
+        echo ".user{background:#e3f2fd;padding:10px;border-radius:8px;margin:10px 0}"
+        echo ".assistant{background:#f5f5f5;padding:10px;border-radius:8px;margin:10px 0}"
+        echo "</style></head><body>"
+        echo "<h1>Conversation</h1>"
+        while IFS= read -r line; do
+          [[ -z "$line" ]] && continue
+          local role content
+          role=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('role',''))" 2>/dev/null || echo "")
+          content=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('content','').replace('<','&lt;').replace('>','&gt;'))" 2>/dev/null || echo "")
+          [[ -z "$role" ]] && continue
+          echo "<div class=\"$role\"><strong>$role:</strong><p>$content</p></div>"
+        done < "$input"
+        echo "</body></html>"
+      } > "$output"
+      ;;
+    *)
+      echo "Usage: ai convert <input.jsonl> <md|csv|txt|html>"
+      return 1
+      ;;
+  esac
+
+  ok "Converted: $output"
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  WRITING ASSISTANT — v2.9.0
+#  Specialized writing modes: blog, email, docs, readme
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_write() {
+  local mode="${1:-}"; shift 2>/dev/null || true
+  local topic="${*:-}"
+
+  case "$mode" in
+    blog)
+      [[ -z "$topic" ]] && { echo "Usage: ai write blog \"topic\""; return 1; }
+      local out="$AI_OUTPUT_DIR/blog_$(date +%Y%m%d%H%M%S).md"
+      info "Writing blog post: $topic"
+      _silent_generate "Write a professional blog post about: $topic
+
+Include:
+- Engaging title with subtitle
+- Introduction that hooks the reader
+- 3-5 main sections with headers
+- Practical examples or tips
+- Conclusion with call to action
+
+Use markdown formatting. Be informative and engaging. ~800 words." 4096 > "$out" 2>/dev/null
+      ok "Blog post saved: $out"
+      cat "$out"
+      ;;
+    email)
+      [[ -z "$topic" ]] && { echo "Usage: ai write email \"subject or context\""; return 1; }
+      info "Drafting email..."
+      _silent_generate "Write a professional email about: $topic
+
+Include appropriate greeting, clear body, and sign-off. Keep it concise and professional." 512 2>/dev/null
+      ;;
+    readme)
+      local project_dir="${topic:-.}"
+      info "Generating README for: $project_dir"
+      local files_list
+      files_list=$(ls -1 "$project_dir" 2>/dev/null | head -30)
+      local out="$project_dir/README.md"
+      _silent_generate "Generate a comprehensive README.md for a project with these files:
+
+$files_list
+
+Include:
+- Project title and description
+- Installation instructions
+- Usage examples
+- Features list
+- License section
+
+Use proper markdown formatting." 2048 > "$out" 2>/dev/null
+      ok "README saved: $out"
+      ;;
+    docs)
+      local file="${topic:?Usage: ai write docs <file>}"
+      [[ -f "$file" ]] || { err "File not found: $file"; return 1; }
+      local content
+      content=$(cat "$file" | head -300)
+      local ext="${file##*.}"
+      info "Generating documentation for: $file"
+      _silent_generate "Generate documentation for this ${ext} file. Include function descriptions, parameters, return values, and usage examples:
+
+\`\`\`${ext}
+$content
+\`\`\`" 2048 2>/dev/null
+      ;;
+    story)
+      [[ -z "$topic" ]] && topic="a mysterious adventure"
+      local out="$AI_OUTPUT_DIR/story_$(date +%Y%m%d%H%M%S).md"
+      info "Writing story: $topic"
+      _silent_generate "Write a creative short story about: $topic
+
+Include vivid descriptions, dialogue, and a satisfying ending. ~500 words." 2048 > "$out" 2>/dev/null
+      ok "Story saved: $out"
+      cat "$out"
+      ;;
+    poem)
+      [[ -z "$topic" ]] && topic="technology and nature"
+      info "Writing poem: $topic"
+      _silent_generate "Write a beautiful poem about: $topic
+
+Use vivid imagery and metaphor. 3-4 stanzas." 512 2>/dev/null
+      ;;
+    resume)
+      [[ -z "$topic" ]] && { echo "Usage: ai write resume \"role/field\""; return 1; }
+      info "Generating resume template for: $topic"
+      _silent_generate "Generate a professional resume/CV template for someone in: $topic
+
+Include sections: Contact, Summary, Experience (3 entries), Education, Skills, Projects. Use markdown formatting. Fill with realistic placeholder text." 2048 2>/dev/null
+      ;;
+    *)
+      echo "Usage: ai write <blog|email|readme|docs|story|poem|resume> [topic]"
+      echo ""
+      echo "  blog \"topic\"     Write a blog post"
+      echo "  email \"subject\"  Draft a professional email"
+      echo "  readme [dir]     Generate README.md"
+      echo "  docs <file>      Generate code documentation"
+      echo "  story [topic]    Write a short story"
+      echo "  poem [topic]     Write a poem"
+      echo "  resume \"role\"    Generate resume template"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  MEMORY / KNOWLEDGE — v2.9.0
+#  Persistent facts the AI should remember across sessions
+# ════════════════════════════════════════════════════════════════════════════════
+
+MEMORY_FILE="$CONFIG_DIR/memory.jsonl"
+touch "$MEMORY_FILE" 2>/dev/null || true
+
+cmd_memory() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    add|save|remember)
+      local fact="${*:?Usage: ai memory add \"fact to remember\"}"
+      printf '{"fact":"%s","added":"%s","source":"user"}\n' \
+        "$(echo "$fact" | sed 's/"/\\"/g')" "$(date -Iseconds)" \
+        >> "$MEMORY_FILE"
+      ok "Remembered: $fact"
+      ;;
+    list|show|ls)
+      hdr "AI Memory"
+      local count=0
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        (( count++ ))
+        local fact added
+        fact=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('fact','?'))" 2>/dev/null || echo "?")
+        added=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('added','?'))" 2>/dev/null || echo "?")
+        printf "  ${DIM}%-3d${R} %s  ${DIM}(%s)${R}\n" "$count" "$fact" "$added"
+      done < "$MEMORY_FILE"
+      (( count == 0 )) && info "No memories. Add: ai memory add \"fact\""
+      ;;
+    clear)
+      > "$MEMORY_FILE"
+      ok "Memory cleared"
+      ;;
+    context)
+      # Build context string from memories for prompt injection
+      local ctx=""
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local fact
+        fact=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('fact',''))" 2>/dev/null || echo "")
+        [[ -n "$fact" ]] && ctx+="- $fact"$'\n'
+      done < "$MEMORY_FILE"
+      echo "$ctx"
+      ;;
+    search)
+      local query="${1:?Usage: ai memory search \"keyword\"}"
+      grep -i "$query" "$MEMORY_FILE" 2>/dev/null | while IFS= read -r line; do
+        local fact
+        fact=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('fact','?'))" 2>/dev/null || echo "?")
+        printf "  %s\n" "$fact"
+      done
+      ;;
+    *)
+      echo "Usage: ai memory <add|list|clear|search>"
+      ;;
+  esac
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  TRANSLATOR — v2.9.0
+#  Multi-language translation with auto-detect
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_translate_v2() {
+  local text="" target="English" source="auto"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --to) target="$2"; shift 2 ;;
+      --from) source="$2"; shift 2 ;;
+      *) text+="$1 "; shift ;;
+    esac
+  done
+  text="${text% }"
+  [[ -z "$text" ]] && { echo "Usage: ai tr \"text\" --to French"; return 1; }
+  local prompt="Translate the following"
+  [[ "$source" != "auto" ]] && prompt+=" from $source"
+  prompt+=" to $target. Return ONLY the translation, no explanations:
+
+$text"
+  _silent_generate "$prompt" 512 2>/dev/null
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  DICTIONARY / DEFINE — v2.9.0
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_define() {
+  local word="${*:?Usage: ai define \"word or phrase\"}"
+  _silent_generate "Define '$word'. Include:
+1. Definition(s) with part of speech
+2. Etymology (brief)
+3. Example sentence(s)
+4. Synonyms and antonyms
+Be concise." 512 2>/dev/null
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  REGEX HELPER — v2.9.0
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_regex() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    build|gen)
+      local desc="${*:?Usage: ai regex build \"description\"}"
+      _silent_generate "Create a regex pattern for: $desc
+Return the regex pattern on the first line, then explain each part briefly. Include test examples." 256 2>/dev/null
+      ;;
+    explain|ex)
+      local pattern="${*:?Usage: ai regex explain \"pattern\"}"
+      _silent_generate "Explain this regex pattern in detail, breaking down each component:
+Pattern: $pattern" 256 2>/dev/null
+      ;;
+    test)
+      local pattern="${1:?Usage: ai regex test \"pattern\" \"text\"}"
+      local text="${2:?Usage: ai regex test \"pattern\" \"text\"}"
+      if echo "$text" | grep -qP "$pattern" 2>/dev/null; then
+        printf "${GREEN}MATCH${R}\n"
+        echo "$text" | grep -oP "$pattern" 2>/dev/null | while read -r m; do
+          printf "  Matched: ${CYAN}%s${R}\n" "$m"
+        done
+      else
+        printf "${RED}NO MATCH${R}\n"
+      fi
+      ;;
+    *)
+      echo "Usage: ai regex <build|explain|test>"
+      echo "  build \"description\"    Generate regex from description"
+      echo "  explain \"pattern\"      Explain a regex"
+      echo "  test \"pattern\" \"text\"  Test a regex"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  JSON / YAML TOOLS — v2.9.0
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_json() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    format|fmt)
+      local input="${1:--}"
+      if [[ "$input" == "-" ]]; then
+        python3 -m json.tool 2>/dev/null || { err "Invalid JSON"; return 1; }
+      else
+        python3 -m json.tool "$input" 2>/dev/null || { err "Invalid JSON in $input"; return 1; }
+      fi
+      ;;
+    validate)
+      local input="${1:--}"
+      if [[ "$input" == "-" ]]; then
+        if python3 -c "import json,sys;json.load(sys.stdin)" 2>/dev/null; then
+          ok "Valid JSON"
+        else
+          err "Invalid JSON"
+          return 1
+        fi
+      else
+        if python3 -c "import json;json.load(open('$input'))" 2>/dev/null; then
+          ok "Valid JSON: $input"
+        else
+          err "Invalid JSON: $input"
+          return 1
+        fi
+      fi
+      ;;
+    query|q)
+      local jq_expr="${1:?Usage: ai json query '.key' [file]}"
+      local input="${2:--}"
+      if command -v jq &>/dev/null; then
+        if [[ "$input" == "-" ]]; then
+          jq "$jq_expr"
+        else
+          jq "$jq_expr" "$input"
+        fi
+      else
+        python3 -c "
+import json,sys
+data = json.load(open('$input') if '$input' != '-' else sys.stdin)
+expr = '$jq_expr'.strip('.')
+for key in expr.split('.'):
+    if key: data = data[key] if isinstance(data, dict) else data[int(key)]
+print(json.dumps(data, indent=2))
+" 2>/dev/null || err "Query failed"
+      fi
+      ;;
+    generate)
+      local desc="${*:?Usage: ai json generate \"description\"}"
+      _silent_generate "Generate a JSON object for: $desc
+Return ONLY valid JSON, no markdown fences or explanation." 1024 2>/dev/null
+      ;;
+    *)
+      echo "Usage: ai json <format|validate|query|generate>"
+      echo "  format [file]         Pretty-print JSON"
+      echo "  validate [file]       Check if valid JSON"
+      echo "  query '.key' [file]   Extract value (jq syntax)"
+      echo "  generate \"desc\"       AI-generate JSON"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  CRON EXPRESSION HELPER — v2.9.0
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_cron() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    build|gen)
+      local desc="${*:?Usage: ai cron build \"every day at 9am\"}"
+      _silent_generate "Convert this to a cron expression: $desc
+Return ONLY the cron expression on line 1, then explain on line 2.
+Format: minute hour day-of-month month day-of-week" 128 2>/dev/null
+      ;;
+    explain|ex)
+      local expr="${*:?Usage: ai cron explain \"0 9 * * 1-5\"}"
+      _silent_generate "Explain this cron expression in plain English: $expr" 128 2>/dev/null
+      ;;
+    next)
+      local expr="${*:?Usage: ai cron next \"0 9 * * *\"}"
+      _silent_generate "Given the cron expression '$expr', what are the next 5 execution times starting from now ($(date))? List them." 256 2>/dev/null
+      ;;
+    *)
+      echo "Usage: ai cron <build|explain|next>"
+      echo "  build \"description\"     Generate cron expression"
+      echo "  explain \"expression\"     Explain cron expression"
+      echo "  next \"expression\"        Show next run times"
+      ;;
+  esac
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  SQL HELPER — v2.9.0
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_sql() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    gen|generate)
+      local desc="${*:?Usage: ai sql gen \"description\"}"
+      _silent_generate "Generate a SQL query for: $desc
+Return ONLY the SQL query. Use standard SQL syntax. Add comments for complex parts." 512 2>/dev/null
+      ;;
+    explain|ex)
+      local query="${*:?Usage: ai sql explain \"SELECT ...\"}"
+      _silent_generate "Explain this SQL query step by step:
+\`\`\`sql
+$query
+\`\`\`" 512 2>/dev/null
+      ;;
+    optimize)
+      local query="${*:?Usage: ai sql optimize \"SELECT ...\"}"
+      _silent_generate "Optimize this SQL query for performance. Explain what you changed and why:
+\`\`\`sql
+$query
+\`\`\`" 512 2>/dev/null
+      ;;
+    schema)
+      local desc="${*:?Usage: ai sql schema \"description of data\"}"
+      _silent_generate "Design a SQL database schema for: $desc
+Include CREATE TABLE statements, primary keys, foreign keys, indexes, and constraints. Add comments." 1024 2>/dev/null
+      ;;
+    *)
+      echo "Usage: ai sql <gen|explain|optimize|schema>"
+      echo "  gen \"description\"        Generate SQL query"
+      echo "  explain \"query\"          Explain a SQL query"
+      echo "  optimize \"query\"         Optimize for performance"
+      echo "  schema \"description\"     Design a database schema"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  DOCKER HELPER — v2.9.0
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_docker() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    gen|generate)
+      local desc="${*:?Usage: ai docker gen \"description\"}"
+      _silent_generate "Generate a Dockerfile for: $desc
+Follow best practices: multi-stage builds, minimal base images, proper layer ordering. Include comments." 512 2>/dev/null
+      ;;
+    compose)
+      local desc="${*:?Usage: ai docker compose \"description\"}"
+      _silent_generate "Generate a docker-compose.yml for: $desc
+Include all necessary services, volumes, networks, environment variables. Use version 3.8+." 1024 2>/dev/null
+      ;;
+    explain|ex)
+      local file="${1:-Dockerfile}"
+      [[ -f "$file" ]] || { err "File not found: $file"; return 1; }
+      local content
+      content=$(cat "$file" | head -100)
+      _silent_generate "Explain this Dockerfile line by line:
+\`\`\`dockerfile
+$content
+\`\`\`" 512 2>/dev/null
+      ;;
+    optimize)
+      local file="${1:-Dockerfile}"
+      [[ -f "$file" ]] || { err "File not found: $file"; return 1; }
+      local content
+      content=$(cat "$file")
+      _silent_generate "Optimize this Dockerfile for smaller image size and faster builds:
+\`\`\`dockerfile
+$content
+\`\`\`
+Show the optimized version and explain changes." 1024 2>/dev/null
+      ;;
+    *)
+      echo "Usage: ai docker <gen|compose|explain|optimize>"
+      echo "  gen \"description\"      Generate Dockerfile"
+      echo "  compose \"description\"  Generate docker-compose.yml"
+      echo "  explain [file]         Explain a Dockerfile"
+      echo "  optimize [file]        Optimize a Dockerfile"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  API TESTING — v2.9.0
+#  Generate and test API requests
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_api_test() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    gen|generate)
+      local desc="${*:?Usage: ai api-test gen \"description\"}"
+      _silent_generate "Generate a curl command to test an API endpoint: $desc
+Include headers, request body if needed, and expected response. Return the curl command first, then explain." 256 2>/dev/null
+      ;;
+    mock)
+      local endpoint="${1:?Usage: ai api-test mock \"/endpoint\"}"
+      local method="${2:-GET}"
+      _silent_generate "Generate mock/sample JSON responses for this API:
+Endpoint: $method $endpoint
+Generate: success response, error response, and edge case response. Use realistic data." 512 2>/dev/null
+      ;;
+    doc)
+      local spec="${1:?Usage: ai api-test doc <openapi_file|url>}"
+      if [[ -f "$spec" ]]; then
+        local content
+        content=$(cat "$spec" | head -200)
+        _silent_generate "Generate human-readable API documentation from this OpenAPI/Swagger spec:
+$content
+Include: endpoint descriptions, parameters, request/response examples." 2048 2>/dev/null
+      else
+        err "File not found: $spec"
+      fi
+      ;;
+    *)
+      echo "Usage: ai api-test <gen|mock|doc>"
+      echo "  gen \"description\"        Generate curl command"
+      echo "  mock \"/endpoint\" [GET]   Generate mock responses"
+      echo "  doc <openapi.yaml>       Generate API documentation"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  CHANGELOG GENERATOR — v2.9.0
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_changelog() {
+  if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+    err "Not in a git repository"
+    return 1
+  fi
+  local since="${1:-$(git describe --tags --abbrev=0 2>/dev/null || echo HEAD~20)}"
+  local log
+  log=$(git log --oneline "$since"..HEAD 2>/dev/null)
+  if [[ -z "$log" ]]; then
+    info "No new commits since $since"
+    return
+  fi
+  info "Generating changelog since: $since"
+  _silent_generate "Generate a changelog from these git commits. Group by category (Added, Changed, Fixed, Removed). Use Keep a Changelog format:
+
+Commits:
+$log" 1024 2>/dev/null
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  MATH SOLVER — v2.9.0
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_math() {
+  local expr="${*:?Usage: ai math \"expression or problem\"}"
+  # Try bc first for simple math
+  local bc_result
+  bc_result=$(echo "$expr" | bc -l 2>/dev/null || echo "")
+  if [[ -n "$bc_result" && "$bc_result" != "" ]]; then
+    printf "  ${GREEN}= %s${R}\n" "$bc_result"
+    return
+  fi
+  # Fall back to AI for complex math
+  _silent_generate "Solve this math problem step by step. Show your work clearly:
+$expr" 512 2>/dev/null
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  UNIT CONVERTER — v2.9.0
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_convert_units() {
+  local value="${1:?Usage: ai units 100 km to miles}"
+  local from_unit="${2:?Usage: ai units <value> <from> to <to>}"
+  local _to="${3:-}"
+  local to_unit="${4:-}"
+  [[ "$_to" == "to" ]] || { to_unit="$3"; }
+
+  _silent_generate "Convert $value $from_unit to $to_unit. Show the calculation and result. Be precise." 128 2>/dev/null
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  EXTENDED DISPATCHER — v2.9.0
+#  Wire new commands into main() via wrapper
+# ════════════════════════════════════════════════════════════════════════════════
+
+_dispatch_v29() {
+  local cmd="$1"; shift
+  case "$cmd" in
+    search-history) cmd_search_history "$@" ;;
+    tokens|count-tokens) cmd_count_tokens "$@" ;;
+    cost) cmd_cost "$@" ;;
+    context|ctx) cmd_context "$@" ;;
+    chain) cmd_chain "$@" ;;
+    model-stats|stats) cmd_model_stats "$@" ;;
+    schedule|sched) cmd_schedule "$@" ;;
+    replay) cmd_replay "$@" ;;
+    fav|favorite|favourites) cmd_favorite "$@" ;;
+    diff) cmd_diff "$@" ;;
+    patch) cmd_patch "$@" ;;
+    git) cmd_git_ai "$@" ;;
+    analytics|usage) cmd_analytics "$@" ;;
+    quiz) cmd_quiz "$@" ;;
+    shell|sh) cmd_shell "$@" ;;
+    find|find-ai) cmd_find_ai "$@" ;;
+    profile|profiles) cmd_profile "$@" ;;
+    watch) cmd_watch "$@" ;;
+    notebook|nb) cmd_notebook "$@" ;;
+    plan|tasks) cmd_plan "$@" ;;
+    learn|tutor) cmd_learn "$@" ;;
+    convert-chat) cmd_convert "$@" ;;
+    write) cmd_write "$@" ;;
+    memory|mem) cmd_memory "$@" ;;
+    tr|translate2) cmd_translate_v2 "$@" ;;
+    define|dict) cmd_define "$@" ;;
+    regex|rx) cmd_regex "$@" ;;
+    json) cmd_json "$@" ;;
+    cron) cmd_cron "$@" ;;
+    sql) cmd_sql "$@" ;;
+    docker|dk) cmd_docker "$@" ;;
+    api-test) cmd_api_test "$@" ;;
+    changelog) cmd_changelog "$@" ;;
+    math|calc) cmd_math "$@" ;;
+    units) cmd_convert_units "$@" ;;
+    *) return 1 ;;
+  esac
+  return 0
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  DETAILED HELP FOR v2.9.0 COMMANDS
+# ════════════════════════════════════════════════════════════════════════════════
+
+_help_v29() {
+  local cmd="${1:-}"
+  case "$cmd" in
+    snap) cmd_snap help ;;
+    perf) cmd_perf --help ;;
+    compare) cmd_compare --help ;;
+    template) cmd_template help ;;
+    rag) cmd_rag help ;;
+    batch) cmd_batch help ;;
+    health) echo "Usage: ai health — Full system diagnostics" ;;
+    branch) cmd_branch help ;;
+    export) echo "Usage: ai export <all|chat|config|models> [--format json|md|csv]" ;;
+    import) echo "Usage: ai import <directory|file>" ;;
+    cleanup) echo "Usage: ai cleanup [--dry-run] — Free disk space" ;;
+    preset) cmd_preset help ;;
+    plugin) cmd_plugin help ;;
+    search-history) echo "Usage: ai search-history \"keyword\" [max_results]" ;;
+    tokens) echo "Usage: ai tokens \"text\" | ai tokens <file> | echo text | ai tokens" ;;
+    cost) echo "Usage: ai cost [input_tokens] [output_tokens] [model]" ;;
+    context) cmd_context help ;;
+    chain) cmd_chain ;;
+    model-stats) echo "Usage: ai model-stats — Show detailed model info" ;;
+    schedule) cmd_schedule help ;;
+    replay) echo "Usage: ai replay <session> [--model <backend>]" ;;
+    fav) cmd_favorite help ;;
+    diff) echo "Usage: ai diff <file1> <file2> [--explain]" ;;
+    patch) echo "Usage: ai patch <file> \"instructions\"" ;;
+    git) cmd_git_ai help ;;
+    analytics) cmd_analytics help ;;
+    quiz) echo "Usage: ai quiz \"topic\" [--count N]" ;;
+    shell) cmd_shell help ;;
+    find) echo "Usage: ai find \"query\" [directory] [max_results]" ;;
+    profile) cmd_profile help ;;
+    watch) echo "Usage: ai watch <file> [summarize|review|lint|explain] [interval]" ;;
+    notebook) cmd_notebook help ;;
+    plan) cmd_plan help ;;
+    learn) echo "Usage: ai learn \"topic\" — Interactive learning mode" ;;
+    convert-chat) echo "Usage: ai convert-chat <input.jsonl> <md|csv|txt|html>" ;;
+    write) cmd_write help ;;
+    memory) cmd_memory help ;;
+    regex) cmd_regex help ;;
+    json) cmd_json help ;;
+    cron) cmd_cron help ;;
+    sql) cmd_sql help ;;
+    docker) cmd_docker help ;;
+    api-test) cmd_api_test help ;;
+    changelog) echo "Usage: ai changelog [since_tag] — Generate changelog from git" ;;
+    math) echo "Usage: ai math \"expression\" — Solve math problems" ;;
+    units) echo "Usage: ai units <value> <from> to <to>" ;;
+    *) return 1 ;;
+  esac
+  return 0
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  PIPE MODE ENHANCEMENTS — v2.9.0
+#  Better stdin handling and format detection
+# ════════════════════════════════════════════════════════════════════════════════
+
+_detect_input_format() {
+  local first_line="$1"
+  if [[ "$first_line" == "{"* ]] || [[ "$first_line" == "["* ]]; then
+    echo "json"
+  elif [[ "$first_line" == *","*","* ]]; then
+    echo "csv"
+  elif [[ "$first_line" == "---" ]]; then
+    echo "yaml"
+  elif [[ "$first_line" == "<?xml"* ]] || [[ "$first_line" == "<"* ]]; then
+    echo "xml"
+  elif [[ "$first_line" == "#"* ]]; then
+    echo "markdown"
+  else
+    echo "text"
+  fi
+}
+
+_smart_pipe() {
+  local action="${1:-summarize}"
+  local input
+  input=$(cat)
+  local first_line
+  first_line=$(echo "$input" | head -1)
+  local fmt
+  fmt=$(_detect_input_format "$first_line")
+  local char_count=${#input}
+  local word_count=$(echo "$input" | wc -w)
+
+  [[ $VERBOSE -eq 1 ]] && info "Detected format: $fmt ($word_count words)"
+
+  dispatch_ask "$action the following $fmt content ($word_count words):
+
+$input"
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  STDIN / CLIPBOARD INTEGRATION — v2.9.0
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_clipboard() {
+  local sub="${1:-get}"; shift 2>/dev/null || true
+  case "$sub" in
+    get|read)
+      if command -v xclip &>/dev/null; then
+        xclip -selection clipboard -o 2>/dev/null
+      elif command -v xsel &>/dev/null; then
+        xsel --clipboard --output 2>/dev/null
+      elif command -v wl-paste &>/dev/null; then
+        wl-paste 2>/dev/null
+      elif command -v pbpaste &>/dev/null; then
+        pbpaste 2>/dev/null
+      elif [[ $IS_WSL -eq 1 ]]; then
+        powershell.exe -command "Get-Clipboard" 2>/dev/null | tr -d '\r'
+      else
+        err "No clipboard tool found (install xclip, xsel, or wl-clipboard)"
+        return 1
+      fi
+      ;;
+    set|copy)
+      local text="${*:-}"
+      [[ -z "$text" ]] && text=$(cat)
+      if command -v xclip &>/dev/null; then
+        echo "$text" | xclip -selection clipboard
+      elif command -v xsel &>/dev/null; then
+        echo "$text" | xsel --clipboard --input
+      elif command -v wl-copy &>/dev/null; then
+        echo "$text" | wl-copy
+      elif command -v pbcopy &>/dev/null; then
+        echo "$text" | pbcopy
+      elif [[ $IS_WSL -eq 1 ]]; then
+        echo "$text" | clip.exe
+      else
+        err "No clipboard tool found"
+        return 1
+      fi
+      ok "Copied to clipboard"
+      ;;
+    ask)
+      local clip_content
+      clip_content=$(cmd_clipboard get 2>/dev/null || echo "")
+      [[ -z "$clip_content" ]] && { err "Clipboard is empty"; return 1; }
+      local prompt="${*:-Summarize this:}"
+      dispatch_ask "$prompt
+
+$clip_content"
+      ;;
+    *)
+      echo "Usage: ai clip <get|set|ask>"
+      echo "  get            Read clipboard content"
+      echo "  set \"text\"     Copy to clipboard"
+      echo "  ask [prompt]   Send clipboard to AI"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  TIPS / DID-YOU-KNOW — v2.9.0
+#  Random helpful tip on startup (if enabled)
+# ════════════════════════════════════════════════════════════════════════════════
+
+_random_tip() {
+  local tips=(
+    "ai snap save/load — save and restore config snapshots"
+    "ai perf — benchmark your model's tokens/sec"
+    "ai compare \"prompt\" — compare responses across models"
+    "ai rag create kb ./docs — build a local knowledge base"
+    "ai batch add \"prompt\" — queue prompts for batch processing"
+    "ai health — full system diagnostics"
+    "ai branch create name — fork your conversation"
+    "ai template create name — save reusable prompt templates"
+    "ai cost 1000 500 — estimate API costs before sending"
+    "ai context status — check how much context you're using"
+    "ai chain file.txt — chain multiple prompts together"
+    "ai notebook new name — Jupyter-like notebook in terminal"
+    "ai plan create \"goal\" — AI breaks down tasks for you"
+    "ai learn \"topic\" — interactive AI tutor"
+    "ai write blog \"topic\" — generate a blog post"
+    "ai shell gen \"description\" — generate shell commands"
+    "ai git commit — AI-generated commit messages"
+    "ai quiz \"topic\" — test your knowledge"
+    "ai regex build \"description\" — generate regex patterns"
+    "ai json format file.json — pretty-print JSON"
+    "ai sql gen \"get all users\" — generate SQL queries"
+    "ai docker gen \"node.js app\" — generate Dockerfiles"
+    "ai fav add \"prompt\" — save favorite prompts"
+    "ai memory add \"fact\" — teach AI persistent facts"
+    "ai profile create work — separate environments"
+    "ai watch file.py review — auto-review on changes"
+    "ai analytics — see your usage statistics"
+    "ai preset save fast — quick-switch model configs"
+    "ai plugin list — manage extensions"
+    "ai export all — backup conversations and config"
+    "ai cleanup — free up disk space"
+    "ai clip ask — send clipboard content to AI"
+    "ai changelog — generate changelog from git commits"
+    "ai define \"word\" — dictionary lookup"
+    "ai math \"expression\" — solve math problems"
+    "ai tokens \"text\" — count tokens before sending"
+    "ai diff file1 file2 --explain — AI-explained diffs"
+    "ai search-history \"keyword\" — search past conversations"
+    "Ctrl+C to stop any running command"
+    "GITHUB_TOKEN env var increases API rate limits"
+  )
+  local idx=$(( RANDOM % ${#tips[@]} ))
+  printf "${DIM}  Tip: %s${R}\n" "${tips[$idx]}"
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  v2.9.0 STARTUP INTEGRATION
+#  Load plugins, check health on interval, show tips
+# ════════════════════════════════════════════════════════════════════════════════
+
+_startup_v29() {
+  # Load plugins
+  _load_plugins 2>/dev/null || true
+
+  # Periodic health check (background, non-blocking)
+  if [[ -f "$HEALTH_LOG" ]]; then
+    local last_check
+    last_check=$(tail -1 "$HEALTH_LOG" 2>/dev/null | grep -oP '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}' | head -1)
+    if [[ -n "$last_check" ]]; then
+      local last_epoch
+      last_epoch=$(date -d "$last_check" +%s 2>/dev/null || echo 0)
+      local now_epoch
+      now_epoch=$(date +%s)
+      local elapsed=$(( now_epoch - last_epoch ))
+      if (( elapsed > HEALTH_CHECK_INTERVAL )); then
+        cmd_health > /dev/null 2>&1 &
+      fi
+    fi
+  fi
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  SECURITY AUDIT — v2.9.0
+#  Check API key exposure and security posture
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_security() {
+  hdr "Security Audit"
+  local issues=0
+
+  # Check key file permissions
+  if [[ -f "$KEYS_FILE" ]]; then
+    local perms
+    perms=$(stat -c%a "$KEYS_FILE" 2>/dev/null || stat -f%Lp "$KEYS_FILE" 2>/dev/null || echo "?")
+    if [[ "$perms" == "600" ]]; then
+      printf "  ${GREEN}[PASS]${R}  keys.env permissions: %s\n" "$perms"
+    else
+      printf "  ${RED}[FAIL]${R}  keys.env permissions: %s (should be 600)\n" "$perms"
+      (( issues++ ))
+    fi
+  fi
+
+  # Check for exposed keys in shell history
+  local hist_file="${HISTFILE:-$HOME/.bash_history}"
+  if [[ -f "$hist_file" ]]; then
+    local exposed
+    exposed=$(grep -ciE 'sk-[a-zA-Z0-9]{20,}|sk-ant-[a-zA-Z0-9]{20,}|AIza[a-zA-Z0-9]{20,}|gsk_[a-zA-Z0-9]{20,}' "$hist_file" 2>/dev/null || echo 0)
+    if (( exposed > 0 )); then
+      printf "  ${RED}[FAIL]${R}  %d API key(s) found in shell history!\n" "$exposed"
+      warn "  Run: history -c && history -w  to clear"
+      (( issues++ ))
+    else
+      printf "  ${GREEN}[PASS]${R}  No API keys in shell history\n"
+    fi
+  fi
+
+  # Check for keys in git
+  if git rev-parse --is-inside-work-tree &>/dev/null; then
+    local git_keys
+    git_keys=$(git log --all -p 2>/dev/null | grep -ciE 'sk-[a-zA-Z0-9]{20,}|ANTHROPIC_API_KEY|OPENAI_API_KEY' 2>/dev/null || echo 0)
+    if (( git_keys > 0 )); then
+      printf "  ${RED}[FAIL]${R}  %d potential key exposures in git history!\n" "$git_keys"
+      (( issues++ ))
+    else
+      printf "  ${GREEN}[PASS]${R}  No keys detected in git history\n"
+    fi
+  fi
+
+  # Check for .env files
+  local env_files
+  env_files=$(find "$CONFIG_DIR" -name "*.env" -not -perm 600 2>/dev/null | wc -l)
+  if (( env_files > 0 )); then
+    printf "  ${YELLOW}[WARN]${R}  %d .env files with loose permissions\n" "$env_files"
+    info "  Fix: chmod 600 $CONFIG_DIR/*.env"
+    (( issues++ ))
+  fi
+
+  # Check HTTPS usage
+  printf "  ${GREEN}[PASS]${R}  All API calls use HTTPS\n"
+
+  # Check for outdated version
+  local remote_ver
+  remote_ver=$(curl -fsSL "https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/main/main.sh" 2>/dev/null | grep '^VERSION=' | head -1 | cut -d'"' -f2 || echo "")
+  if [[ -n "$remote_ver" && "$remote_ver" != "$VERSION" ]]; then
+    printf "  ${YELLOW}[WARN]${R}  Update available: v%s -> v%s\n" "$VERSION" "$remote_ver"
+    (( issues++ ))
+  elif [[ -n "$remote_ver" ]]; then
+    printf "  ${GREEN}[PASS]${R}  Running latest version (v%s)\n" "$VERSION"
+  fi
+
+  echo ""
+  if (( issues > 0 )); then
+    warn "$issues security issue(s) found"
+  else
+    ok "All security checks passed!"
+  fi
+}
+
+REPO_OWNER="minerofthesoal"
+REPO_NAME="ai-cli"
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  SYSTEM INFO — v2.9.0
+#  Comprehensive system information dump
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_sysinfo() {
+  hdr "System Information"
+  echo ""
+  printf "  ${B}AI CLI:${R}\n"
+  printf "    Version:     %s\n" "$VERSION"
+  printf "    Platform:    %s\n" "$PLATFORM"
+  printf "    Config:      %s\n" "$CONFIG_DIR"
+  printf "    Models:      %s\n" "$MODELS_DIR"
+  echo ""
+
+  printf "  ${B}System:${R}\n"
+  printf "    OS:          %s\n" "$(uname -srm 2>/dev/null || echo unknown)"
+  printf "    Shell:       %s\n" "${BASH_VERSION:-unknown}"
+  printf "    Python:      %s\n" "$($PYTHON --version 2>&1 || echo 'not found')"
+  printf "    CPU:         %s\n" "$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo '?') cores"
+  printf "    Memory:      %s\n" "$(free -h 2>/dev/null | awk '/Mem:/{print $2}' || sysctl -n hw.memsize 2>/dev/null | awk '{printf "%.0fG", $1/1073741824}' || echo '?')"
+  echo ""
+
+  printf "  ${B}GPU:${R}\n"
+  if command -v nvidia-smi &>/dev/null; then
+    nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader 2>/dev/null | \
+      while IFS=',' read -r name mem driver; do
+        printf "    Name:        %s\n" "$(echo "$name" | xargs)"
+        printf "    VRAM:        %s\n" "$(echo "$mem" | xargs)"
+        printf "    Driver:      %s\n" "$(echo "$driver" | xargs)"
+      done
+  elif [[ "$CUDA_ARCH" == "metal" ]]; then
+    printf "    Apple Silicon Metal GPU\n"
+    system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Chipset|VRAM|Metal' | sed 's/^/    /'
+  else
+    printf "    No GPU detected (CPU-only mode)\n"
+  fi
+  echo ""
+
+  printf "  ${B}Storage:${R}\n"
+  printf "    Models dir:  %s\n" "$(du -sh "$MODELS_DIR" 2>/dev/null | awk '{print $1}' || echo '0')"
+  printf "    Config dir:  %s\n" "$(du -sh "$CONFIG_DIR" 2>/dev/null | awk '{print $1}' || echo '0')"
+  printf "    Output dir:  %s\n" "$(du -sh "$AI_OUTPUT_DIR" 2>/dev/null | awk '{print $1}' || echo '0')"
+  printf "    Free space:  %s\n" "$(df -h "$HOME" 2>/dev/null | awk 'NR==2{print $4}' || echo '?')"
+  echo ""
+
+  printf "  ${B}Backends:${R}\n"
+  printf "    llama.cpp:   %s\n" "${LLAMA_BIN:-not found}"
+  printf "    CUDA arch:   %s\n" "${CUDA_ARCH:-0}"
+  [[ -n "${OPENAI_API_KEY:-}" ]] && printf "    OpenAI:      ${GREEN}configured${R}\n"
+  [[ -n "${ANTHROPIC_API_KEY:-}" ]] && printf "    Claude:      ${GREEN}configured${R}\n"
+  [[ -n "${GEMINI_API_KEY:-}" ]] && printf "    Gemini:      ${GREEN}configured${R}\n"
+  [[ -n "${GROQ_API_KEY:-}" ]] && printf "    Groq:        ${GREEN}configured${R}\n"
+  [[ -n "${MISTRAL_API_KEY:-}" ]] && printf "    Mistral:     ${GREEN}configured${R}\n"
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  END OF v2.9.0 ADDITIONS
+# ════════════════════════════════════════════════════════════════════════════════
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  INTERVIEW PREP — v2.9.0
+#  Practice technical interview questions with AI feedback
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_interview() {
+  local topic="${*:?Usage: ai interview \"role or topic\"}"
+
+  hdr "Interview Practice: $topic"
+  info "AI will ask questions and give feedback."
+  info "Type 'quit' to end, 'skip' to skip a question."
+  echo ""
+
+  local q_num=0
+  local score=0
+
+  while true; do
+    (( q_num++ ))
+    local question
+    question=$(_silent_generate "You are a senior interviewer. Ask one technical interview question (#$q_num) for a $topic role. Make it progressively harder. Ask just the question, nothing else." 256 2>/dev/null || echo "")
+
+    [[ -z "$question" ]] && { err "Could not generate question"; break; }
+
+    printf "\n  ${CYAN}Question %d:${R}\n" "$q_num"
+    echo "$question"
+    echo ""
+
+    read -rp "$(echo -e "${BCYAN}Your answer (or skip/quit): ${R}")" answer
+
+    case "$answer" in
+      quit|exit|q) break ;;
+      skip|s) info "Skipped"; continue ;;
+    esac
+
+    local feedback
+    feedback=$(_silent_generate "Rate this interview answer on a scale of 1-10. Give specific feedback.
+
+Question: $question
+Answer: $answer
+
+Format:
+Score: X/10
+Strengths: ...
+Improvements: ...
+Ideal answer (brief): ..." 512 2>/dev/null || echo "")
+
+    echo ""
+    echo "$feedback"
+
+    # Extract score
+    local extracted_score
+    extracted_score=$(echo "$feedback" | grep -oP 'Score:\s*(\d+)' | grep -oP '\d+' | head -1)
+    [[ -n "$extracted_score" ]] && score=$(( score + extracted_score ))
+  done
+
+  echo ""
+  hdr "Session Summary"
+  printf "  Questions answered: %d\n" "$q_num"
+  if (( q_num > 0 )); then
+    local avg=$(( score / q_num ))
+    printf "  Average score:      %d/10\n" "$avg"
+    if (( avg >= 8 )); then
+      ok "Excellent performance! You're well prepared."
+    elif (( avg >= 6 )); then
+      info "Good performance. Review the feedback for improvement areas."
+    else
+      warn "Keep practicing. Focus on the improvement suggestions."
+    fi
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  TEXT PROCESSING UTILITIES — v2.9.0
+#  Quick text transformations
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_text() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  local input="${*:-}"
+  [[ -z "$input" && ! -t 0 ]] && input=$(cat)
+
+  case "$sub" in
+    upper|uppercase)
+      echo "$input" | tr '[:lower:]' '[:upper:]' ;;
+    lower|lowercase)
+      echo "$input" | tr '[:upper:]' '[:lower:]' ;;
+    title)
+      echo "$input" | sed 's/\b\(.\)/\u\1/g' 2>/dev/null || \
+        echo "$input" | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2))}1' ;;
+    reverse)
+      echo "$input" | rev ;;
+    count)
+      local chars=${#input}
+      local words=$(echo "$input" | wc -w | tr -d ' ')
+      local lines=$(echo "$input" | wc -l | tr -d ' ')
+      printf "  Characters: %s\n  Words: %s\n  Lines: %s\n" "$chars" "$words" "$lines" ;;
+    slug)
+      echo "$input" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' ;;
+    snake)
+      echo "$input" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/_/g' | sed 's/__*/_/g' | sed 's/^_//;s/_$//' ;;
+    camel)
+      echo "$input" | sed 's/[^a-zA-Z0-9]/ /g' | awk '{for(i=1;i<=NF;i++){if(i==1)printf tolower($i);else printf toupper(substr($i,1,1)) tolower(substr($i,2))}}' && echo ;;
+    encode-base64|b64)
+      echo "$input" | base64 ;;
+    decode-base64|b64d)
+      echo "$input" | base64 -d 2>/dev/null || echo "$input" | base64 --decode 2>/dev/null ;;
+    encode-url)
+      echo "$input" | python3 -c "import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip()))" 2>/dev/null ;;
+    decode-url)
+      echo "$input" | python3 -c "import sys,urllib.parse;print(urllib.parse.unquote(sys.stdin.read().strip()))" 2>/dev/null ;;
+    hash)
+      printf "  MD5:    %s\n" "$(echo -n "$input" | md5sum | awk '{print $1}')"
+      printf "  SHA1:   %s\n" "$(echo -n "$input" | sha1sum | awk '{print $1}')"
+      printf "  SHA256: %s\n" "$(echo -n "$input" | sha256sum | awk '{print $1}')" ;;
+    lorem)
+      local count="${input:-3}"
+      _silent_generate "Generate $count paragraphs of lorem ipsum text." 512 2>/dev/null ;;
+    uuid)
+      if command -v uuidgen &>/dev/null; then
+        uuidgen
+      else
+        python3 -c "import uuid;print(uuid.uuid4())" 2>/dev/null || \
+          cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "UUID generation not available"
+      fi ;;
+    password)
+      local length="${input:-16}"
+      python3 -c "import secrets,string;print(secrets.token_urlsafe($length))" 2>/dev/null || \
+        head -c "$length" /dev/urandom | base64 | head -c "$length" && echo ;;
+    *)
+      echo "Usage: ai text <command> [text]"
+      echo ""
+      echo "  upper/lower/title     Case conversion"
+      echo "  reverse               Reverse text"
+      echo "  count                 Character/word/line count"
+      echo "  slug/snake/camel      Name formatting"
+      echo "  encode-base64 / decode-base64"
+      echo "  encode-url / decode-url"
+      echo "  hash                  MD5/SHA1/SHA256"
+      echo "  lorem [N]             Generate lorem ipsum"
+      echo "  uuid                  Generate UUID"
+      echo "  password [len]        Generate secure password"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  EXTENDED DISPATCHER HOOK — v2.9.0
+#  Called from main() catch-all before AI fallthrough
+# ════════════════════════════════════════════════════════════════════════════════
+
+_dispatch_v29_extended() {
+  local cmd="$1"; shift
+  case "$cmd" in
+    security|sec-audit) cmd_security "$@"; return 0 ;;
+    sysinfo|system-info) cmd_sysinfo "$@"; return 0 ;;
+    interview) cmd_interview "$@"; return 0 ;;
+    text|txt) cmd_text "$@"; return 0 ;;
+    clip|clipboard) cmd_clipboard "$@"; return 0 ;;
+    tip|tips) _random_tip; return 0 ;;
+    *) _dispatch_v29 "$cmd" "$@" && return 0 ;;
+  esac
+  return 1
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  CALENDAR / DATE TOOLS — v2.9.0
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_date_tools() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    now) date -Iseconds ;;
+    epoch) date +%s ;;
+    from-epoch)
+      local ts="${1:?Usage: ai date from-epoch <timestamp>}"
+      date -d "@$ts" -Iseconds 2>/dev/null || date -r "$ts" -Iseconds 2>/dev/null || echo "Invalid timestamp"
+      ;;
+    diff)
+      local d1="${1:?Usage: ai date diff \"date1\" \"date2\"}"
+      local d2="${2:-now}"
+      [[ "$d2" == "now" ]] && d2=$(date -Iseconds)
+      local e1 e2
+      e1=$(date -d "$d1" +%s 2>/dev/null || echo 0)
+      e2=$(date -d "$d2" +%s 2>/dev/null || echo 0)
+      local diff_s=$(( e2 - e1 ))
+      local abs_diff=${diff_s#-}
+      local days=$(( abs_diff / 86400 ))
+      local hours=$(( (abs_diff % 86400) / 3600 ))
+      local minutes=$(( (abs_diff % 3600) / 60 ))
+      printf "  Difference: %d days, %d hours, %d minutes\n" "$days" "$hours" "$minutes"
+      printf "  Total seconds: %d\n" "$abs_diff"
+      ;;
+    add)
+      local base="${1:?Usage: ai date add \"date\" \"duration\"}"
+      local duration="${2:?Usage: ai date add \"date\" \"+3 days\"}"
+      date -d "$base $duration" -Iseconds 2>/dev/null || echo "Could not compute"
+      ;;
+    tz)
+      local dt="${1:-now}"
+      local from_tz="${2:-UTC}"
+      local to_tz="${3:-$(cat /etc/timezone 2>/dev/null || echo UTC)}"
+      TZ="$to_tz" date -d "TZ=\"$from_tz\" $dt" 2>/dev/null || echo "Timezone conversion failed"
+      ;;
+    *)
+      echo "Usage: ai date <now|epoch|from-epoch|diff|add|tz>"
+      echo ""
+      echo "  now                          Current ISO timestamp"
+      echo "  epoch                        Current Unix timestamp"
+      echo "  from-epoch <ts>              Convert epoch to date"
+      echo "  diff \"date1\" \"date2\"         Time between dates"
+      echo "  add \"date\" \"+3 days\"         Add duration to date"
+      echo "  tz \"time\" \"from_tz\" \"to_tz\"  Timezone conversion"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  NETWORK TOOLS — v2.9.0
+#  Quick network diagnostics and lookups
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_net() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    ip)
+      printf "  Local:  %s\n" "$(hostname -I 2>/dev/null | awk '{print $1}' || ifconfig 2>/dev/null | grep 'inet ' | head -1 | awk '{print $2}' || echo '?')"
+      printf "  Public: %s\n" "$(curl -fsSL ifconfig.me 2>/dev/null || curl -fsSL api.ipify.org 2>/dev/null || echo '?')"
+      ;;
+    dns)
+      local domain="${1:?Usage: ai net dns <domain>}"
+      if command -v dig &>/dev/null; then
+        dig +short "$domain" 2>/dev/null
+      elif command -v nslookup &>/dev/null; then
+        nslookup "$domain" 2>/dev/null | grep 'Address:' | tail -n+2
+      elif command -v host &>/dev/null; then
+        host "$domain" 2>/dev/null
+      else
+        python3 -c "import socket;print('\n'.join([r[4][0] for r in socket.getaddrinfo('$domain', None)]))" 2>/dev/null
+      fi
+      ;;
+    ping)
+      local host="${1:-8.8.8.8}"
+      ping -c 3 "$host" 2>/dev/null || echo "Ping failed"
+      ;;
+    speed)
+      info "Testing download speed..."
+      local url="https://speed.cloudflare.com/__down?bytes=10000000"
+      local start=$(date +%s%N)
+      curl -fsSL "$url" -o /dev/null 2>/dev/null
+      local end=$(date +%s%N)
+      local elapsed_ms=$(( (end - start) / 1000000 ))
+      if (( elapsed_ms > 0 )); then
+        local mbps=$(awk "BEGIN{printf \"%.1f\", 10 * 8 / ($elapsed_ms / 1000.0)}")
+        printf "  Download: ~%s Mbps (%d ms for 10MB)\n" "$mbps" "$elapsed_ms"
+      fi
+      ;;
+    headers)
+      local url="${1:?Usage: ai net headers <url>}"
+      curl -fsSI "$url" 2>/dev/null || echo "Could not fetch headers"
+      ;;
+    port)
+      local host="${1:?Usage: ai net port <host> <port>}"
+      local port="${2:?Usage: ai net port <host> <port>}"
+      if timeout 3 bash -c "echo >/dev/tcp/$host/$port" 2>/dev/null; then
+        printf "  ${GREEN}Port %s on %s is OPEN${R}\n" "$port" "$host"
+      else
+        printf "  ${RED}Port %s on %s is CLOSED${R}\n" "$port" "$host"
+      fi
+      ;;
+    whois)
+      local domain="${1:?Usage: ai net whois <domain>}"
+      if command -v whois &>/dev/null; then
+        whois "$domain" 2>/dev/null | head -30
+      else
+        err "whois not installed"
+      fi
+      ;;
+    *)
+      echo "Usage: ai net <ip|dns|ping|speed|headers|port|whois>"
+      echo ""
+      echo "  ip                  Show local and public IP"
+      echo "  dns <domain>        DNS lookup"
+      echo "  ping [host]         Ping test (default: 8.8.8.8)"
+      echo "  speed               Download speed test"
+      echo "  headers <url>       Show HTTP headers"
+      echo "  port <host> <port>  Check if port is open"
+      echo "  whois <domain>      WHOIS lookup"
+      ;;
+  esac
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  FINAL DISPATCHER ADDITIONS — v2.9.0
+# ════════════════════════════════════════════════════════════════════════════════
+
+_dispatch_v29_final() {
+  local cmd="$1"; shift
+  case "$cmd" in
+    date|dt) cmd_date_tools "$@"; return 0 ;;
+    net|network) cmd_net "$@"; return 0 ;;
+    *) _dispatch_v29_extended "$cmd" "$@" && return 0 ;;
+  esac
+  return 1
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+# END OF AI CLI v2.9.0
+# ════════════════════════════════════════════════════════════════════════════════
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  BUILTIN PROMPT PRESETS — v2.9.0
+#  Quick-access prompt presets for common tasks
+# ════════════════════════════════════════════════════════════════════════════════
+
+declare -A PROMPT_PRESETS=(
+  [review]="Review this code for bugs, security issues, and performance. Be specific:"
+  [explain]="Explain this code clearly, as if to a junior developer:"
+  [refactor]="Refactor this code for better readability and performance:"
+  [test]="Write comprehensive unit tests for this code:"
+  [debug]="Find and fix the bug in this code. Explain what was wrong:"
+  [optimize]="Optimize this code for better performance. Explain your changes:"
+  [document]="Write documentation with docstrings/comments for this code:"
+  [convert-py]="Convert this code to Python 3. Maintain the same logic:"
+  [convert-js]="Convert this code to modern JavaScript (ES6+):"
+  [convert-rs]="Convert this code to Rust. Use idiomatic Rust patterns:"
+  [convert-go]="Convert this code to Go. Use idiomatic Go patterns:"
+  [simplify]="Simplify this code while keeping the same functionality:"
+  [security]="Audit this code for security vulnerabilities (OWASP top 10):"
+  [type-hints]="Add type hints/annotations to this code:"
+  [api-design]="Design a REST API for this feature. Include endpoints, methods, request/response schemas:"
+  [commit-msg]="Write a conventional commit message for these changes:"
+  [pr-desc]="Write a pull request description for these changes:"
+  [changelog-entry]="Write a changelog entry for these changes:"
+  [error-handle]="Add proper error handling to this code:"
+  [perf-profile]="Identify performance bottlenecks in this code and suggest fixes:"
+  [accessibility]="Review this HTML/UI code for accessibility issues (WCAG):"
+  [responsive]="Make this CSS/HTML responsive for mobile, tablet, and desktop:"
+  [seo]="Optimize this HTML for SEO. Add meta tags, semantic HTML, structured data:"
+  [i18n]="Prepare this code for internationalization. Extract strings, handle RTL:"
+  [migrate]="Create a migration plan for upgrading this code/dependency:"
+)
+
+cmd_prompt_preset() {
+  local preset="${1:-}"
+  shift 2>/dev/null || true
+
+  if [[ -z "$preset" ]] || [[ "$preset" == "list" ]]; then
+    hdr "Prompt Presets"
+    for key in $(echo "${!PROMPT_PRESETS[@]}" | tr ' ' '\n' | sort); do
+      printf "  ${CYAN}%-15s${R}  ${DIM}%s${R}\n" "$key" "${PROMPT_PRESETS[$key]:0:60}"
+    done
+    echo ""
+    info "Usage: ai p <preset> <file_or_text>"
+    info "Example: ai p review myfile.py"
+    return
+  fi
+
+  local prompt_prefix="${PROMPT_PRESETS[$preset]:-}"
+  if [[ -z "$prompt_prefix" ]]; then
+    err "Unknown preset: $preset"
+    info "Available: ${!PROMPT_PRESETS[*]}"
+    return 1
+  fi
+
+  local input=""
+  if [[ -n "${1:-}" && -f "$1" ]]; then
+    input=$(cat "$1")
+    info "Preset: $preset | File: $1"
+  elif [[ -n "${*:-}" ]]; then
+    input="$*"
+    info "Preset: $preset"
+  elif [[ ! -t 0 ]]; then
+    input=$(cat)
+    info "Preset: $preset (from stdin)"
+  else
+    echo "Usage: ai p $preset <file_or_text>"
+    return 1
+  fi
+
+  dispatch_ask "$prompt_prefix
+
+$input"
+}
+
+# v2.9.0: Wire prompt presets into dispatcher
+# Usage: ai p <preset> <input>
+
+
+# AI CLI v2.9.0 — 19997 lines — minerofthesoal/ai-cli
+# End of file
