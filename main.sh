@@ -9196,15 +9196,21 @@ cmd_status() {
   printf "  %-22s %s\n" "GPU layers:"   "$GPU_LAYERS"
   echo ""
   hdr "API Keys"
-  for k in OPENAI_API_KEY ANTHROPIC_API_KEY GEMINI_API_KEY HF_TOKEN HF_DATASET_KEY BRAVE_API_KEY; do
+  for k in OPENAI_API_KEY ANTHROPIC_API_KEY GEMINI_API_KEY GROQ_API_KEY MISTRAL_API_KEY TOGETHER_API_KEY HF_TOKEN BRAVE_API_KEY; do
     local v; v=$(eval "echo \"\${$k:-}\"")
-    if [[ -n "$v" ]]; then printf "  %-24s ${BGREEN}set${R} (%s…%s)\n" "$k:" "${v:0:4}" "${v: -4}"
-    else printf "  %-24s ${DIM}not set${R}\n" "$k:"; fi
+    if [[ -n "$v" ]]; then printf "  %-26s ${BGREEN}set${R} (%s…%s)\n" "$k:" "${v:0:4}" "${v: -4}"
+    else printf "  %-26s ${DIM}not set${R}\n" "$k:"; fi
   done
   echo ""
   printf "  %-22s %s\n" "GGUF models:" "$(find "$MODELS_DIR" -name "*.gguf" 2>/dev/null | wc -l)"
   printf "  %-22s %s\n" "Chat logs:"   "$(ls "$CHAT_LOGS_DIR"/*.jsonl 2>/dev/null | wc -l || echo 0)"
   printf "  %-22s %s\n" "Datasets:"    "$(ls "$DATASETS_DIR" 2>/dev/null | wc -l)"
+  printf "  %-22s %s\n" "Snapshots:"   "$(ls "$SNAPSHOTS_DIR"/*.snap 2>/dev/null | wc -l || echo 0)"
+  printf "  %-22s %s\n" "Templates:"   "$(ls "$TEMPLATES_DIR"/*.tpl 2>/dev/null | wc -l || echo 0)"
+  printf "  %-22s %s\n" "RAG bases:"   "$(ls -d "$RAG_DIR"/*/ 2>/dev/null | wc -l || echo 0)"
+  printf "  %-22s %s\n" "Plugins:"     "$(ls "$PLUGINS_DIR"/*.sh 2>/dev/null | wc -l || echo 0)"
+  printf "  %-22s %s\n" "Disk (models):" "$(du -sh "$MODELS_DIR" 2>/dev/null | awk '{print $1}' || echo '?')"
+  printf "  %-22s %s\n" "Disk (config):" "$(du -sh "$CONFIG_DIR" 2>/dev/null | awk '{print $1}' || echo '?')"
 }
 
 # ════════════════════════════════════════════════════════════════════════════════
