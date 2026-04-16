@@ -8867,12 +8867,14 @@ cmd_recommended() {
             local dir="$MODELS_DIR/$repo"
             [[ -d "$dir" ]] && return 0
             return 1 ;;
-          openai|claude|gemini)
-            # Cloud API — "downloaded" if key is set
+          openai|claude|gemini|groq|mistral|together)
             case "$btype" in
-              openai)  [[ -n "${OPENAI_API_KEY:-}"    ]] && return 0 ;;
-              claude)  [[ -n "${ANTHROPIC_API_KEY:-}" ]] && return 0 ;;
-              gemini)  [[ -n "${GEMINI_API_KEY:-}"    ]] && return 0 ;;
+              openai)   [[ -n "${OPENAI_API_KEY:-}"    ]] && return 0 ;;
+              claude)   [[ -n "${ANTHROPIC_API_KEY:-}" ]] && return 0 ;;
+              gemini)   [[ -n "${GEMINI_API_KEY:-}"    ]] && return 0 ;;
+              groq)     [[ -n "${GROQ_API_KEY:-}"      ]] && return 0 ;;
+              mistral)  [[ -n "${MISTRAL_API_KEY:-}"   ]] && return 0 ;;
+              together) [[ -n "${TOGETHER_API_KEY:-}"   ]] && return 0 ;;
             esac
             return 1 ;;
           *) return 1 ;;
@@ -8883,13 +8885,36 @@ cmd_recommended() {
       local last_group=""
       local groups=(
         "1:8:TINY / CPU-FRIENDLY LLMs"
-        "9:16:GENERAL-PURPOSE LLMs (7–70B)"
-        "17:26:CODING & REASONING LLMs"
-        "27:31:VISION / MULTIMODAL LLMs"
+        "9:16:GENERAL-PURPOSE LLMs (7–9B)"
+        "17:23:CODING LLMs"
+        "24:26:MATH / REASONING"
+        "27:31:VISION / MULTIMODAL"
         "32:37:IMAGE GENERATION"
         "38:42:AUDIO / SPEECH"
         "43:46:EMBEDDING / RAG"
-        "47:56:CLOUD API MODELS"
+        "47:56:CLOUD APIs (OpenAI/Claude/Gemini)"
+        "57:66:LARGE LLMs (13B–70B+)"
+        "67:74:MORE CODING MODELS"
+        "75:80:MORE REASONING / MATH"
+        "81:85:ROLEPLAY / CREATIVE"
+        "86:90:MULTILINGUAL"
+        "91:94:LONG CONTEXT"
+        "95:100:MORE VISION / VL"
+        "101:104:MORE IMAGE GEN"
+        "105:109:MORE AUDIO"
+        "110:113:EMBEDDING / RERANKER"
+        "114:117:SPECIALIZED (MED/LEGAL/FIN)"
+        "118:121:TINY / EDGE MODELS"
+        "122:125:INSTRUCTION TUNED"
+        "126:140:MORE CLOUD APIs (Groq/Mistral/Together)"
+        "141:145:FUNCTION CALLING / AGENT"
+        "146:149:RLHF / DPO / UNCENSORED"
+        "150:153:JAPANESE / SCIENCE"
+        "154:168:NLU / QA / CLASSIFY"
+        "169:178:OCR / DETECTION / DEPTH"
+        "179:181:VIDEO / TTS"
+        "182:189:MORE GGUF + MOE"
+        "190:195:SAFETY / REWARD / NEWEST"
       )
 
       for grp in "${groups[@]}"; do
