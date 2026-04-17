@@ -14,7 +14,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -euo pipefail
-VERSION="2.9.0"
+VERSION="2.9.1"
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  ENVIRONMENT DETECTION
@@ -6044,7 +6044,9 @@ ask_gguf() {
     LLAMA_TEMP="${TEMPERATURE:-0.7}" LLAMA_CTX="${CONTEXT_SIZE:-4096}" \
     LLAMA_GPU="${GPU_LAYERS:--1}" LLAMA_SYS="$sys_prompt" \
     "$PYTHON" - <<'PYEOF'
-import os, sys
+import os, sys, logging
+logging.disable(logging.WARNING)
+os.environ["LLAMA_LOG_LEVEL"] = "0"
 try:
     from llama_cpp import Llama
 except ImportError:
@@ -6085,8 +6087,8 @@ User: ${prompt}"
       -n "${MAX_TOKENS:-512}" --temp "${TEMPERATURE:-0.7}" \
       -c "${CONTEXT_SIZE:-4096}" \
       --n-gpu-layers "${GPU_LAYERS:--1}" \
-      --threads "${THREADS:-4}" -s 0 --no-display-prompt 2>&1 | \
-      grep -v "^llama_\|^ggml_\|^llm_load\|^system_info" || true
+      --threads "${THREADS:-4}" -s 0 --no-display-prompt --log-disable 2>/dev/null | \
+      grep -v "^llama_\|^ggml_\|^llm_load\|^system_info\|^main:\|^sampling:\|^build info\|^CUDA\|^Metal\|warning:" || true
   else
     err "llama.cpp not found. Run: ai install-deps"
     info "Or install manually: pip install llama-cpp-python"
@@ -14350,15 +14352,35 @@ main() {
 
     # ── Asking ───────────────────────────────────────────────────────────────
     ask|a)
-      # v2.7.3: Handle empty prompt — prompt interactively
-      local _ask_prompt="$*"
+      local _ask_web=0 _ask_no_stream=0 _ask_args=()
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          -W|--web)       _ask_web=1; shift ;;
+          --no-stream)    _ask_no_stream=1; shift ;;
+          -m|--model)     ACTIVE_BACKEND="$2"; shift 2 ;;
+          *)              _ask_args+=("$1"); shift ;;
+        esac
+      done
+      local _ask_prompt="${_ask_args[*]}"
       if [[ -z "$_ask_prompt" ]]; then
         if [[ -t 0 ]]; then
           read -rp "$(echo -e "${BCYAN}Ask: ${R}")" _ask_prompt
-          [[ -z "$_ask_prompt" ]] && { err "No prompt given. Usage: ai ask \"<question>\""; return 1; }
+          [[ -z "$_ask_prompt" ]] && { err "Usage: ai ask [-W] \"question\""; return 1; }
         else
-          # stdin may have piped content
           _ask_prompt=$(cat)
+        fi
+      fi
+      if [[ $_ask_web -eq 1 ]]; then
+        info "Searching the web..."
+        local _web_results
+        _web_results=$(web_search "$_ask_prompt" 5 2>/dev/null || cmd_websearch "$_ask_prompt" 2>/dev/null || echo "")
+        if [[ -n "$_web_results" ]]; then
+          _ask_prompt="Use these web search results to answer the question.
+
+Web results:
+${_web_results}
+
+Question: ${_ask_prompt}"
         fi
       fi
       dispatch_ask "$_ask_prompt" ;;
