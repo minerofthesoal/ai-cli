@@ -6475,95 +6475,6 @@ dispatch_ask() {
 # ════════════════════════════════════════════════════════════════════════════════
 #  CANVAS — Code workspace with AI assistance
 # ════════════════════════════════════════════════════════════════════════════════
-cmd_canvas() {
-  local sub="${1:-status}"; shift || true
-  case "$sub" in
-    new)
-      local name="${1:-canvas_$(date +%H%M%S)}"; local lang="${2:-python}"
-      local file="$CANVAS_DIR/${name}.${lang}"
-      touch "$file"; CANVAS_ACTIVE="$file"; save_config
-      ok "Canvas: $file"
-      ;;
-    open)
-      local f="${1:-}"; [[ -z "$f" ]] && { err "File required"; return 1; }
-      [[ ! -f "$f" ]] && { err "Not found: $f"; return 1; }
-      CANVAS_ACTIVE="$f"; save_config; ok "Canvas: $f"
-      ;;
-    edit)
-      [[ -z "$CANVAS_ACTIVE" ]] && { err "No active canvas"; return 1; }
-      "${EDITOR:-nano}" "$CANVAS_ACTIVE"
-      ;;
-    show)
-      [[ -z "$CANVAS_ACTIVE" ]] && { err "No active canvas"; return 1; }
-      hdr "Canvas: $CANVAS_ACTIVE"
-      cat -n "$CANVAS_ACTIVE"
-      ;;
-    run)
-      [[ -z "$CANVAS_ACTIVE" ]] && { err "No active canvas"; return 1; }
-      local ext="${CANVAS_ACTIVE##*.}"
-      case "$ext" in
-        py|python) python3 "$CANVAS_ACTIVE" ;;
-        sh|bash)   bash "$CANVAS_ACTIVE" ;;
-        js|ts)     node "$CANVAS_ACTIVE" 2>/dev/null || npx ts-node "$CANVAS_ACTIVE" ;;
-        c)         gcc "$CANVAS_ACTIVE" -o /tmp/canvas_out && /tmp/canvas_out ;;
-        cpp)       g++ "$CANVAS_ACTIVE" -o /tmp/canvas_out && /tmp/canvas_out ;;
-        *)         err "Unknown extension: $ext" ;;
-      esac
-      ;;
-    ask)
-      [[ -z "$CANVAS_ACTIVE" ]] && { err "No active canvas"; return 1; }
-      local task="$*"
-      [[ -z "$task" ]] && { read -rp "Task: " task; }
-      local current_code=""
-      [[ -s "$CANVAS_ACTIVE" ]] && current_code=$(cat "$CANVAS_ACTIVE")
-      local prompt
-      if [[ -z "$current_code" ]]; then
-        prompt="Write code for this task. Return ONLY the code, no explanation, no markdown fences.
-
-Task: $task"
-      else
-        prompt="Here is the current code:
-\`\`\`
-$current_code
-\`\`\`
-
-Modify it for this task. Return ONLY the complete updated code, no explanation, no markdown fences.
-
-Task: $task"
-      fi
-      info "Generating code..."
-      local result; result=$(dispatch_ask "$prompt" 2>/dev/null)
-      # Strip markdown fences
-      result=$(echo "$result" | sed 's/^```[a-z]*$//' | sed 's/^```$//')
-      echo "$result" > "$CANVAS_ACTIVE"
-      ok "Canvas updated. Lines: $(wc -l < "$CANVAS_ACTIVE")"
-      cat -n "$CANVAS_ACTIVE"
-      ;;
-    diff)
-      [[ -z "$CANVAS_ACTIVE" ]] && { err "No active canvas"; return 1; }
-      git diff "$CANVAS_ACTIVE" 2>/dev/null || diff /dev/null "$CANVAS_ACTIVE"
-      ;;
-    save)
-      [[ -z "$CANVAS_ACTIVE" ]] && { err "No active canvas"; return 1; }
-      local dest="${1:-$AI_OUTPUT_DIR/$(basename "$CANVAS_ACTIVE")}"
-      cp "$CANVAS_ACTIVE" "$dest"; ok "Saved: $dest"
-      ;;
-    list)
-      hdr "Canvas files"
-      for f in "$CANVAS_DIR"/*; do
-        [[ -f "$f" ]] || continue
-        local lines; lines=$(wc -l < "$f")
-        local active=""
-        [[ "$f" == "$CANVAS_ACTIVE" ]] && active=" ${BGREEN}◀ active${R}"
-        printf "  %-40s %4d lines%b\n" "$(basename "$f")" "$lines" "$active"
-      done
-      ;;
-    close) CANVAS_ACTIVE=""; save_config; ok "Canvas closed" ;;
-    status)
-      [[ -n "$CANVAS_ACTIVE" ]] && ok "Active: $CANVAS_ACTIVE ($(wc -l < "$CANVAS_ACTIVE" 2>/dev/null || echo 0) lines)" || info "No active canvas"
-      ;;
-  esac
-}
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  FINE-TUNING PIPELINE
@@ -6698,95 +6609,6 @@ PYEOF
 # ════════════════════════════════════════════════════════════════════════════════
 #  MODEL MANAGEMENT
 # ════════════════════════════════════════════════════════════════════════════════
-cmd_canvas() {
-  local sub="${1:-status}"; shift || true
-  case "$sub" in
-    new)
-      local name="${1:-canvas_$(date +%H%M%S)}"; local lang="${2:-python}"
-      local file="$CANVAS_DIR/${name}.${lang}"
-      touch "$file"; CANVAS_ACTIVE="$file"; save_config
-      ok "Canvas: $file"
-      ;;
-    open)
-      local f="${1:-}"; [[ -z "$f" ]] && { err "File required"; return 1; }
-      [[ ! -f "$f" ]] && { err "Not found: $f"; return 1; }
-      CANVAS_ACTIVE="$f"; save_config; ok "Canvas: $f"
-      ;;
-    edit)
-      [[ -z "$CANVAS_ACTIVE" ]] && { err "No active canvas"; return 1; }
-      "${EDITOR:-nano}" "$CANVAS_ACTIVE"
-      ;;
-    show)
-      [[ -z "$CANVAS_ACTIVE" ]] && { err "No active canvas"; return 1; }
-      hdr "Canvas: $CANVAS_ACTIVE"
-      cat -n "$CANVAS_ACTIVE"
-      ;;
-    run)
-      [[ -z "$CANVAS_ACTIVE" ]] && { err "No active canvas"; return 1; }
-      local ext="${CANVAS_ACTIVE##*.}"
-      case "$ext" in
-        py|python) python3 "$CANVAS_ACTIVE" ;;
-        sh|bash)   bash "$CANVAS_ACTIVE" ;;
-        js|ts)     node "$CANVAS_ACTIVE" 2>/dev/null || npx ts-node "$CANVAS_ACTIVE" ;;
-        c)         gcc "$CANVAS_ACTIVE" -o /tmp/canvas_out && /tmp/canvas_out ;;
-        cpp)       g++ "$CANVAS_ACTIVE" -o /tmp/canvas_out && /tmp/canvas_out ;;
-        *)         err "Unknown extension: $ext" ;;
-      esac
-      ;;
-    ask)
-      [[ -z "$CANVAS_ACTIVE" ]] && { err "No active canvas"; return 1; }
-      local task="$*"
-      [[ -z "$task" ]] && { read -rp "Task: " task; }
-      local current_code=""
-      [[ -s "$CANVAS_ACTIVE" ]] && current_code=$(cat "$CANVAS_ACTIVE")
-      local prompt
-      if [[ -z "$current_code" ]]; then
-        prompt="Write code for this task. Return ONLY the code, no explanation, no markdown fences.
-
-Task: $task"
-      else
-        prompt="Here is the current code:
-\`\`\`
-$current_code
-\`\`\`
-
-Modify it for this task. Return ONLY the complete updated code, no explanation, no markdown fences.
-
-Task: $task"
-      fi
-      info "Generating code..."
-      local result; result=$(dispatch_ask "$prompt" 2>/dev/null)
-      # Strip markdown fences
-      result=$(echo "$result" | sed 's/^```[a-z]*$//' | sed 's/^```$//')
-      echo "$result" > "$CANVAS_ACTIVE"
-      ok "Canvas updated. Lines: $(wc -l < "$CANVAS_ACTIVE")"
-      cat -n "$CANVAS_ACTIVE"
-      ;;
-    diff)
-      [[ -z "$CANVAS_ACTIVE" ]] && { err "No active canvas"; return 1; }
-      git diff "$CANVAS_ACTIVE" 2>/dev/null || diff /dev/null "$CANVAS_ACTIVE"
-      ;;
-    save)
-      [[ -z "$CANVAS_ACTIVE" ]] && { err "No active canvas"; return 1; }
-      local dest="${1:-$AI_OUTPUT_DIR/$(basename "$CANVAS_ACTIVE")}"
-      cp "$CANVAS_ACTIVE" "$dest"; ok "Saved: $dest"
-      ;;
-    list)
-      hdr "Canvas files"
-      for f in "$CANVAS_DIR"/*; do
-        [[ -f "$f" ]] || continue
-        local lines; lines=$(wc -l < "$f")
-        local active=""
-        [[ "$f" == "$CANVAS_ACTIVE" ]] && active=" ${BGREEN}◀ active${R}"
-        printf "  %-40s %4d lines%b\n" "$(basename "$f")" "$lines" "$active"
-      done
-      ;;
-    close) CANVAS_ACTIVE=""; save_config; ok "Canvas closed" ;;
-    status)
-      [[ -n "$CANVAS_ACTIVE" ]] && ok "Active: $CANVAS_ACTIVE ($(wc -l < "$CANVAS_ACTIVE" 2>/dev/null || echo 0) lines)" || info "No active canvas"
-      ;;
-  esac
-}
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  FINE-TUNING PIPELINE
@@ -11667,6 +11489,9 @@ def canvas_tui(stdscr):
     curses.init_pair(2, curses.COLOR_GREEN, -1)
     curses.init_pair(3, curses.COLOR_YELLOW, -1)
     curses.init_pair(4, curses.COLOR_WHITE, curses.COLOR_BLUE)
+    stdscr.keypad(True)
+    curses.raw()
+    curses.noecho()
 
     ws = load_ws()
     files = list_files()
@@ -11676,7 +11501,7 @@ def canvas_tui(stdscr):
     cursor_y, cursor_x = 0, 0
     ai_output = ""
     split = False
-    status = f"Canvas v2 | {ws_name} | {len(files)} files | Ctrl+Q=quit F=new-file E=edit A=ask-AI S=split G=git"
+    status = f"Canvas v2 | {ws_name} | {len(files)} files | ^Q=quit F=new E=edit A=AI S=split G=git P=preview ?=help"
 
     def load_file(fname):
         fp = os.path.join(files_dir, fname)
@@ -11763,11 +11588,16 @@ def canvas_tui(stdscr):
             # Open in $EDITOR
             if files:
                 editor = os.environ.get('EDITOR', 'nano')
+                curses.def_prog_mode()
                 curses.endwin()
                 os.system(f"{editor} {files_dir}/{files[active_idx]}")
                 file_content = load_file(files[active_idx])
-                stdscr = curses.initscr()
-                curses.cbreak(); stdscr.keypad(True)
+                curses.reset_prog_mode()
+                stdscr.keypad(True)
+                curses.raw()
+                curses.noecho()
+                curses.curs_set(1)
+                stdscr.refresh()
         elif key in (ord('A'), ord('a')):
             # Ask AI about current file
             curses.echo()
