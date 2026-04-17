@@ -14182,38 +14182,37 @@ main() {
 
     # ── Asking ───────────────────────────────────────────────────────────────
     ask|a)
-      local _ask_web=0 _ask_no_stream=0 _ask_args=()
-      while [[ $# -gt 0 ]]; do
-        case "$1" in
-          -W|--web)       _ask_web=1; shift ;;
-          --no-stream)    _ask_no_stream=1; shift ;;
-          -m|--model)     ACTIVE_BACKEND="$2"; shift 2 ;;
-          *)              _ask_args+=("$1"); shift ;;
-        esac
-      done
-      local _ask_prompt="${_ask_args[*]}"
+      local _ask_prompt="$*"
       if [[ -z "$_ask_prompt" ]]; then
         if [[ -t 0 ]]; then
           read -rp "$(echo -e "${BCYAN}Ask: ${R}")" _ask_prompt
-          [[ -z "$_ask_prompt" ]] && { err "Usage: ai ask [-W] \"question\""; return 1; }
+          [[ -z "$_ask_prompt" ]] && { err "Usage: ai ask \"question\""; return 1; }
         else
           _ask_prompt=$(cat)
         fi
       fi
-      if [[ $_ask_web -eq 1 ]]; then
-        info "Searching the web..."
-        local _web_results
-        _web_results=$(web_search "$_ask_prompt" 5 2>/dev/null || cmd_websearch "$_ask_prompt" 2>/dev/null || echo "")
-        if [[ -n "$_web_results" ]]; then
-          _ask_prompt="Use these web search results to answer the question.
+      dispatch_ask "$_ask_prompt" ;;
+
+    ask-web|askweb|aw)
+      local _aw_prompt="$*"
+      if [[ -z "$_aw_prompt" ]]; then
+        read -rp "$(echo -e "${BCYAN}Ask (web): ${R}")" _aw_prompt
+        [[ -z "$_aw_prompt" ]] && { err "Usage: ai ask-web \"question\""; return 1; }
+      fi
+      info "Searching the web..."
+      local _aw_results
+      _aw_results=$(web_search "$_aw_prompt" 5 2>/dev/null || cmd_websearch "$_aw_prompt" 2>/dev/null || echo "")
+      if [[ -n "$_aw_results" ]]; then
+        _aw_prompt="Use these web search results to answer the question.
 
 Web results:
-${_web_results}
+${_aw_results}
 
-Question: ${_ask_prompt}"
-        fi
+Question: ${_aw_prompt}"
+      else
+        warn "No web results found, answering without web context"
       fi
-      dispatch_ask "$_ask_prompt" ;;
+      dispatch_ask "$_aw_prompt" ;;
     chat)       cmd_chat_interactive ;;
     code)
       local lang="" run=0 args=()
