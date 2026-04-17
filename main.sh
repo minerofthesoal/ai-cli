@@ -7017,7 +7017,7 @@ ask_gguf() {
     local sys_prompt; sys_prompt=$(_get_effective_system)
     LLAMA_PROMPT="$prompt" LLAMA_MODEL="$model" LLAMA_MAX="${MAX_TOKENS:-512}" \
     LLAMA_TEMP="${TEMPERATURE:-0.7}" LLAMA_CTX="${CONTEXT_SIZE:-4096}" \
-    LLAMA_GPU="${GPU_LAYERS:-0}" LLAMA_SYS="$sys_prompt" \
+    LLAMA_GPU="${GPU_LAYERS:--1}" LLAMA_SYS="$sys_prompt" \
     "$PYTHON" - <<'PYEOF'
 import os, sys
 try:
@@ -7059,9 +7059,9 @@ User: ${prompt}"
     "$LLAMA_BIN" -m "$model" -p "$_prompt_arg" \
       -n "${MAX_TOKENS:-512}" --temp "${TEMPERATURE:-0.7}" \
       -c "${CONTEXT_SIZE:-4096}" \
-      --n-gpu-layers "${GPU_LAYERS:-0}" \
+      --n-gpu-layers "${GPU_LAYERS:--1}" \
       --threads "${THREADS:-4}" -s 0 --no-display-prompt 2>&1 | \
-      grep -v "^llama\|^ggml\|^system\|^model\|^\[" || true
+      grep -v "^llama_\|^ggml_\|^llm_load\|^system_info" || true
   else
     err "llama.cpp not found. Run: ai install-deps"
     info "Or install manually: pip install llama-cpp-python"
