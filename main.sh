@@ -14,7 +14,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -euo pipefail
-VERSION="2.9.1"
+VERSION="2.9.5"
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  ENVIRONMENT DETECTION
@@ -14424,8 +14424,15 @@ $(cat)" ;;
         eval "main $_alias_cmd \"\$@\""
         return $?
       fi
-      # Unknown command — AI fallthrough
-      dispatch_ask "$cmd $*" ;;
+      # v2.9.5: No AI fallthrough — show error with suggestions
+      err "Unknown command: $cmd"
+      echo ""
+      echo "  Did you mean:"
+      echo "    ai ask \"$cmd $*\"        Send to AI"
+      echo "    ai ask-web \"$cmd $*\"    Send to AI with web search"
+      echo "    ai -h $cmd              Get help for a command"
+      echo "    ai help                 Show all commands"
+      ;;
   esac
 }
 
