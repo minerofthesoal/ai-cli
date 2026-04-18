@@ -4984,10 +4984,16 @@ THEMES = {
 }
 T = THEMES.get(THEME, THEMES["dark"])
 
+def strip_ansi(s):
+    import re
+    return re.sub(r'\x1b\[[0-9;]*m', '', s)
+
 def run_ai(cmd):
     try:
-        r = subprocess.run(f"{CLI} {cmd}", shell=True, capture_output=True, text=True, timeout=60)
-        return (r.stdout + r.stderr).strip()
+        env = os.environ.copy()
+        env["NO_COLOR"] = "1"
+        r = subprocess.run(f"{CLI} {cmd}", shell=True, capture_output=True, text=True, timeout=60, env=env)
+        return strip_ansi((r.stdout + r.stderr).strip())
     except Exception as e:
         return f"Error: {e}"
 
@@ -5290,10 +5296,16 @@ PALETTES = {
 }
 P = PALETTES.get(THEME, PALETTES["dark"])
 
+def strip_ansi(s):
+    import re
+    return re.sub(r'\x1b\[[0-9;]*m', '', s)
+
 def run_ai(cmd):
     try:
-        r = subprocess.run(f"{CLI} {cmd}", shell=True, capture_output=True, text=True, timeout=120)
-        return (r.stdout + r.stderr).strip()
+        env = os.environ.copy()
+        env["NO_COLOR"] = "1"
+        r = subprocess.run(f"{CLI} {cmd}", shell=True, capture_output=True, text=True, timeout=120, env=env)
+        return strip_ansi((r.stdout + r.stderr).strip())
     except subprocess.TimeoutExpired:
         return "Error: Command timed out"
     except Exception as e:
@@ -16060,7 +16072,6 @@ cmd_system_update() {
 
 ####NEW_FEATURES_MARKER####
 
-main "$@"
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  CONVERSATION HISTORY SEARCH — v2.9.0
@@ -19233,3 +19244,5 @@ cmd_test() {
   esac
 }
 
+
+main "$@"
