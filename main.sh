@@ -7579,7 +7579,31 @@ cmd_install_deps() {
   elif [[ $IS_ISH -eq 1 ]]; then
     info "Detected iSH (iOS) — using APK..."
     apk update 2>/dev/null || true
-    apk add python3 py3-pip git curl jq bash 2>/dev/null || true
+    apk add python3 py3-pip git curl jq bash openssl ca-certificates \
+      gcc g++ musl-dev python3-dev cmake make linux-headers 2>/dev/null || true
+    # Re-detect python after install
+    PYTHON="$(find_python)"
+    if [[ -n "$PYTHON" ]]; then
+      info "Installing Python packages for iSH..."
+      # llama-cpp-python CPU build (no GPU on iSH)
+      CMAKE_ARGS="-DLLAMA_BLAS=OFF" \
+        "$PYTHON" -m pip install llama-cpp-python \
+        --break-system-packages -q 2>/dev/null || \
+        "$PYTHON" -m pip install llama-cpp-python \
+        --break-system-packages --no-cache-dir -q 2>/dev/null || \
+        warn "llama-cpp-python failed to build (try: apk add cmake make gcc g++)"
+      # Core packages
+      "$PYTHON" -m pip install openai anthropic google-generativeai \
+        groq mistralai requests tiktoken huggingface_hub \
+        --break-system-packages -q 2>/dev/null || true
+    fi
+    echo ""
+    ok "iSH setup complete"
+    info "Local models: use small GGUF models (0.1-1B recommended)"
+    info "  ai recommended download 1    # 0.25B — smallest, works on iSH"
+    info "  ai recommended download 5    # 0.5B — still fast enough"
+    warn "Larger models (3B+) will be very slow on iSH"
+    info "Cloud APIs also work: ai keys set OPENAI_API_KEY sk-..."
   elif [[ $IS_WSL -eq 1 ]]; then
     info "Detected WSL — using APT..."
     sudo apt-get update -q 2>/dev/null || true
