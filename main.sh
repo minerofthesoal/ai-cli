@@ -14194,7 +14194,14 @@ main() {
 
     # ── Asking ───────────────────────────────────────────────────────────────
     ask|a)
-      local _ask_prompt="$*"
+      local _ask_mem=0 _ask_args=()
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          -mem|--mem|--memory) _ask_mem=1; shift ;;
+          *) _ask_args+=("$1"); shift ;;
+        esac
+      done
+      local _ask_prompt="${_ask_args[*]}"
       if [[ -z "$_ask_prompt" ]]; then
         if [[ -t 0 ]]; then
           read -rp "$(echo -e "${BCYAN}Ask: ${R}")" _ask_prompt
@@ -14203,10 +14210,25 @@ main() {
           _ask_prompt=$(cat)
         fi
       fi
+      if [[ $_ask_mem -eq 1 ]]; then
+        local _mem_ctx
+        _mem_ctx=$(cmd_memory context 2>/dev/null || echo "")
+        [[ -n "$_mem_ctx" ]] && _ask_prompt="Known facts about the user:
+${_mem_ctx}
+
+${_ask_prompt}"
+      fi
       dispatch_ask "$_ask_prompt" ;;
 
     ask-web|askweb|aw)
-      local _aw_prompt="$*"
+      local _aw_mem=0 _aw_args=()
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          -mem|--mem|--memory) _aw_mem=1; shift ;;
+          *) _aw_args+=("$1"); shift ;;
+        esac
+      done
+      local _aw_prompt="${_aw_args[*]}"
       if [[ -z "$_aw_prompt" ]]; then
         read -rp "$(echo -e "${BCYAN}Ask (web): ${R}")" _aw_prompt
         [[ -z "$_aw_prompt" ]] && { err "Usage: ai ask-web \"question\""; return 1; }
@@ -14214,15 +14236,24 @@ main() {
       info "Searching the web..."
       local _aw_results
       _aw_results=$(web_search "$_aw_prompt" 5 2>/dev/null || cmd_websearch "$_aw_prompt" 2>/dev/null || echo "")
+      local _aw_context=""
+      if [[ $_aw_mem -eq 1 ]]; then
+        _aw_context=$(cmd_memory context 2>/dev/null || echo "")
+      fi
       if [[ -n "$_aw_results" ]]; then
         _aw_prompt="Use these web search results to answer the question.
 
 Web results:
 ${_aw_results}
+${_aw_context:+
+Known facts: ${_aw_context}}
 
 Question: ${_aw_prompt}"
       else
         warn "No web results found, answering without web context"
+        [[ -n "$_aw_context" ]] && _aw_prompt="Known facts: ${_aw_context}
+
+${_aw_prompt}"
       fi
       dispatch_ask "$_aw_prompt" ;;
     chat)       cmd_chat_interactive ;;
@@ -14395,6 +14426,7 @@ $(cat)" ;;
     cleanup|clean)    cmd_cleanup "$@" ;;
     preset)           cmd_preset "$@" ;;
     plugin|plugins)   cmd_plugin "$@" ;;
+    test)             cmd_test "$@" ;;
 
     # ── Misc ──────────────────────────────────────────────────────────────────
     version|-v|--version) echo "AI CLI v${VERSION}" ;;
@@ -19032,3 +19064,84 @@ $input"
 
 # AI CLI v2.9.0 — 19997 lines — minerofthesoal/ai-cli
 # End of file
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  TEST — v2.9.5
+#  ai test -S (speed) -A (all) -N (network)
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_test() {
+  local mode="${1:--A}"
+  case "$mode" in
+    -S|--speed|speed)
+      hdr "Speed Test"
+      if [[ -z "$ACTIVE_MODEL" && -z "$ACTIVE_BACKEND" ]]; then
+        err "No model set. Run: ai recommended use <N>"
+        return 1
+      fi
+      info "Backend: ${ACTIVE_BACKEND:-auto} | Model: ${ACTIVE_MODEL:-auto}"
+      info "Generating 64 tokens..."
+      local start_ms=$(date +%s%3N 2>/dev/null || echo 0)
+      local out=$(_silent_generate "Count from 1 to 50" 64 2>/dev/null || echo "")
+      local end_ms=$(date +%s%3N 2>/dev/null || echo 0)
+      local elapsed=$(( end_ms - start_ms ))
+      local words=$(echo "$out" | wc -w)
+      if (( elapsed > 0 && words > 0 )); then
+        local tps=$(awk "BEGIN{printf \"%.1f\", $words / ($elapsed / 1000.0)}")
+        printf "  Result: ${GREEN}%s tok/s${R} (%d ms, %d tokens)\n" "$tps" "$elapsed" "$words"
+      else
+        err "Test failed — no output"
+      fi
+      ;;
+    -N|--network|network)
+      hdr "Network Test"
+      # Latency
+      info "Testing latency..."
+      local ping_ms
+      ping_ms=$(ping -c 3 8.8.8.8 2>/dev/null | tail -1 | awk -F'/' '{print $5}' || echo "?")
+      printf "  Latency:  %s ms (avg to 8.8.8.8)\n" "$ping_ms"
+      # Download speed
+      info "Testing download..."
+      local dl_start=$(date +%s%N 2>/dev/null || echo 0)
+      curl -fsSL "https://speed.cloudflare.com/__down?bytes=5000000" -o /dev/null 2>/dev/null
+      local dl_end=$(date +%s%N 2>/dev/null || echo 0)
+      local dl_ms=$(( (dl_end - dl_start) / 1000000 ))
+      if (( dl_ms > 0 )); then
+        local dl_mbps=$(awk "BEGIN{printf \"%.1f\", 5 * 8 / ($dl_ms / 1000.0)}")
+        printf "  Download: %s Mbps\n" "$dl_mbps"
+      fi
+      # Upload speed
+      info "Testing upload..."
+      local ul_data=$(head -c 1000000 /dev/urandom 2>/dev/null | base64 | head -c 500000)
+      local ul_start=$(date +%s%N 2>/dev/null || echo 0)
+      echo "$ul_data" | curl -fsSL -X POST -d @- "https://speed.cloudflare.com/__up" -o /dev/null 2>/dev/null || true
+      local ul_end=$(date +%s%N 2>/dev/null || echo 0)
+      local ul_ms=$(( (ul_end - ul_start) / 1000000 ))
+      if (( ul_ms > 0 )); then
+        local ul_mbps=$(awk "BEGIN{printf \"%.1f\", 0.5 * 8 / ($ul_ms / 1000.0)}")
+        printf "  Upload:   %s Mbps\n" "$ul_mbps"
+      fi
+      # API latency
+      info "Testing API latency..."
+      local api_start=$(date +%s%3N 2>/dev/null || echo 0)
+      curl -fsSL "https://api.github.com" -o /dev/null 2>/dev/null
+      local api_end=$(date +%s%3N 2>/dev/null || echo 0)
+      printf "  API RTT:  %d ms (github.com)\n" "$(( api_end - api_start ))"
+      ;;
+    -A|--all|all)
+      cmd_test -S
+      echo ""
+      cmd_test -N
+      echo ""
+      cmd_health 2>/dev/null || true
+      ;;
+    *)
+      echo "Usage: ai test <-S|-N|-A>"
+      echo ""
+      echo "  -S, --speed      Test model inference speed"
+      echo "  -N, --network    Test network (download/upload/latency)"
+      echo "  -A, --all        Run all tests (default)"
+      ;;
+  esac
+}
+
