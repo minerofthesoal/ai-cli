@@ -14,7 +14,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -euo pipefail
-VERSION="2.9.5"
+VERSION="2.9.6.5"
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  ENVIRONMENT DETECTION

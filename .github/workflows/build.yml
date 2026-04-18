@@ -724,7 +724,16 @@ jobs:
 
             **C++ installer (precompiled Linux):**
             ```bash
-            chmod +x ai-cli-installer && ./ai-cli-installer
+            chmod +x ai-cli-installer-linux-x86_64 && ./ai-cli-installer-linux-x86_64
+            ```
+
+            **iSH (iOS):**
+            ```bash
+            apk add curl bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/installers/install.sh | bash
+            ai install-deps
+            ai recommended download 1
+            ai ask "Hello!"
             ```
           files: |
             artifacts/**/*
