@@ -364,10 +364,10 @@ jobs:
         include:
           - arch: x86_64
             label: Intel
-            runner: macos-13
+            runner: macos-latest
           - arch: arm64
             label: AppleSilicon
-            runner: macos-14
+            runner: macos-latest
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     steps:
