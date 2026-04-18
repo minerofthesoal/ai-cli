@@ -28,17 +28,18 @@ detect_platform() {
     MINGW*|MSYS*|CYGWIN*) echo "windows" ;;
     Darwin)               echo "macos"   ;;
     Linux)
-      # Check if running inside WSL
       if grep -qi microsoft /proc/version 2>/dev/null; then echo "wsl"
+      elif [[ -f /dev/location ]] || grep -qi ish /proc/version 2>/dev/null || [[ "$(uname -r 2>/dev/null)" == *ish* ]]; then echo "ish"
       else echo "linux"; fi ;;
     *)                    echo "unknown" ;;
   esac
 }
 PLATFORM="$(detect_platform)"
-IS_WINDOWS=0; IS_WSL=0; IS_MACOS=0
+IS_WINDOWS=0; IS_WSL=0; IS_MACOS=0; IS_ISH=0
 [[ "$PLATFORM" == "windows" ]] && IS_WINDOWS=1
 [[ "$PLATFORM" == "wsl"     ]] && IS_WSL=1
 [[ "$PLATFORM" == "macos"   ]] && IS_MACOS=1
+[[ "$PLATFORM" == "ish"     ]] && IS_ISH=1
 
 # Windows-safe config root (falls back to APPDATA if set)
 if [[ $IS_WINDOWS -eq 1 && -n "${APPDATA:-}" ]]; then
@@ -808,6 +809,7 @@ MULTIAI_RLHF_TRAIN="${MULTIAI_RLHF_TRAIN:-0}"       # auto-train on rated exchan
 # v2.9.1: Stale cache fix — delete cache if GPU now exists but cache says 0
 CPU_ONLY_MODE="${CPU_ONLY_MODE:-0}"
 [[ $IS_WINDOWS -eq 1 ]] && CPU_ONLY_MODE=1
+[[ $IS_ISH -eq 1 ]] && CPU_ONLY_MODE=1
 # Re-detect if cache says 0 but nvidia device exists
 if [[ "${CUDA_ARCH:-0}" == "0" ]]; then
   if command -v nvidia-smi &>/dev/null || [[ -d /proc/driver/nvidia/gpus ]] || ls /dev/nvidia[0-9]* &>/dev/null 2>&1; then
@@ -7565,9 +7567,19 @@ cmd_install_deps() {
     elif command -v brew &>/dev/null; then
       info "Detected Homebrew (macOS)..."
       brew install python3 cmake ffmpeg jq espeak libsndfile 2>/dev/null || true
+    elif command -v apk &>/dev/null; then
+      info "Detected APK (Alpine/iSH)..."
+      apk update 2>/dev/null || true
+      apk add python3 py3-pip git cmake make gcc g++ musl-dev \
+        ffmpeg curl jq espeak libsndfile-dev \
+        openssl-dev python3-dev linux-headers 2>/dev/null || true
     else
       warn "No known package manager found. Install python3, git, ffmpeg, cmake manually."
     fi
+  elif [[ $IS_ISH -eq 1 ]]; then
+    info "Detected iSH (iOS) — using APK..."
+    apk update 2>/dev/null || true
+    apk add python3 py3-pip git curl jq bash 2>/dev/null || true
   elif [[ $IS_WSL -eq 1 ]]; then
     info "Detected WSL — using APT..."
     sudo apt-get update -q 2>/dev/null || true
