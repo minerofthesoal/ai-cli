@@ -14,7 +14,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -euo pipefail
-VERSION="2.9.1"
+VERSION="2.9.5"
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  ENVIRONMENT DETECTION
@@ -805,10 +805,22 @@ MULTIAI_RLHF_TRAIN="${MULTIAI_RLHF_TRAIN:-0}"       # auto-train on rated exchan
 
 # v2.4: CPU-only mode (auto-set on Windows or when no GPU found)
 # v2.6: Fixed — sm_61 (Pascal GTX 10xx) and Metal correctly detected as GPU
+# v2.9.1: Stale cache fix — delete cache if GPU now exists but cache says 0
 CPU_ONLY_MODE="${CPU_ONLY_MODE:-0}"
 [[ $IS_WINDOWS -eq 1 ]] && CPU_ONLY_MODE=1
-# Only force CPU mode if CUDA_ARCH is truly 0 (no GPU whatsoever)
+# Re-detect if cache says 0 but nvidia device exists
+if [[ "${CUDA_ARCH:-0}" == "0" ]]; then
+  if command -v nvidia-smi &>/dev/null || [[ -d /proc/driver/nvidia/gpus ]] || ls /dev/nvidia[0-9]* &>/dev/null 2>&1; then
+    rm -f "$_CUDA_CACHE" 2>/dev/null
+    CUDA_ARCH="$(detect_cuda_arch)"
+    mkdir -p "$(dirname "$_CUDA_CACHE")" && echo "$CUDA_ARCH" > "$_CUDA_CACHE" 2>/dev/null
+  fi
+fi
 [[ "${CUDA_ARCH:-0}" == "0" ]] && CPU_ONLY_MODE=1
+# v2.9.1: Auto-fix GPU_LAYERS=0 when GPU is available
+if [[ "${CUDA_ARCH:-0}" != "0" && "${GPU_LAYERS:-0}" == "0" ]]; then
+  GPU_LAYERS=-1
+fi
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  GENERALIZED TRAINED MODEL ENGINE
@@ -5252,8 +5264,10 @@ cmd_gui_plus() {
   local script; script=$(mktemp /tmp/ai_guiplus_XXXX.py)
   cat > "$script" << 'GUIPLUSEOF'
 #!/usr/bin/env python3
-"""AI CLI v2.9.0 — GUI+ v3: tkinter, tabbed, dark/light themes, v2.9 features"""
-import sys, os, subprocess, threading, json, time, tkinter as tk
+"""AI CLI v2.9.5 — GUI+ v3: tkinter, tabbed, 8 panels, dark/light themes"""
+import sys, os, subprocess, threading, json, time, warnings
+warnings.filterwarnings("ignore")
+import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog, simpledialog
 
 CLI     = sys.argv[1] if len(sys.argv) > 1 else "ai"
@@ -5262,340 +5276,344 @@ CFG_DIR = sys.argv[3] if len(sys.argv) > 3 else os.path.expanduser("~/.config/ai
 
 PALETTES = {
   "dark":   {"bg":"#1e1e2e","fg":"#cdd6f4","accent":"#89b4fa","accent2":"#a6e3a1",
-             "warn":"#f9e2af","err":"#f38ba8","dim":"#6c7086","panel":"#181825",
-             "sidebar":"#11111b","border":"#313244","sel":"#313244","sel_fg":"#cdd6f4",
-             "chat_user":"#89b4fa","chat_ai":"#a6e3a1","chat_sys":"#f9e2af",
-             "btn":"#313244","btn_fg":"#cdd6f4","btn_hover":"#45475a",
-             "entry_bg":"#313244","entry_fg":"#cdd6f4","tab_bg":"#181825"},
+             "err":"#f38ba8","dim":"#6c7086","panel":"#181825","border":"#313244",
+             "sel":"#313244","btn":"#313244","btn_fg":"#cdd6f4","entry_bg":"#313244",
+             "entry_fg":"#cdd6f4","chat_user":"#89b4fa","chat_ai":"#a6e3a1"},
   "light":  {"bg":"#eff1f5","fg":"#4c4f69","accent":"#1e66f5","accent2":"#40a02b",
-             "warn":"#df8e1d","err":"#d20f39","dim":"#9ca0b0","panel":"#e6e9ef",
-             "sidebar":"#dce0e8","border":"#bcc0cc","sel":"#bcc0cc","sel_fg":"#4c4f69",
-             "chat_user":"#1e66f5","chat_ai":"#40a02b","chat_sys":"#df8e1d",
-             "btn":"#dce0e8","btn_fg":"#4c4f69","btn_hover":"#ccd0da",
-             "entry_bg":"#dce0e8","entry_fg":"#4c4f69","tab_bg":"#e6e9ef"},
-  "hacker": {"bg":"#0d0d0d","fg":"#00ff41","accent":"#00ff41","accent2":"#00cc33",
-             "warn":"#ffff00","err":"#ff0000","dim":"#003300","panel":"#050505",
-             "sidebar":"#020202","border":"#003300","sel":"#003300","sel_fg":"#00ff41",
-             "chat_user":"#00ff41","chat_ai":"#00cc33","chat_sys":"#ffff00",
-             "btn":"#003300","btn_fg":"#00ff41","btn_hover":"#005500",
-             "entry_bg":"#0a0a0a","entry_fg":"#00ff41","tab_bg":"#050505"},
+             "err":"#d20f39","dim":"#9ca0b0","panel":"#e6e9ef","border":"#bcc0cc",
+             "sel":"#bcc0cc","btn":"#dce0e8","btn_fg":"#4c4f69","entry_bg":"#dce0e8",
+             "entry_fg":"#4c4f69","chat_user":"#1e66f5","chat_ai":"#40a02b"},
   "dracula":{"bg":"#282a36","fg":"#f8f8f2","accent":"#bd93f9","accent2":"#50fa7b",
-             "warn":"#f1fa8c","err":"#ff5555","dim":"#6272a4","panel":"#21222c",
-             "sidebar":"#191a21","border":"#6272a4","sel":"#44475a","sel_fg":"#f8f8f2",
-             "chat_user":"#bd93f9","chat_ai":"#50fa7b","chat_sys":"#f1fa8c",
-             "btn":"#44475a","btn_fg":"#f8f8f2","btn_hover":"#6272a4",
-             "entry_bg":"#44475a","entry_fg":"#f8f8f2","tab_bg":"#21222c"},
-  "nord":   {"bg":"#2e3440","fg":"#eceff4","accent":"#88c0d0","accent2":"#a3be8c",
-             "warn":"#ebcb8b","err":"#bf616a","dim":"#4c566a","panel":"#3b4252",
-             "sidebar":"#272c36","border":"#4c566a","sel":"#4c566a","sel_fg":"#eceff4",
-             "chat_user":"#88c0d0","chat_ai":"#a3be8c","chat_sys":"#ebcb8b",
-             "btn":"#4c566a","btn_fg":"#eceff4","btn_hover":"#5e6d82",
-             "entry_bg":"#3b4252","entry_fg":"#eceff4","tab_bg":"#3b4252"},
+             "err":"#ff5555","dim":"#6272a4","panel":"#21222c","border":"#44475a",
+             "sel":"#44475a","btn":"#44475a","btn_fg":"#f8f8f2","entry_bg":"#44475a",
+             "entry_fg":"#f8f8f2","chat_user":"#bd93f9","chat_ai":"#50fa7b"},
 }
 P = PALETTES.get(THEME, PALETTES["dark"])
 
-def run_ai(*args, timeout=60):
+def run_ai(cmd):
     try:
-        r = subprocess.run([CLI]+list(args), capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(f"{CLI} {cmd}", shell=True, capture_output=True, text=True, timeout=120)
         return (r.stdout + r.stderr).strip()
     except subprocess.TimeoutExpired:
-        return "[timeout]"
+        return "Error: Command timed out"
     except Exception as e:
-        return f"[error: {e}]"
-
-class StyledButton(tk.Button):
-    def __init__(self, parent, **kw):
-        kw.setdefault("bg", P["btn"]); kw.setdefault("fg", P["btn_fg"])
-        kw.setdefault("activebackground", P["btn_hover"]); kw.setdefault("activeforeground", P["fg"])
-        kw.setdefault("relief", "flat"); kw.setdefault("padx", 10); kw.setdefault("pady", 4)
-        kw.setdefault("cursor", "hand2"); kw.setdefault("font", ("Segoe UI", 10))
-        super().__init__(parent, **kw)
-        self.bind("<Enter>", lambda e: self.config(bg=P["btn_hover"]))
-        self.bind("<Leave>", lambda e: self.config(bg=P["btn"]))
-
-class AccentButton(tk.Button):
-    def __init__(self, parent, **kw):
-        kw.setdefault("bg", P["accent"]); kw.setdefault("fg", P["bg"])
-        kw.setdefault("activebackground", P["accent2"]); kw.setdefault("activeforeground", P["bg"])
-        kw.setdefault("relief", "flat"); kw.setdefault("padx", 12); kw.setdefault("pady", 5)
-        kw.setdefault("cursor", "hand2"); kw.setdefault("font", ("Segoe UI", 10, "bold"))
-        super().__init__(parent, **kw)
+        return f"Error: {e}"
 
 class ChatTab(tk.Frame):
     def __init__(self, parent):
         super().__init__(parent, bg=P["bg"])
-        self._build()
-    def _build(self):
-        bar = tk.Frame(self, bg=P["panel"], pady=4)
-        bar.pack(fill="x")
-        tk.Label(bar, text="  Model:", bg=P["panel"], fg=P["dim"], font=("Segoe UI",10)).pack(side="left")
-        self.model_var = tk.StringVar(value="(active)")
-        tk.Label(bar, textvariable=self.model_var, bg=P["panel"], fg=P["accent"], font=("Segoe UI",10,"bold")).pack(side="left",padx=4)
-        StyledButton(bar, text="⟳ Refresh", command=self._refresh_model).pack(side="left",padx=6)
-        StyledButton(bar, text="🗑 Clear",   command=self._clear).pack(side="left",padx=2)
-        StyledButton(bar, text="💾 Save",    command=self._save).pack(side="left",padx=2)
-        self.chat = scrolledtext.ScrolledText(self, bg=P["panel"], fg=P["fg"], insertbackground=P["fg"],
-            font=("Segoe UI",11), wrap="word", state="disabled", padx=12, pady=8, relief="flat", spacing3=4)
-        self.chat.pack(fill="both", expand=True, padx=8, pady=(8,0))
-        self.chat.tag_config("user", foreground=P["chat_user"], font=("Segoe UI",11,"bold"))
-        self.chat.tag_config("ai",   foreground=P["chat_ai"],  font=("Segoe UI",11))
-        self.chat.tag_config("sys",  foreground=P["chat_sys"], font=("Segoe UI",10,"italic"))
-        self.chat.tag_config("err",  foreground=P["err"],      font=("Segoe UI",10))
-        self.chat.tag_config("dim",  foreground=P["dim"],      font=("Segoe UI",9))
-        inp_frame = tk.Frame(self, bg=P["bg"], pady=6)
-        inp_frame.pack(fill="x", padx=8); inp_frame.columnconfigure(0, weight=1)
-        self.inp = tk.Text(inp_frame, bg=P["entry_bg"], fg=P["entry_fg"], insertbackground=P["fg"],
-            font=("Segoe UI",11), height=3, relief="flat", padx=8, pady=6, wrap="word")
-        self.inp.grid(row=0, column=0, sticky="ew", padx=(0,8))
-        self.inp.bind("<Return>", self._on_enter)
-        right = tk.Frame(inp_frame, bg=P["bg"]); right.grid(row=0, column=1, sticky="ns")
-        AccentButton(right, text="Send ↵", command=self._send).pack(fill="x", pady=(0,4))
-        StyledButton(right, text="/web",   command=lambda: self._quick("/web ")).pack(fill="x",pady=2)
-        StyledButton(right, text="/agent", command=lambda: self._quick("/agent ")).pack(fill="x",pady=2)
-        tk.Label(self, text="Enter=send  Shift+Enter=newline  /web /agent /model /clear /help /quit",
-            bg=P["bg"], fg=P["dim"], font=("Segoe UI",8)).pack(pady=(0,4))
-        self._add("sys","Welcome to AI CLI v2.9.0 — GUI+ v3  (type /help for commands)")
-        threading.Thread(target=self._load_model, daemon=True).start()
-    def _add(self, role, text):
-        self.chat.config(state="normal")
-        prefix = {"user":"You: ","ai":"AI:  ","sys":"● ","err":"✗ ","dim":"  "}
-        self.chat.insert("end", prefix.get(role,""), role)
-        self.chat.insert("end", text+"\n", role)
-        self.chat.config(state="disabled"); self.chat.see("end")
-    def _clear(self):
-        self.chat.config(state="normal"); self.chat.delete("1.0","end"); self.chat.config(state="disabled")
-        self._add("sys","Chat cleared.")
-    def _save(self):
-        path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text","*.txt"),("All","*.*")])
-        if path:
-            with open(path,"w") as f: f.write(self.chat.get("1.0","end"))
-            messagebox.showinfo("Saved", f"Chat saved to {path}")
-    def _refresh_model(self):
-        def _go(): self.model_var.set(run_ai("config","model").strip() or "(active)")
-        threading.Thread(target=_go,daemon=True).start()
-    def _load_model(self):
-        self.model_var.set(run_ai("config","model").strip() or "(active)")
-    def _quick(self, prefix):
-        self.inp.delete("1.0","end"); self.inp.insert("end", prefix); self.inp.focus()
-    def _on_enter(self, event):
-        if not (event.state & 1): self._send(); return "break"
-    def _send(self):
-        text = self.inp.get("1.0","end").strip()
-        if not text: return
-        self.inp.delete("1.0","end")
-        if text.startswith("/help"):
-            self._add("sys","Commands: /clear /web <q> /agent <task> /model <n> /quit"); return
-        if text.startswith("/clear"):  self._clear(); return
-        if text.startswith("/quit"):   self.winfo_toplevel().quit(); return
-        if text.startswith("/model "): m=text[7:].strip(); threading.Thread(target=lambda:run_ai("model",m),daemon=True).start(); self._add("sys",f"Model → {m}"); return
-        self._add("user", text); self._add("dim","  …thinking…")
-        def _worker():
-            if text.startswith("/web "):   out=run_ai("websearch", text[5:].strip(), timeout=60)
-            elif text.startswith("/agent "): out=run_ai("agent", text[7:].strip(), timeout=120)
-            else:                             out=run_ai("ask", text, timeout=120)
-            self.chat.config(state="normal")
-            idx=self.chat.search("  …thinking…","1.0","end")
-            if idx: self.chat.delete(idx, f"{idx} lineend+1c")
-            self.chat.config(state="disabled"); self._add("ai", out or "(no response)")
-        threading.Thread(target=_worker, daemon=True).start()
+        self.chat = scrolledtext.ScrolledText(self, wrap=tk.WORD, bg=P["panel"],
+            fg=P["fg"], insertbackground=P["fg"], font=("Consolas",11),
+            relief=tk.FLAT, borderwidth=0)
+        self.chat.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5,0))
+        self.chat.insert(tk.END, "Welcome to AI CLI v2.9.5 — GUI+ v3\nType a message and press Enter or click Send.\n\n")
+        self.chat.config(state=tk.DISABLED)
+        # Input frame
+        inp = tk.Frame(self, bg=P["bg"])
+        inp.pack(fill=tk.X, padx=5, pady=5)
+        self.entry = tk.Entry(inp, bg=P["entry_bg"], fg=P["entry_fg"],
+            insertbackground=P["fg"], font=("Consolas",11), relief=tk.FLAT)
+        self.entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4)
+        self.entry.bind("<Return>", self.send)
+        self.web_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(inp, text="Web", variable=self.web_var, bg=P["bg"],
+            fg=P["accent"], selectcolor=P["panel"], activebackground=P["bg"]).pack(side=tk.LEFT, padx=2)
+        self.mem_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(inp, text="Mem", variable=self.mem_var, bg=P["bg"],
+            fg=P["accent2"], selectcolor=P["panel"], activebackground=P["bg"]).pack(side=tk.LEFT, padx=2)
+        tk.Button(inp, text="Send", command=self.send, bg=P["btn"],
+            fg=P["btn_fg"], relief=tk.FLAT, padx=10).pack(side=tk.RIGHT)
+
+    def append(self, role, text):
+        self.chat.config(state=tk.NORMAL)
+        color = P["chat_user"] if role == "user" else P["chat_ai"]
+        self.chat.insert(tk.END, f"\n{role.upper()}: ", "role")
+        self.chat.insert(tk.END, f"{text}\n")
+        self.chat.tag_config("role", foreground=color, font=("Consolas",11,"bold"))
+        self.chat.see(tk.END)
+        self.chat.config(state=tk.DISABLED)
+
+    def send(self, event=None):
+        msg = self.entry.get().strip()
+        if not msg: return
+        self.entry.delete(0, tk.END)
+        self.append("user", msg)
+        cmd = "ask-web" if self.web_var.get() else "ask"
+        mem = " -mem" if self.mem_var.get() else ""
+        def _run():
+            result = run_ai(f'{cmd}{mem} "{msg}"')
+            self.after(0, lambda: self.append("ai", result))
+        threading.Thread(target=_run, daemon=True).start()
 
 class ModelsTab(tk.Frame):
     def __init__(self, parent):
-        super().__init__(parent, bg=P["bg"]); self._build()
-    def _build(self):
-        tk.Label(self, text="Models & Downloads", bg=P["bg"], fg=P["accent"], font=("Segoe UI",14,"bold")).pack(pady=(12,6))
-        btn_row = tk.Frame(self, bg=P["bg"]); btn_row.pack(fill="x", padx=12)
-        for label,cmd in [("List Models",["models"]),("Recommended",["recommended"]),("Status",["status"])]:
-            StyledButton(btn_row, text=label, command=lambda c=cmd: self._run(*c)).pack(side="left",padx=4,pady=4)
-        dl_row = tk.Frame(self, bg=P["bg"]); dl_row.pack(fill="x", padx=12, pady=4)
-        tk.Label(dl_row, text="HF model ID:", bg=P["bg"], fg=P["fg"], font=("Segoe UI",10)).pack(side="left")
-        self.hf_var = tk.StringVar()
-        tk.Entry(dl_row, textvariable=self.hf_var, bg=P["entry_bg"], fg=P["entry_fg"],
-            insertbackground=P["fg"], font=("Segoe UI",10), relief="flat", width=40).pack(side="left",padx=6)
-        AccentButton(dl_row, text="Download", command=self._download).pack(side="left")
-        self.out = scrolledtext.ScrolledText(self, bg=P["panel"], fg=P["fg"],
-            font=("Segoe UI",10), wrap="word", state="disabled", padx=8, pady=6, relief="flat")
-        self.out.pack(fill="both", expand=True, padx=8, pady=8)
-        self._run("models")
-    def _append(self, text):
-        self.out.config(state="normal"); self.out.insert("end", text+"\n")
-        self.out.config(state="disabled"); self.out.see("end")
-    def _run(self, *args):
-        self.out.config(state="normal"); self.out.delete("1.0","end"); self.out.config(state="disabled")
-        self._append(f"$ ai {' '.join(args)}\n")
-        threading.Thread(target=lambda: self._append(run_ai(*args,timeout=30)), daemon=True).start()
-    def _download(self):
-        hfid=self.hf_var.get().strip()
-        if not hfid: messagebox.showwarning("Input","Enter a HuggingFace model ID"); return
-        self._run("download", hfid)
+        super().__init__(parent, bg=P["bg"])
+        btn_frame = tk.Frame(self, bg=P["bg"])
+        btn_frame.pack(fill=tk.X, padx=5, pady=5)
+        tk.Button(btn_frame, text="Refresh", command=self.refresh,
+            bg=P["btn"], fg=P["btn_fg"], relief=tk.FLAT).pack(side=tk.LEFT)
+        tk.Button(btn_frame, text="Browse 195", command=self.browse,
+            bg=P["btn"], fg=P["btn_fg"], relief=tk.FLAT).pack(side=tk.LEFT, padx=5)
+        self.text = scrolledtext.ScrolledText(self, wrap=tk.WORD, bg=P["panel"],
+            fg=P["fg"], font=("Consolas",10), relief=tk.FLAT)
+        self.text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.refresh()
+
+    def refresh(self):
+        def _r():
+            out = run_ai("models")
+            self.after(0, lambda: self._set(out))
+        threading.Thread(target=_r, daemon=True).start()
+
+    def browse(self):
+        def _r():
+            out = run_ai("recommended")
+            self.after(0, lambda: self._set(out))
+        threading.Thread(target=_r, daemon=True).start()
+
+    def _set(self, text):
+        self.text.delete("1.0", tk.END)
+        self.text.insert(tk.END, text)
 
 class SettingsTab(tk.Frame):
-    EDITABLE = [("model","Active model",""),("api_key","API key",""),
-                ("api_host","API host",""),("api_port","API port","8080"),
-                ("gui_theme","GUI theme","dark"),("system_prompt","System prompt",""),
-                ("agent_max_steps","Agent max steps","10"),("cpu_only_mode","CPU-only (0/1)","0")]
     def __init__(self, parent):
-        super().__init__(parent, bg=P["bg"]); self._build()
-    def _build(self):
-        tk.Label(self, text="Settings & Configuration", bg=P["bg"], fg=P["accent"], font=("Segoe UI",14,"bold")).pack(pady=(12,6))
-        frame = tk.Frame(self, bg=P["bg"]); frame.pack(fill="x", padx=24)
-        self.vars = {}
-        for i,(key,label,default) in enumerate(self.EDITABLE):
-            tk.Label(frame, text=label+":", bg=P["bg"], fg=P["fg"],
-                font=("Segoe UI",10), width=20, anchor="e").grid(row=i,column=0,pady=3,padx=(0,8))
-            v = tk.StringVar(value=default); self.vars[key] = v
-            tk.Entry(frame, textvariable=v, bg=P["entry_bg"], fg=P["entry_fg"],
-                insertbackground=P["fg"], font=("Segoe UI",10), relief="flat", width=36
-                ).grid(row=i,column=1,pady=3,sticky="w")
-            StyledButton(frame, text="Set", width=5,
-                command=lambda k=key,vv=v: threading.Thread(target=lambda:run_ai("config",k,vv.get()),daemon=True).start()
-                ).grid(row=i,column=2,pady=3,padx=6)
-        btn_row = tk.Frame(self, bg=P["bg"]); btn_row.pack(pady=12)
-        AccentButton(btn_row, text="Load All Settings", command=self._load_all).pack(side="left",padx=6)
-        StyledButton(btn_row, text="View Raw Config",   command=self._view_raw).pack(side="left",padx=6)
-        self.status = tk.Label(self, text="", bg=P["bg"], fg=P["accent2"], font=("Segoe UI",9))
-        self.status.pack(); self._load_all()
-    def _load_all(self):
-        def _go():
-            for key,_,_ in self.EDITABLE:
-                v=run_ai("config",key).strip()
-                if v and key in self.vars: self.vars[key].set(v)
-        threading.Thread(target=_go,daemon=True).start(); self.status.config(text="Settings loaded.")
-    def _view_raw(self):
-        out=run_ai("config"); win=tk.Toplevel(); win.title("Raw Config"); win.configure(bg=P["bg"])
-        t=scrolledtext.ScrolledText(win,bg=P["panel"],fg=P["fg"],font=("Segoe UI",10),width=70,height=30)
-        t.pack(padx=12,pady=12); t.insert("end",out); t.config(state="disabled")
+        super().__init__(parent, bg=P["bg"])
+        self.text = scrolledtext.ScrolledText(self, wrap=tk.WORD, bg=P["panel"],
+            fg=P["fg"], font=("Consolas",10), relief=tk.FLAT)
+        self.text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        btn = tk.Frame(self, bg=P["bg"])
+        btn.pack(fill=tk.X, padx=5, pady=5)
+        tk.Button(btn, text="Refresh", command=self.refresh,
+            bg=P["btn"], fg=P["btn_fg"], relief=tk.FLAT).pack(side=tk.LEFT)
+        tk.Button(btn, text="Health Check", command=self.health,
+            bg=P["btn"], fg=P["btn_fg"], relief=tk.FLAT).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn, text="System Info", command=self.sysinfo,
+            bg=P["btn"], fg=P["btn_fg"], relief=tk.FLAT).pack(side=tk.LEFT)
+        self.refresh()
 
-class ExtensionsTab(tk.Frame):
-    def __init__(self, parent):
-        super().__init__(parent, bg=P["bg"]); self._build()
-    def _build(self):
-        tk.Label(self, text="AI Extensions (.aipack)", bg=P["bg"], fg=P["accent"], font=("Segoe UI",14,"bold")).pack(pady=(12,6))
-        btn_row = tk.Frame(self, bg=P["bg"]); btn_row.pack(fill="x", padx=12)
-        for label,cmd in [("List","extension locate"),("Create","extension create")]:
-            StyledButton(btn_row, text=label, command=lambda c=cmd: self._run(*c.split())).pack(side="left",padx=4,pady=4)
-        lf = tk.Frame(self, bg=P["panel"], relief="flat"); lf.pack(fill="both",expand=True,padx=12,pady=8)
-        self.listbox = tk.Listbox(lf, bg=P["panel"], fg=P["fg"], selectbackground=P["sel"],
-            selectforeground=P["sel_fg"], font=("Segoe UI",10), relief="flat", borderwidth=0, activestyle="none")
-        self.listbox.pack(side="left", fill="both", expand=True, padx=4, pady=4)
-        sb=ttk.Scrollbar(lf, command=self.listbox.yview); sb.pack(side="right",fill="y")
-        self.listbox.config(yscrollcommand=sb.set)
-        act_row = tk.Frame(self, bg=P["bg"]); act_row.pack(pady=6)
-        AccentButton(act_row, text="▶ Run Selected", command=self._run_selected).pack(side="left",padx=6)
-        StyledButton(act_row, text="Edit Selected",  command=self._edit_selected).pack(side="left",padx=6)
-        self._refresh()
-    def _refresh(self):
-        self.listbox.delete(0,"end")
-        ext_dir=os.path.join(CFG_DIR,"extensions")
-        if os.path.isdir(ext_dir):
-            for d in sorted(os.listdir(ext_dir)):
-                if os.path.isdir(os.path.join(ext_dir,d)):
-                    self.listbox.insert("end",f"  ●  {d}")
-    def _sel(self):
-        s=self.listbox.curselection()
-        if not s: messagebox.showinfo("Select","Select an extension first"); return None
-        return self.listbox.get(s[0]).strip().split()[-1]
-    def _run(self, *args):
-        out=run_ai(*args); win=tk.Toplevel(); win.title(f"ai {' '.join(args)}"); win.configure(bg=P["bg"])
-        t=scrolledtext.ScrolledText(win,bg=P["panel"],fg=P["fg"],font=("Segoe UI",10),width=70,height=20)
-        t.pack(padx=12,pady=12); t.insert("end",out); t.config(state="disabled"); self._refresh()
-    def _run_selected(self):
-        n=self._sel()
-        if n: self._run("extension","run",n)
-    def _edit_selected(self):
-        n=self._sel()
-        if n: threading.Thread(target=lambda:run_ai("extension","edit",n),daemon=True).start()
+    def refresh(self):
+        def _r():
+            out = run_ai("status")
+            self.after(0, lambda: self._set(out))
+        threading.Thread(target=_r, daemon=True).start()
 
-class StatusTab(tk.Frame):
-    def __init__(self, parent):
-        super().__init__(parent, bg=P["bg"]); self._build()
-    def _build(self):
-        tk.Label(self, text="System Status", bg=P["bg"], fg=P["accent"], font=("Segoe UI",14,"bold")).pack(pady=(12,6))
-        btn_row = tk.Frame(self, bg=P["bg"]); btn_row.pack(fill="x", padx=12)
-        for label,args in [("Refresh",["status"]),("Benchmark",["bench"]),("Error Codes",["error-codes"]),("Check Update",["--check-only"])]:
-            StyledButton(btn_row, text=label, command=lambda a=args: self._run(*a)).pack(side="left",padx=4,pady=4)
-        self.out = scrolledtext.ScrolledText(self, bg=P["panel"], fg=P["fg"],
-            font=("Segoe UI",10), wrap="word", state="disabled", padx=8, pady=6, relief="flat")
-        self.out.pack(fill="both", expand=True, padx=8, pady=8)
-        self._run("status")
-    def _run(self, *args):
-        self.out.config(state="normal"); self.out.delete("1.0","end")
-        self.out.insert("end",f"$ ai {' '.join(args)}\n"); self.out.config(state="disabled")
-        def _go():
-            result=run_ai(*args,timeout=30); self.out.config(state="normal")
-            self.out.insert("end",result+"\n"); self.out.config(state="disabled"); self.out.see("end")
-        threading.Thread(target=_go,daemon=True).start()
+    def health(self):
+        def _r():
+            out = run_ai("health")
+            self.after(0, lambda: self._set(out))
+        threading.Thread(target=_r, daemon=True).start()
 
-class NodeTab(tk.Frame):
+    def sysinfo(self):
+        def _r():
+            out = run_ai("sysinfo")
+            self.after(0, lambda: self._set(out))
+        threading.Thread(target=_r, daemon=True).start()
+
+    def _set(self, text):
+        self.text.delete("1.0", tk.END)
+        self.text.insert(tk.END, text)
+
+class ToolsTab(tk.Frame):
     def __init__(self, parent):
-        super().__init__(parent, bg=P["bg"]); self._build()
-    def _build(self):
-        tk.Label(self, text="AI Node Editor", bg=P["bg"], fg=P["accent"], font=("Segoe UI",20,"bold")).pack(pady=(40,8))
-        tk.Label(self, text="Build custom LLM pipelines with 125+ visual nodes",
-            bg=P["bg"], fg=P["fg"], font=("Segoe UI",12)).pack()
-        tk.Label(self, text="Connect nodes with your mouse · Save/load pipelines · One-click execution",
-            bg=P["bg"], fg=P["dim"], font=("Segoe UI",10)).pack(pady=(4,24))
-        AccentButton(self, text="  Open Node Editor  ", font=("Segoe UI",13,"bold"), padx=24, pady=12,
-            command=lambda: subprocess.Popen([CLI,"node","new"])).pack(pady=8)
-        row=tk.Frame(self,bg=P["bg"]); row.pack(pady=12)
-        StyledButton(row, text="Load Pipeline", command=lambda:subprocess.Popen([CLI,"node","load"])).pack(side="left",padx=8)
-        StyledButton(row, text="Node Config",   command=lambda:subprocess.Popen([CLI,"node","config"])).pack(side="left",padx=8)
+        super().__init__(parent, bg=P["bg"])
+        self.tools = [
+            ("Speed Test", "test -S"), ("Network Test", "test -N"),
+            ("Perf Benchmark", "perf"), ("Security Audit", "security"),
+            ("Cleanup", "cleanup --dry-run"), ("Analytics", "analytics"),
+            ("Changelog", "change latest"), ("Memory", "memory list"),
+            ("Snapshots", "snap list"), ("Templates", "template list"),
+            ("Plugins", "plugin list"), ("Presets", "preset list"),
+        ]
+        btn_frame = tk.Frame(self, bg=P["bg"])
+        btn_frame.pack(fill=tk.X, padx=5, pady=5)
+        for i, (label, cmd) in enumerate(self.tools):
+            b = tk.Button(btn_frame, text=label, command=lambda c=cmd: self.run_tool(c),
+                bg=P["btn"], fg=P["btn_fg"], relief=tk.FLAT, padx=6, pady=2)
+            b.grid(row=i//4, column=i%4, padx=2, pady=2, sticky="ew")
+        for c in range(4):
+            btn_frame.columnconfigure(c, weight=1)
+        self.text = scrolledtext.ScrolledText(self, wrap=tk.WORD, bg=P["panel"],
+            fg=P["fg"], font=("Consolas",10), relief=tk.FLAT)
+        self.text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+    def run_tool(self, cmd):
+        self.text.delete("1.0", tk.END)
+        self.text.insert(tk.END, f"Running: ai {cmd}...\n")
+        def _r():
+            out = run_ai(cmd)
+            self.after(0, lambda: self._append(out))
+        threading.Thread(target=_r, daemon=True).start()
+
+    def _append(self, text):
+        self.text.insert(tk.END, text + "\n")
+        self.text.see(tk.END)
+
+class WriteTab(tk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, bg=P["bg"])
+        top = tk.Frame(self, bg=P["bg"])
+        top.pack(fill=tk.X, padx=5, pady=5)
+        tk.Label(top, text="Mode:", bg=P["bg"], fg=P["fg"]).pack(side=tk.LEFT)
+        self.mode = ttk.Combobox(top, values=["blog","email","readme","docs","story","poem","resume"], width=10)
+        self.mode.set("blog")
+        self.mode.pack(side=tk.LEFT, padx=5)
+        tk.Label(top, text="Topic:", bg=P["bg"], fg=P["fg"]).pack(side=tk.LEFT)
+        self.topic = tk.Entry(top, bg=P["entry_bg"], fg=P["entry_fg"], relief=tk.FLAT, width=40)
+        self.topic.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        tk.Button(top, text="Generate", command=self.generate,
+            bg=P["accent"], fg="#ffffff", relief=tk.FLAT, padx=10).pack(side=tk.RIGHT)
+        self.text = scrolledtext.ScrolledText(self, wrap=tk.WORD, bg=P["panel"],
+            fg=P["fg"], font=("Consolas",11), relief=tk.FLAT)
+        self.text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+    def generate(self):
+        m = self.mode.get()
+        t = self.topic.get().strip()
+        if not t: return
+        self.text.delete("1.0", tk.END)
+        self.text.insert(tk.END, f"Generating {m}: {t}...\n")
+        def _r():
+            out = run_ai(f'write {m} "{t}"')
+            self.after(0, lambda: self._set(out))
+        threading.Thread(target=_r, daemon=True).start()
+
+    def _set(self, text):
+        self.text.delete("1.0", tk.END)
+        self.text.insert(tk.END, text)
+
+class RAGTab(tk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, bg=P["bg"])
+        top = tk.Frame(self, bg=P["bg"])
+        top.pack(fill=tk.X, padx=5, pady=5)
+        tk.Button(top, text="List KBs", command=self.list_kb,
+            bg=P["btn"], fg=P["btn_fg"], relief=tk.FLAT).pack(side=tk.LEFT)
+        tk.Button(top, text="Create KB", command=self.create_kb,
+            bg=P["btn"], fg=P["btn_fg"], relief=tk.FLAT).pack(side=tk.LEFT, padx=5)
+        tk.Label(top, text="Query:", bg=P["bg"], fg=P["fg"]).pack(side=tk.LEFT, padx=(10,2))
+        self.kb_name = tk.Entry(top, bg=P["entry_bg"], fg=P["entry_fg"], relief=tk.FLAT, width=12)
+        self.kb_name.pack(side=tk.LEFT, padx=2)
+        self.query = tk.Entry(top, bg=P["entry_bg"], fg=P["entry_fg"], relief=tk.FLAT, width=30)
+        self.query.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        self.query.bind("<Return>", lambda e: self.do_query())
+        tk.Button(top, text="Ask", command=self.do_query,
+            bg=P["accent"], fg="#ffffff", relief=tk.FLAT).pack(side=tk.RIGHT)
+        self.text = scrolledtext.ScrolledText(self, wrap=tk.WORD, bg=P["panel"],
+            fg=P["fg"], font=("Consolas",10), relief=tk.FLAT)
+        self.text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+    def list_kb(self):
+        def _r():
+            out = run_ai("rag list")
+            self.after(0, lambda: self._set(out))
+        threading.Thread(target=_r, daemon=True).start()
+
+    def create_kb(self):
+        name = simpledialog.askstring("Create KB", "Knowledge base name:")
+        if not name: return
+        d = filedialog.askdirectory(title="Select documents directory")
+        if not d: return
+        def _r():
+            out = run_ai(f'rag create "{name}" "{d}"')
+            self.after(0, lambda: self._set(out))
+        threading.Thread(target=_r, daemon=True).start()
+
+    def do_query(self):
+        kb = self.kb_name.get().strip()
+        q = self.query.get().strip()
+        if not kb or not q: return
+        def _r():
+            out = run_ai(f'rag query "{kb}" "{q}"')
+            self.after(0, lambda: self._set(out))
+        threading.Thread(target=_r, daemon=True).start()
+
+    def _set(self, text):
+        self.text.delete("1.0", tk.END)
+        self.text.insert(tk.END, text)
+
+class CanvasTab(tk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, bg=P["bg"])
+        top = tk.Frame(self, bg=P["bg"])
+        top.pack(fill=tk.X, padx=5, pady=5)
+        tk.Button(top, text="New Workspace", command=self.new_ws,
+            bg=P["btn"], fg=P["btn_fg"], relief=tk.FLAT).pack(side=tk.LEFT)
+        tk.Button(top, text="Open in TUI", command=self.open_tui,
+            bg=P["btn"], fg=P["btn_fg"], relief=tk.FLAT).pack(side=tk.LEFT, padx=5)
+        tk.Button(top, text="List", command=self.list_ws,
+            bg=P["btn"], fg=P["btn_fg"], relief=tk.FLAT).pack(side=tk.LEFT)
+        self.text = scrolledtext.ScrolledText(self, wrap=tk.WORD, bg=P["panel"],
+            fg=P["fg"], font=("Consolas",10), relief=tk.FLAT)
+        self.text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.list_ws()
+
+    def new_ws(self):
+        name = simpledialog.askstring("New Workspace", "Workspace name:")
+        if name:
+            out = run_ai(f'canvas-v2 new "{name}"')
+            self._set(out)
+
+    def open_tui(self):
+        name = simpledialog.askstring("Open Workspace", "Workspace name:")
+        if name:
+            subprocess.Popen([CLI, "canvas-v2", "open", name])
+
+    def list_ws(self):
+        def _r():
+            out = run_ai("canvas-v2 open")
+            self.after(0, lambda: self._set(out))
+        threading.Thread(target=_r, daemon=True).start()
+
+    def _set(self, text):
+        self.text.delete("1.0", tk.END)
+        self.text.insert(tk.END, text)
 
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("AI CLI v2.9.0 — GUI+ v3")
+        self.title(f"AI CLI v2.9.5 — GUI+ v3 [{THEME}]")
+        self.geometry("1100x700")
         self.configure(bg=P["bg"])
-        self.geometry("1280x820"); self.minsize(900,600)
-        self._setup_style(); self._build_menu(); self._build_tabs(); self._build_statusbar()
-        self.protocol("WM_DELETE_WINDOW", self.quit)
-        threading.Thread(target=self._bg_status, daemon=True).start()
-    def _setup_style(self):
-        s=ttk.Style(self); s.theme_use("clam")
-        s.configure("TNotebook",    background=P["sidebar"], borderwidth=0)
-        s.configure("TNotebook.Tab",background=P["tab_bg"], foreground=P["dim"], padding=[14,6], font=("Segoe UI",10))
-        s.map("TNotebook.Tab", background=[("selected",P["accent"])], foreground=[("selected",P["bg"])])
-        s.configure("TScrollbar", background=P["panel"], troughcolor=P["bg"], arrowcolor=P["dim"])
-    def _build_menu(self):
-        mb=tk.Menu(self,bg=P["panel"],fg=P["fg"],activebackground=P["sel"],activeforeground=P["sel_fg"],relief="flat")
-        fm=tk.Menu(mb,tearoff=0,bg=P["panel"],fg=P["fg"])
-        fm.add_command(label="New Chat Session",command=lambda:subprocess.Popen([CLI,"chat"]))
-        fm.add_command(label="Open Node Editor",command=lambda:subprocess.Popen([CLI,"node","new"]))
-        fm.add_separator()
-        fm.add_command(label="Quit",command=self.quit)
-        mb.add_cascade(label="File",menu=fm)
-        hm=tk.Menu(mb,tearoff=0,bg=P["panel"],fg=P["fg"])
-        hm.add_command(label="Help (ai help)",command=lambda:self._show("help","help"))
-        hm.add_command(label="About",         command=self._about)
-        mb.add_cascade(label="Help",menu=hm); self.config(menu=mb)
-    def _show(self, title, *args):
-        win=tk.Toplevel(self); win.title(title); win.configure(bg=P["bg"])
-        t=scrolledtext.ScrolledText(win,bg=P["panel"],fg=P["fg"],font=("Segoe UI",10),width=80,height=30)
-        t.pack(padx=12,pady=12,fill="both",expand=True); t.insert("end","Loading…\n"); t.config(state="disabled")
-        def _go():
-            out=run_ai(*args,timeout=60); t.config(state="normal"); t.delete("1.0","end")
-            t.insert("end",out); t.config(state="disabled")
-        threading.Thread(target=_go,daemon=True).start()
-    def _build_tabs(self):
-        nb=ttk.Notebook(self); nb.pack(fill="both",expand=True)
-        for label,Cls in [("💬 Chat",ChatTab),("📦 Models",ModelsTab),("⚙ Settings",SettingsTab),
-                          ("🧩 Nodes",NodeTab),("🔌 Extensions",ExtensionsTab),("📊 Status",StatusTab)]:
-            frame=Cls(nb); nb.add(frame,text=f"  {label}  ")
-    def _build_statusbar(self):
-        self.status_var=tk.StringVar(value="AI CLI v2.9.0 — GUI+ v3 ready")
-        tk.Label(self,textvariable=self.status_var,bg=P["panel"],fg=P["dim"],
-            font=("Segoe UI",8),anchor="w",padx=8,pady=3).pack(fill="x",side="bottom")
-    def _bg_status(self):
-        out=run_ai("status",timeout=10); short=(out.splitlines()[0][:80] if out else "")
-        self.status_var.set(f"AI CLI v2.7.4 — {short}")
-    def _about(self):
-        messagebox.showinfo("About GUI+ v3",
-            "AI CLI v2.9.0 — GUI+ v3\n\n2.1× advanced tkinter GUI\n"
-            "Tabs: Chat · Models · Settings · Nodes · Extensions · Status\n\n"
-            "New in v2.7.4:\n  • GUI+ v3 (tkinter)\n  • AI Node Editor (125+ nodes)\n"
-            "  • Detailed help: ai -h <command>\n\nRun 'ai help' for full reference.")
+        self.minsize(800, 500)
+        # Notebook (tabs)
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("TNotebook", background=P["bg"], borderwidth=0)
+        style.configure("TNotebook.Tab", background=P["btn"], foreground=P["btn_fg"],
+            padding=[12,4], font=("Consolas",10))
+        style.map("TNotebook.Tab", background=[("selected",P["accent"])],
+            foreground=[("selected","#ffffff")])
+        nb = ttk.Notebook(self)
+        nb.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        nb.add(ChatTab(nb), text=" Chat ")
+        nb.add(ModelsTab(nb), text=" Models ")
+        nb.add(WriteTab(nb), text=" Write ")
+        nb.add(RAGTab(nb), text=" RAG ")
+        nb.add(CanvasTab(nb), text=" Canvas ")
+        nb.add(ToolsTab(nb), text=" Tools ")
+        nb.add(SettingsTab(nb), text=" Status ")
+        # Status bar
+        self.status_var = tk.StringVar(value=f"AI CLI v2.9.5 — GUI+ v3 ready")
+        tk.Label(self, textvariable=self.status_var, bg=P["border"], fg=P["dim"],
+            font=("Consolas",9), anchor="w").pack(fill=tk.X, side=tk.BOTTOM)
+        # Menu bar
+        menu = tk.Menu(self, bg=P["bg"], fg=P["fg"])
+        self.config(menu=menu)
+        file_menu = tk.Menu(menu, tearoff=0, bg=P["bg"], fg=P["fg"])
+        file_menu.add_command(label="Quit", command=self.quit, accelerator="Ctrl+Q")
+        menu.add_cascade(label="File", menu=file_menu)
+        help_menu = tk.Menu(menu, tearoff=0, bg=P["bg"], fg=P["fg"])
+        help_menu.add_command(label="About", command=self.about)
+        menu.add_cascade(label="Help", menu=help_menu)
+        self.bind("<Control-q>", lambda e: self.quit())
 
-App().mainloop()
+    def about(self):
+        messagebox.showinfo("About", f"AI CLI v2.9.5 — GUI+ v3\n\nTabbed tkinter interface\n"
+            f"Theme: {THEME}\n\nTabs: Chat · Models · Write · RAG · Canvas · Tools · Status")
+
+if __name__ == "__main__":
+    app = App()
+    app.mainloop()
 GUIPLUSEOF
   info "Launching GUI+ v3 (tkinter, 2.1× size)…"
   "$PYTHON" "$script" "$cli_bin" "$theme" "$cfg_dir"
@@ -14146,14 +14164,75 @@ cat << 'HELPEOF'
     ai websearch "Python async await" 10
 HELPEOF
     ;;
+    ask-web|askweb|aw) echo "  ai ask-web \"question\"   Ask with web search context"; echo "  ai aw \"question\"        Short alias"; echo "  ai ask-web -mem \"q\"     Include memory context too" ;;
+    snap|snapshot) cmd_snap 2>/dev/null ;;
+    perf|benchmark) echo "  ai perf [--tokens N] [--runs N]   Benchmark model speed" ;;
+    compare) echo "  ai compare \"prompt\" [--models a,b,c]   Side-by-side model comparison" ;;
+    template|tpl) cmd_template 2>/dev/null ;;
+    rag) cmd_rag 2>/dev/null ;;
+    batch) cmd_batch 2>/dev/null ;;
+    health|check) echo "  ai health   Full system diagnostics (GPU, Python, disk, API keys)" ;;
+    branch) cmd_branch 2>/dev/null ;;
+    export) echo "  ai export [all|chat|config|models] [--format json|md|csv]" ;;
+    import) echo "  ai import <directory|file>   Import conversations or config" ;;
+    cleanup|clean) echo "  ai cleanup [--dry-run]   Free disk space" ;;
+    preset) cmd_preset 2>/dev/null ;;
+    plugin|plugins) cmd_plugin 2>/dev/null ;;
+    test) echo "  ai test -S   Model speed test"; echo "  ai test -N   Network test (download/upload/latency)"; echo "  ai test -A   All tests" ;;
+    change|changelog) echo "  ai change    Show full changelog"; echo "  ai -L        Show latest changes" ;;
+    memory|mem) cmd_memory 2>/dev/null ;;
+    write) cmd_write 2>/dev/null ;;
+    notebook|nb) cmd_notebook 2>/dev/null ;;
+    plan|tasks) cmd_plan 2>/dev/null ;;
+    learn|tutor) echo "  ai learn \"topic\"   Interactive AI tutor (n=next q=quiz e=example)" ;;
+    quiz) echo "  ai quiz \"topic\" [--count N]   AI-generated quiz" ;;
+    shell|sh) cmd_shell 2>/dev/null ;;
+    json) cmd_json 2>/dev/null ;;
+    sql) cmd_sql 2>/dev/null ;;
+    docker|dk) cmd_docker 2>/dev/null ;;
+    regex|rx) cmd_regex 2>/dev/null ;;
+    diff) echo "  ai diff <file1> <file2> [--explain]   Compare files with AI explanation" ;;
+    patch) echo "  ai patch <file> \"instructions\"   AI-modify a file" ;;
+    git) cmd_git_ai 2>/dev/null ;;
+    schedule|sched) cmd_schedule 2>/dev/null ;;
+    replay) echo "  ai replay <session> [--model backend]   Replay conversation through different model" ;;
+    fav|favorite) cmd_favorite 2>/dev/null ;;
+    profile|profiles) cmd_profile 2>/dev/null ;;
+    watch) echo "  ai watch <file> [summarize|review|lint] [interval]   Auto-process on file change" ;;
+    context|ctx) cmd_context 2>/dev/null ;;
+    chain) echo "  ai chain <file>   Run prompt chain (one per line, {{prev}} = last output)" ;;
+    tokens|count-tokens) echo "  ai tokens \"text\"   Estimate token count"; echo "  ai tokens <file>   Count tokens in file" ;;
+    cost) echo "  ai cost [in_tokens] [out_tokens] [model]   Estimate API cost" ;;
+    analytics|usage) echo "  ai analytics [summary|today|clear]   Usage stats" ;;
+    security|sec-audit) echo "  ai security   Check API key exposure and security posture" ;;
+    sysinfo|system-info) echo "  ai sysinfo   Detailed system info dump" ;;
+    interview) echo "  ai interview \"role\"   Practice technical interviews with AI feedback" ;;
+    text|txt) cmd_text 2>/dev/null ;;
+    net|network) cmd_net 2>/dev/null ;;
+    date|dt) cmd_date_tools 2>/dev/null ;;
+    cron) cmd_cron 2>/dev/null ;;
+    math|calc) echo "  ai math \"expression\"   Solve math (uses bc, falls back to AI)" ;;
+    units) echo "  ai units <value> <from> to <to>   Unit conversion" ;;
+    clip|clipboard) cmd_clipboard 2>/dev/null ;;
+    -Su) echo "  ai -Su   Update ai-cli from GitHub" ;;
+    -L) echo "  ai -L    Show latest version changes" ;;
     *)
+      # Try v2.9 help
+      if _help_v29 "$cmd" 2>/dev/null; then return 0; fi
       warn "No detailed help for '$cmd'"
       echo ""
-      echo "Available detailed help topics:"
-      echo "  ask · chat · gui · gui+ · node · imagine · model · status"
-      echo "  extension · config · agent · alias · rlhf · api · websearch"
+      echo "  All commands with help:"
+      echo "    ask ask-web chat gui gui+ node imagine model status"
+      echo "    extension config agent alias rlhf api websearch"
+      echo "    snap perf compare template rag batch health branch"
+      echo "    export import cleanup preset plugin test change"
+      echo "    memory write notebook plan learn quiz shell json"
+      echo "    sql docker regex diff patch git schedule replay"
+      echo "    fav profile watch context chain tokens cost"
+      echo "    analytics security sysinfo interview text net"
+      echo "    date cron math units clip -Su -L"
       echo ""
-      echo "Run 'ai help' for the full command list."
+      echo "  Run: ai help   for full command list"
     ;;
   esac
 }
@@ -14182,38 +14261,68 @@ main() {
 
     # ── Asking ───────────────────────────────────────────────────────────────
     ask|a)
-      local _ask_web=0 _ask_no_stream=0 _ask_args=()
+      local _ask_mem=0 _ask_args=()
       while [[ $# -gt 0 ]]; do
         case "$1" in
-          -W|--web)       _ask_web=1; shift ;;
-          --no-stream)    _ask_no_stream=1; shift ;;
-          -m|--model)     ACTIVE_BACKEND="$2"; shift 2 ;;
-          *)              _ask_args+=("$1"); shift ;;
+          -mem|--mem|--memory) _ask_mem=1; shift ;;
+          *) _ask_args+=("$1"); shift ;;
         esac
       done
       local _ask_prompt="${_ask_args[*]}"
       if [[ -z "$_ask_prompt" ]]; then
         if [[ -t 0 ]]; then
           read -rp "$(echo -e "${BCYAN}Ask: ${R}")" _ask_prompt
-          [[ -z "$_ask_prompt" ]] && { err "Usage: ai ask [-W] \"question\""; return 1; }
+          [[ -z "$_ask_prompt" ]] && { err "Usage: ai ask \"question\""; return 1; }
         else
           _ask_prompt=$(cat)
         fi
       fi
-      if [[ $_ask_web -eq 1 ]]; then
-        info "Searching the web..."
-        local _web_results
-        _web_results=$(web_search "$_ask_prompt" 5 2>/dev/null || cmd_websearch "$_ask_prompt" 2>/dev/null || echo "")
-        if [[ -n "$_web_results" ]]; then
-          _ask_prompt="Use these web search results to answer the question.
+      if [[ $_ask_mem -eq 1 ]]; then
+        local _mem_ctx
+        _mem_ctx=$(cmd_memory context 2>/dev/null || echo "")
+        [[ -n "$_mem_ctx" ]] && _ask_prompt="Known facts about the user:
+${_mem_ctx}
 
-Web results:
-${_web_results}
-
-Question: ${_ask_prompt}"
-        fi
+${_ask_prompt}"
       fi
       dispatch_ask "$_ask_prompt" ;;
+
+    ask-web|askweb|aw)
+      local _aw_mem=0 _aw_args=()
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          -mem|--mem|--memory) _aw_mem=1; shift ;;
+          *) _aw_args+=("$1"); shift ;;
+        esac
+      done
+      local _aw_prompt="${_aw_args[*]}"
+      if [[ -z "$_aw_prompt" ]]; then
+        read -rp "$(echo -e "${BCYAN}Ask (web): ${R}")" _aw_prompt
+        [[ -z "$_aw_prompt" ]] && { err "Usage: ai ask-web \"question\""; return 1; }
+      fi
+      info "Searching the web..."
+      local _aw_results
+      _aw_results=$(web_search "$_aw_prompt" 5 2>/dev/null || cmd_websearch "$_aw_prompt" 2>/dev/null || echo "")
+      local _aw_context=""
+      if [[ $_aw_mem -eq 1 ]]; then
+        _aw_context=$(cmd_memory context 2>/dev/null || echo "")
+      fi
+      if [[ -n "$_aw_results" ]]; then
+        _aw_prompt="Use these web search results to answer the question.
+
+Web results:
+${_aw_results}
+${_aw_context:+
+Known facts: ${_aw_context}}
+
+Question: ${_aw_prompt}"
+      else
+        warn "No web results found, answering without web context"
+        [[ -n "$_aw_context" ]] && _aw_prompt="Known facts: ${_aw_context}
+
+${_aw_prompt}"
+      fi
+      dispatch_ask "$_aw_prompt" ;;
     chat)       cmd_chat_interactive ;;
     code)
       local lang="" run=0 args=()
@@ -14384,6 +14493,7 @@ $(cat)" ;;
     cleanup|clean)    cmd_cleanup "$@" ;;
     preset)           cmd_preset "$@" ;;
     plugin|plugins)   cmd_plugin "$@" ;;
+    test)             cmd_test "$@" ;;
 
     # ── Misc ──────────────────────────────────────────────────────────────────
     version|-v|--version) echo "AI CLI v${VERSION}" ;;
@@ -14413,8 +14523,15 @@ $(cat)" ;;
         eval "main $_alias_cmd \"\$@\""
         return $?
       fi
-      # Unknown command — AI fallthrough
-      dispatch_ask "$cmd $*" ;;
+      # v2.9.5: No AI fallthrough — show error with suggestions
+      err "Unknown command: $cmd"
+      echo ""
+      echo "  Did you mean:"
+      echo "    ai ask \"$cmd $*\"        Send to AI"
+      echo "    ai ask-web \"$cmd $*\"    Send to AI with web search"
+      echo "    ai -h $cmd              Get help for a command"
+      echo "    ai help                 Show all commands"
+      ;;
   esac
 }
 
@@ -15774,6 +15891,23 @@ cmd_change() {
     latest|-L)
       hdr "AI CLI v${VERSION} — Latest Changes"
       echo ""
+      echo -e "  ${B}${BCYAN}v2.9.5${R}"
+      echo ""
+      echo -e "  ${B}Fixes:${R}"
+      echo "    + GPU: fixed stale cache + GPU_LAYERS=0 bug (GTX 1080)"
+      echo "    + Silenced all llama.cpp warnings and logs"
+      echo "    + Unknown commands no longer auto-pass to AI"
+      echo "    + Canvas v2 keybinds fully fixed"
+      echo "    + Removed duplicate functions (cmd_canvas x3, backends x2)"
+      echo ""
+      echo -e "  ${B}New:${R}"
+      echo "    + ai ask-web — ask with web search context"
+      echo "    + ai ask -mem — inject memory into prompt"
+      echo "    + ai test -S/-N/-A — speed/network/all tests"
+      echo "    + ai -h <any command> — detailed help for 60+ commands"
+      echo "    + GUI+ v3 rewrite (see below)"
+      echo ""
+
       echo -e "  ${B}${BCYAN}v2.9.0${R} — Major Release"
       echo ""
       echo -e "  ${B}New Backends:${R}"
@@ -19014,3 +19148,84 @@ $input"
 
 # AI CLI v2.9.0 — 19997 lines — minerofthesoal/ai-cli
 # End of file
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  TEST — v2.9.5
+#  ai test -S (speed) -A (all) -N (network)
+# ════════════════════════════════════════════════════════════════════════════════
+
+cmd_test() {
+  local mode="${1:--A}"
+  case "$mode" in
+    -S|--speed|speed)
+      hdr "Speed Test"
+      if [[ -z "$ACTIVE_MODEL" && -z "$ACTIVE_BACKEND" ]]; then
+        err "No model set. Run: ai recommended use <N>"
+        return 1
+      fi
+      info "Backend: ${ACTIVE_BACKEND:-auto} | Model: ${ACTIVE_MODEL:-auto}"
+      info "Generating 64 tokens..."
+      local start_ms=$(date +%s%3N 2>/dev/null || echo 0)
+      local out=$(_silent_generate "Count from 1 to 50" 64 2>/dev/null || echo "")
+      local end_ms=$(date +%s%3N 2>/dev/null || echo 0)
+      local elapsed=$(( end_ms - start_ms ))
+      local words=$(echo "$out" | wc -w)
+      if (( elapsed > 0 && words > 0 )); then
+        local tps=$(awk "BEGIN{printf \"%.1f\", $words / ($elapsed / 1000.0)}")
+        printf "  Result: ${GREEN}%s tok/s${R} (%d ms, %d tokens)\n" "$tps" "$elapsed" "$words"
+      else
+        err "Test failed — no output"
+      fi
+      ;;
+    -N|--network|network)
+      hdr "Network Test"
+      # Latency
+      info "Testing latency..."
+      local ping_ms
+      ping_ms=$(ping -c 3 8.8.8.8 2>/dev/null | tail -1 | awk -F'/' '{print $5}' || echo "?")
+      printf "  Latency:  %s ms (avg to 8.8.8.8)\n" "$ping_ms"
+      # Download speed
+      info "Testing download..."
+      local dl_start=$(date +%s%N 2>/dev/null || echo 0)
+      curl -fsSL "https://speed.cloudflare.com/__down?bytes=5000000" -o /dev/null 2>/dev/null
+      local dl_end=$(date +%s%N 2>/dev/null || echo 0)
+      local dl_ms=$(( (dl_end - dl_start) / 1000000 ))
+      if (( dl_ms > 0 )); then
+        local dl_mbps=$(awk "BEGIN{printf \"%.1f\", 5 * 8 / ($dl_ms / 1000.0)}")
+        printf "  Download: %s Mbps\n" "$dl_mbps"
+      fi
+      # Upload speed
+      info "Testing upload..."
+      local ul_data=$(head -c 1000000 /dev/urandom 2>/dev/null | base64 | head -c 500000)
+      local ul_start=$(date +%s%N 2>/dev/null || echo 0)
+      echo "$ul_data" | curl -fsSL -X POST -d @- "https://speed.cloudflare.com/__up" -o /dev/null 2>/dev/null || true
+      local ul_end=$(date +%s%N 2>/dev/null || echo 0)
+      local ul_ms=$(( (ul_end - ul_start) / 1000000 ))
+      if (( ul_ms > 0 )); then
+        local ul_mbps=$(awk "BEGIN{printf \"%.1f\", 0.5 * 8 / ($ul_ms / 1000.0)}")
+        printf "  Upload:   %s Mbps\n" "$ul_mbps"
+      fi
+      # API latency
+      info "Testing API latency..."
+      local api_start=$(date +%s%3N 2>/dev/null || echo 0)
+      curl -fsSL "https://api.github.com" -o /dev/null 2>/dev/null
+      local api_end=$(date +%s%3N 2>/dev/null || echo 0)
+      printf "  API RTT:  %d ms (github.com)\n" "$(( api_end - api_start ))"
+      ;;
+    -A|--all|all)
+      cmd_test -S
+      echo ""
+      cmd_test -N
+      echo ""
+      cmd_health 2>/dev/null || true
+      ;;
+    *)
+      echo "Usage: ai test <-S|-N|-A>"
+      echo ""
+      echo "  -S, --speed      Test model inference speed"
+      echo "  -N, --network    Test network (download/upload/latency)"
+      echo "  -A, --all        Run all tests (default)"
+      ;;
+  esac
+}
+
