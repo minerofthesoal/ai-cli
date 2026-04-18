@@ -16,6 +16,22 @@
 set -euo pipefail
 VERSION="2.9.6.5"
 
+# macOS ships bash 3.2 which lacks associative arrays (declare -A).
+# Require bash 4+ or auto-switch to Homebrew bash if available.
+if (( BASH_VERSINFO[0] < 4 )); then
+  for _newbash in /opt/homebrew/bin/bash /usr/local/bin/bash /run/current-system/sw/bin/bash; do
+    if [[ -x "$_newbash" ]] && "$_newbash" --version 2>/dev/null | grep -q 'version [4-9]'; then
+      exec "$_newbash" "$0" "$@"
+    fi
+  done
+  echo "AI CLI requires bash 4+. Your version: ${BASH_VERSION}"
+  echo ""
+  echo "  macOS fix:  brew install bash"
+  echo "  Then run:   /opt/homebrew/bin/bash $(command -v ai 2>/dev/null || echo ai) $*"
+  echo "  Or add to ~/.zshrc:  alias ai='/opt/homebrew/bin/bash /usr/local/bin/ai'"
+  exit 1
+fi
+
 # ════════════════════════════════════════════════════════════════════════════════
 #  ENVIRONMENT DETECTION
 # ════════════════════════════════════════════════════════════════════════════════
@@ -7566,7 +7582,8 @@ cmd_install_deps() {
         libopenssl-devel python3-tk 2>/dev/null || true
     elif command -v brew &>/dev/null; then
       info "Detected Homebrew (macOS)..."
-      brew install python3 cmake ffmpeg jq espeak libsndfile 2>/dev/null || true
+      brew install bash python3 cmake ffmpeg jq espeak libsndfile 2>/dev/null || true
+      info "Note: macOS needs Homebrew bash 4+. Run: brew install bash"
     elif command -v apk &>/dev/null; then
       info "Detected APK (Alpine/iSH)..."
       apk update 2>/dev/null || true
