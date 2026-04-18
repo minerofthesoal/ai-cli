@@ -4984,10 +4984,16 @@ THEMES = {
 }
 T = THEMES.get(THEME, THEMES["dark"])
 
+def strip_ansi(s):
+    import re
+    return re.sub(r'\x1b\[[0-9;]*m', '', s)
+
 def run_ai(cmd):
     try:
-        r = subprocess.run(f"{CLI} {cmd}", shell=True, capture_output=True, text=True, timeout=60)
-        return (r.stdout + r.stderr).strip()
+        env = os.environ.copy()
+        env["NO_COLOR"] = "1"
+        r = subprocess.run(f"{CLI} {cmd}", shell=True, capture_output=True, text=True, timeout=60, env=env)
+        return strip_ansi((r.stdout + r.stderr).strip())
     except Exception as e:
         return f"Error: {e}"
 
@@ -5290,10 +5296,16 @@ PALETTES = {
 }
 P = PALETTES.get(THEME, PALETTES["dark"])
 
+def strip_ansi(s):
+    import re
+    return re.sub(r'\x1b\[[0-9;]*m', '', s)
+
 def run_ai(cmd):
     try:
-        r = subprocess.run(f"{CLI} {cmd}", shell=True, capture_output=True, text=True, timeout=120)
-        return (r.stdout + r.stderr).strip()
+        env = os.environ.copy()
+        env["NO_COLOR"] = "1"
+        r = subprocess.run(f"{CLI} {cmd}", shell=True, capture_output=True, text=True, timeout=120, env=env)
+        return strip_ansi((r.stdout + r.stderr).strip())
     except subprocess.TimeoutExpired:
         return "Error: Command timed out"
     except Exception as e:
@@ -14301,14 +14313,18 @@ ${_ask_prompt}"
         [[ -z "$_aw_prompt" ]] && { err "Usage: ai ask-web \"question\""; return 1; }
       fi
       info "Searching the web..."
-      local _aw_results
-      _aw_results=$(web_search "$_aw_prompt" 5 2>/dev/null || cmd_websearch "$_aw_prompt" 2>/dev/null || echo "")
+      local _aw_results=""
+      # Try web_search first, then cmd_websearch
+      _aw_results=$(web_search "$_aw_prompt" 5 2>/dev/null) || true
+      if [[ -z "$_aw_results" ]]; then
+        _aw_results=$(cmd_websearch "$_aw_prompt" 2>/dev/null) || true
+      fi
       local _aw_context=""
       if [[ $_aw_mem -eq 1 ]]; then
-        _aw_context=$(cmd_memory context 2>/dev/null || echo "")
+        _aw_context=$(cmd_memory context 2>/dev/null) || true
       fi
       if [[ -n "$_aw_results" ]]; then
-        _aw_prompt="Use these web search results to answer the question.
+        _aw_prompt="Use these web search results to answer accurately.
 
 Web results:
 ${_aw_results}
@@ -14317,7 +14333,7 @@ Known facts: ${_aw_context}}
 
 Question: ${_aw_prompt}"
       else
-        warn "No web results found, answering without web context"
+        warn "Web search returned no results — answering without web context"
         [[ -n "$_aw_context" ]] && _aw_prompt="Known facts: ${_aw_context}
 
 ${_aw_prompt}"
@@ -16056,7 +16072,6 @@ cmd_system_update() {
 
 ####NEW_FEATURES_MARKER####
 
-main "$@"
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  CONVERSATION HISTORY SEARCH — v2.9.0
@@ -19229,3 +19244,5 @@ cmd_test() {
   esac
 }
 
+
+main "$@"
