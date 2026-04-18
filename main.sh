@@ -14,7 +14,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -euo pipefail
-VERSION="2.9.6.5"
+VERSION="2.9.6.6"
 
 # macOS ships bash 3.2 which lacks associative arrays (declare -A).
 # Require bash 4+ or auto-switch to Homebrew bash if available.
