@@ -805,10 +805,22 @@ MULTIAI_RLHF_TRAIN="${MULTIAI_RLHF_TRAIN:-0}"       # auto-train on rated exchan
 
 # v2.4: CPU-only mode (auto-set on Windows or when no GPU found)
 # v2.6: Fixed — sm_61 (Pascal GTX 10xx) and Metal correctly detected as GPU
+# v2.9.1: Stale cache fix — delete cache if GPU now exists but cache says 0
 CPU_ONLY_MODE="${CPU_ONLY_MODE:-0}"
 [[ $IS_WINDOWS -eq 1 ]] && CPU_ONLY_MODE=1
-# Only force CPU mode if CUDA_ARCH is truly 0 (no GPU whatsoever)
+# Re-detect if cache says 0 but nvidia device exists
+if [[ "${CUDA_ARCH:-0}" == "0" ]]; then
+  if command -v nvidia-smi &>/dev/null || [[ -d /proc/driver/nvidia/gpus ]] || ls /dev/nvidia[0-9]* &>/dev/null 2>&1; then
+    rm -f "$_CUDA_CACHE" 2>/dev/null
+    CUDA_ARCH="$(detect_cuda_arch)"
+    mkdir -p "$(dirname "$_CUDA_CACHE")" && echo "$CUDA_ARCH" > "$_CUDA_CACHE" 2>/dev/null
+  fi
+fi
 [[ "${CUDA_ARCH:-0}" == "0" ]] && CPU_ONLY_MODE=1
+# v2.9.1: Auto-fix GPU_LAYERS=0 when GPU is available
+if [[ "${CUDA_ARCH:-0}" != "0" && "${GPU_LAYERS:-0}" == "0" ]]; then
+  GPU_LAYERS=-1
+fi
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  GENERALIZED TRAINED MODEL ENGINE
