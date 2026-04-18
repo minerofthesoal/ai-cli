@@ -14158,14 +14158,75 @@ cat << 'HELPEOF'
     ai websearch "Python async await" 10
 HELPEOF
     ;;
+    ask-web|askweb|aw) echo "  ai ask-web \"question\"   Ask with web search context"; echo "  ai aw \"question\"        Short alias"; echo "  ai ask-web -mem \"q\"     Include memory context too" ;;
+    snap|snapshot) cmd_snap 2>/dev/null ;;
+    perf|benchmark) echo "  ai perf [--tokens N] [--runs N]   Benchmark model speed" ;;
+    compare) echo "  ai compare \"prompt\" [--models a,b,c]   Side-by-side model comparison" ;;
+    template|tpl) cmd_template 2>/dev/null ;;
+    rag) cmd_rag 2>/dev/null ;;
+    batch) cmd_batch 2>/dev/null ;;
+    health|check) echo "  ai health   Full system diagnostics (GPU, Python, disk, API keys)" ;;
+    branch) cmd_branch 2>/dev/null ;;
+    export) echo "  ai export [all|chat|config|models] [--format json|md|csv]" ;;
+    import) echo "  ai import <directory|file>   Import conversations or config" ;;
+    cleanup|clean) echo "  ai cleanup [--dry-run]   Free disk space" ;;
+    preset) cmd_preset 2>/dev/null ;;
+    plugin|plugins) cmd_plugin 2>/dev/null ;;
+    test) echo "  ai test -S   Model speed test"; echo "  ai test -N   Network test (download/upload/latency)"; echo "  ai test -A   All tests" ;;
+    change|changelog) echo "  ai change    Show full changelog"; echo "  ai -L        Show latest changes" ;;
+    memory|mem) cmd_memory 2>/dev/null ;;
+    write) cmd_write 2>/dev/null ;;
+    notebook|nb) cmd_notebook 2>/dev/null ;;
+    plan|tasks) cmd_plan 2>/dev/null ;;
+    learn|tutor) echo "  ai learn \"topic\"   Interactive AI tutor (n=next q=quiz e=example)" ;;
+    quiz) echo "  ai quiz \"topic\" [--count N]   AI-generated quiz" ;;
+    shell|sh) cmd_shell 2>/dev/null ;;
+    json) cmd_json 2>/dev/null ;;
+    sql) cmd_sql 2>/dev/null ;;
+    docker|dk) cmd_docker 2>/dev/null ;;
+    regex|rx) cmd_regex 2>/dev/null ;;
+    diff) echo "  ai diff <file1> <file2> [--explain]   Compare files with AI explanation" ;;
+    patch) echo "  ai patch <file> \"instructions\"   AI-modify a file" ;;
+    git) cmd_git_ai 2>/dev/null ;;
+    schedule|sched) cmd_schedule 2>/dev/null ;;
+    replay) echo "  ai replay <session> [--model backend]   Replay conversation through different model" ;;
+    fav|favorite) cmd_favorite 2>/dev/null ;;
+    profile|profiles) cmd_profile 2>/dev/null ;;
+    watch) echo "  ai watch <file> [summarize|review|lint] [interval]   Auto-process on file change" ;;
+    context|ctx) cmd_context 2>/dev/null ;;
+    chain) echo "  ai chain <file>   Run prompt chain (one per line, {{prev}} = last output)" ;;
+    tokens|count-tokens) echo "  ai tokens \"text\"   Estimate token count"; echo "  ai tokens <file>   Count tokens in file" ;;
+    cost) echo "  ai cost [in_tokens] [out_tokens] [model]   Estimate API cost" ;;
+    analytics|usage) echo "  ai analytics [summary|today|clear]   Usage stats" ;;
+    security|sec-audit) echo "  ai security   Check API key exposure and security posture" ;;
+    sysinfo|system-info) echo "  ai sysinfo   Detailed system info dump" ;;
+    interview) echo "  ai interview \"role\"   Practice technical interviews with AI feedback" ;;
+    text|txt) cmd_text 2>/dev/null ;;
+    net|network) cmd_net 2>/dev/null ;;
+    date|dt) cmd_date_tools 2>/dev/null ;;
+    cron) cmd_cron 2>/dev/null ;;
+    math|calc) echo "  ai math \"expression\"   Solve math (uses bc, falls back to AI)" ;;
+    units) echo "  ai units <value> <from> to <to>   Unit conversion" ;;
+    clip|clipboard) cmd_clipboard 2>/dev/null ;;
+    -Su) echo "  ai -Su   Update ai-cli from GitHub" ;;
+    -L) echo "  ai -L    Show latest version changes" ;;
     *)
+      # Try v2.9 help
+      if _help_v29 "$cmd" 2>/dev/null; then return 0; fi
       warn "No detailed help for '$cmd'"
       echo ""
-      echo "Available detailed help topics:"
-      echo "  ask · chat · gui · gui+ · node · imagine · model · status"
-      echo "  extension · config · agent · alias · rlhf · api · websearch"
+      echo "  All commands with help:"
+      echo "    ask ask-web chat gui gui+ node imagine model status"
+      echo "    extension config agent alias rlhf api websearch"
+      echo "    snap perf compare template rag batch health branch"
+      echo "    export import cleanup preset plugin test change"
+      echo "    memory write notebook plan learn quiz shell json"
+      echo "    sql docker regex diff patch git schedule replay"
+      echo "    fav profile watch context chain tokens cost"
+      echo "    analytics security sysinfo interview text net"
+      echo "    date cron math units clip -Su -L"
       echo ""
-      echo "Run 'ai help' for the full command list."
+      echo "  Run: ai help   for full command list"
     ;;
   esac
 }
