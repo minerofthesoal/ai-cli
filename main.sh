@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -euo pipefail
-VERSION="3.1.3"
+VERSION="3.1.3.1"
 
 # macOS ships bash 3.2 which lacks associative arrays (declare -A).
 # Require bash 4+ or auto-switch to Homebrew bash if available.
@@ -14219,6 +14219,70 @@ Question: ${_atw_prompt}
 
 Lets reason through this step by step:"
       dispatch_ask "$_atw_full" ;;
+
+    # ── ask-n: use all CPU cores for faster local inference ──────────
+    ask-n|a-n)
+      local _old_threads="$THREADS"
+      THREADS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8)
+      if [[ -z "$LLAMA_BIN" && -n "$PYTHON" ]]; then
+        if ! "$PYTHON" -c "import llama_cpp" 2>/dev/null; then
+          info "Installing CPU-optimized llama-cpp-python..."
+          CMAKE_ARGS="-DLLAMA_BLAS=ON" \
+            "$PYTHON" -m pip install llama-cpp-python --break-system-packages -q 2>/dev/null || \
+            "$PYTHON" -m pip install llama-cpp-python -q 2>/dev/null || true
+          LLAMA_BIN="llama_cpp_python"
+        fi
+      fi
+      GPU_LAYERS=0
+      info "CPU mode — all $THREADS cores, GPU disabled"
+      dispatch_ask "$*"
+      THREADS="$_old_threads" ;;
+
+    # ── ask-n with web: all CPU + web search ─────────────────────────
+    ask-n-w|a-n-w|ask-n-web|a-n-w-t|ask-n-w-t)
+      local _old_threads="$THREADS"
+      THREADS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8)
+      info "Using all $THREADS CPU cores"
+      local _anw="$*"
+      # If command includes -t, add thinking
+      local _think_prefix=""
+      if [[ "$cmd" == *t* && "$cmd" != *web* ]] || [[ "$cmd" == "a-n-w-t" || "$cmd" == "ask-n-w-t" ]]; then
+        _think_prefix="Think step by step. "
+      fi
+      info "Searching the web..."
+      local _anw_res=""
+      _anw_res=$(web_search "$_anw" 5 2>/dev/null || echo "")
+      _anw_res=$(echo "$_anw_res" | sed '/^$/d' | head -50)
+      if [[ -n "$_anw_res" ]]; then
+        echo -e "  ${B}${BCYAN}Sources found:${R}"
+        echo "$_anw_res" | grep -i "^URL:\|^Title:" | head -10 | while IFS= read -r _s; do
+          case "$_s" in URL:*|url:*) printf "    ${DIM}%s${R}\n" "${_s#*: }" ;; Title:*|title:*) printf "    ${B}%s${R}\n" "${_s#*: }" ;; esac
+        done; echo ""
+        _anw="${_think_prefix}Use these web results to answer. Cite sources.
+
+Search results:
+${_anw_res}
+
+Question: ${_anw}"
+      fi
+      dispatch_ask "$_anw"
+      THREADS="$_old_threads" ;;
+
+    # ── Short aliases: a-w, a-t, a-w-t ───────────────────────────────
+    a-w)  main ask-web "$@" ;;
+    a-t)  main ask-think "$@" ;;
+    a-wt|a-w-t) main ask-w-t "$@" ;;
+    a-n-t|ask-n-t)
+      local _old_threads="$THREADS"
+      THREADS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8)
+      info "Using all $THREADS CPU cores"
+      dispatch_ask "Think step by step. Show your reasoning clearly.
+
+Question: $*
+
+Lets reason through this step by step:"
+      THREADS="$_old_threads" ;;
+
     chat)       cmd_chat_interactive ;;
     code)
       local lang="" run=0 args=()
