@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -euo pipefail
-VERSION="3.1.2.5"
+VERSION="3.1.3"
 
 # macOS ships bash 3.2 which lacks associative arrays (declare -A).
 # Require bash 4+ or auto-switch to Homebrew bash if available.
@@ -1359,8 +1359,8 @@ _tm_cmd() {
       echo -e "${B}${BCYAN}$TM_LABEL${R}"
       echo "  GPU target: $TM_GPU_OPT | Dtype: $TM_DTYPE | Repo: $TM_HF_REPO"
       echo ""
-      echo "  ${B}ai $id pretrain [custom1] [custom2]${R} — Pretrain (6 standard + 2 optional)"
-      echo "  ${B}ai $id finetune <dataset> [epochs] [lr]${R} — Fine-tune on custom dataset (v2.4)"
+      echo "  ${B}ai $id pretrain [custom1] [custom2]${R} — Pretrain 6 standard + 2 optional"
+      echo "  ${B}ai $id finetune <dataset> [epochs] [lr]${R} — Fine-tune on custom dataset "
       echo "  ${B}ai $id enable / disable${R}              — Toggle auto-training"
       echo "  ${B}ai $id train-now${R}                     — Force one batch"
       echo "  ${B}ai $id upload [version]${R}              — Upload to $TM_HF_REPO"
@@ -1380,7 +1380,7 @@ cmd_mtm() { _tm_cmd "MTM" "$@"; }
 cmd_Mtm() { _tm_cmd "Mtm" "$@"; }
 
 # ════════════════════════════════════════════════════════════════════════════════
-#  TTM / MTM / Mtm FINE-TUNING  (v2.4)
+#  TTM / MTM / Mtm FINE-TUNING  
 #  Fine-tune any trained model on a custom dataset using LoRA/QLoRA
 #  ai ttm finetune <dataset-name-or-path> [epochs=3] [lr=2e-4]
 #  ai mtm finetune <dataset-name-or-path> [epochs=3] [lr=2e-4]
@@ -1427,7 +1427,7 @@ _tm_finetune() {
   mkdir -p "$ft_out"
 
   hdr "$TM_LABEL Fine-tuning"
-  echo "  Dataset:  $ds_path ($n_pairs pairs)"
+  echo "  Dataset:  $ds_path — $n_pairs pairs"
   echo "  Base:     $base_model_dir"
   echo "  Output:   $ft_out"
   echo "  Epochs:   $epochs | LR: $lr | Dtype: $TM_DTYPE"
@@ -1764,7 +1764,7 @@ _rlhf_dpo_train() {
   [[ ! -f "$pairs_source" ]] && { warn "No RLHF pairs collected yet."; return 1; }
   local count; count=$(wc -l < "$pairs_source" 2>/dev/null || echo 0)
   if (( count < 10 )); then
-    warn "RLHF: Need at least 10 pairs (have $count). Rate more responses or add HF dataset."
+    warn "RLHF: Need at least 10 pairs have $count. Rate more responses or add HF dataset."
     return 1
   fi
 
@@ -2172,7 +2172,7 @@ cmd_rlhf() {
       ;;
     train-on-ratings)
       local count; count=$(wc -l < "$RLHF_RATINGS_FILE" 2>/dev/null || echo 0)
-      (( count < 5 )) && { warn "Need at least 5 ratings (have $count)"; return 1; }
+      (( count < 5 )) && { warn "Need at least 5 ratings have $count"; return 1; }
       # Merge ratings into pairs file then train
       cat "$RLHF_RATINGS_FILE" >> "$RLHF_PAIRS_FILE"
       _rlhf_dpo_train "$ACTIVE_MODEL"
@@ -2225,7 +2225,7 @@ cmd_rlhf() {
     *)
       hdr "RLHF v2 — Reinforcement Learning from Human Feedback"
       echo ""
-      echo "  ${B}Auto-RLHF${R}  (judge models score responses, DPO trains on pairs)"
+      echo "  ${B}Auto-RLHF${R}  judge scores responses then DPO trains"
       echo "  ai rlhf enable / disable"
       echo "  ai rlhf judge [nix26|qwen3+luth|qwen3+llama32]"
       echo "  ai rlhf download-judges      — Download selected judge model(s)"
@@ -2237,17 +2237,17 @@ cmd_rlhf() {
       echo "  ai rlhf ppo [model]          — PPO fine-tuning with reward model"
       echo "  ai rlhf grpo [model]         — GRPO training (DeepSeek-R1 style)"
       echo ""
-      echo "  ${B}Manual RLHF${R}  (rate responses 1-5 stars)"
+      echo "  ${B}Manual RLHF${R}  rate 1-5 stars"
       echo "  ai rlhf rate                 — Rate a response interactively"
       echo "  ai rlhf train-on-ratings     — Fine-tune on your ratings"
       echo ""
-      echo "  ${B}HF RLHF Datasets (v2.4.5)${R}  — curated preference datasets"
+      echo "  ${B}HF RLHF Datasets v2.4.5${R}  — curated preference datasets"
       echo "  ai rlhf datasets             — List available HF preset datasets"
       echo "  ai rlhf add-dataset <id>     — Import a HF dataset into RLHF pairs"
       echo "  ai rlhf use-dataset <id>     — Set as active RLHF training source"
       echo "  ai rlhf my-datasets          — Show imported datasets + counts"
       echo ""
-      echo "  ${B}Alignment${R}  (Qwen3-powered anti-hallucination pass)"
+      echo "  ${B}Alignment${R}  Qwen3 anti-hallucination"
       echo "  ai rlhf align TTM|MTM|Mtm    — Run alignment on trained model"
       echo ""
       echo "  ai rlhf status               — Show RLHF stats"
@@ -2263,7 +2263,7 @@ cmd_rlhf() {
 }
 
 # ════════════════════════════════════════════════════════════════════════════════
-#  RLHF HF DATASETS  (v2.4.5)
+#  RLHF HF DATASETS  v2.4.5
 #  Curated list of HuggingFace preference/RLHF datasets
 #  Import → convert to {prompt, chosen, rejected} format → merge into RLHF pairs
 # ════════════════════════════════════════════════════════════════════════════════
@@ -2285,7 +2285,7 @@ RLHF_HF_PRESETS=(
 )
 
 _rlhf_hf_list_presets() {
-  hdr "HuggingFace RLHF Datasets (v2.4.5)"
+  hdr "HuggingFace RLHF Datasets v2.4.5"
   echo ""
   printf "  %-18s  %-45s  %s\n" "PRESET NAME" "HF REPO" "DESCRIPTION"
   printf "  %s\n" "$(printf '%0.s-' {1..90})"
@@ -3362,7 +3362,7 @@ _rclick_install_sway_i3() {
 
   if [[ -n "$cfg_file" && -f "$cfg_file" ]]; then
     if ! grep -q "ai-rclick" "$cfg_file"; then
-      printf '\n# Ask AI shortcut (ai-cli v2.4.6)\nbindsym %s exec ai-rclick\n' \
+      printf '\n# Ask AI shortcut \nbindsym %s exec ai-rclick\n' \
         "$keybind_sym" >> "$cfg_file"
       ok "${wm^}: Added '$keybind_sym → ai-rclick' in $cfg_file"
     else
@@ -3373,7 +3373,7 @@ _rclick_install_sway_i3() {
     # Config file not found — create snippet
     local cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/$wm"
     mkdir -p "$cfg_dir"
-    printf '# Ask AI shortcut (ai-cli v2.4.6)\nbindsym %s exec ai-rclick\n' \
+    printf '# Ask AI shortcut \nbindsym %s exec ai-rclick\n' \
       "$keybind_sym" >> "$cfg_dir/config"
     ok "${wm^}: Created $cfg_dir/config with keybind"
   else
@@ -3392,7 +3392,7 @@ _rclick_install_hyprland() {
     sed 's/^ //')
   mkdir -p "$(dirname "$hcfg")"
   if [[ ! -f "$hcfg" ]] || ! grep -q "ai-rclick" "$hcfg"; then
-    printf '\n# Ask AI shortcut (ai-cli v2.4.6)\nbind = %s\n' "$keybind_hypr" >> "$hcfg"
+    printf '\n# Ask AI shortcut \nbind = %s\n' "$keybind_hypr" >> "$hcfg"
     ok "Hyprland: Added 'bind = $keybind_hypr' in $hcfg"
   else
     ok "Hyprland: ai-rclick keybind already in $hcfg"
@@ -3431,7 +3431,7 @@ _rclick_install_xbindkeys() {
   if [[ ! -f "$cfg" ]] || ! grep -q "ai-rclick" "$cfg"; then
     {
       echo ""
-      echo "# Ask AI (ai-cli v2.4.6)"
+      echo "# Ask AI "
       echo '"ai-rclick"'
       echo "  $(echo "$RCLICK_KEYBIND" | sed 's/Super/Mod4/Ig;s/Ctrl/Control/Ig;s/+/ + /g')"
     } >> "$cfg"
@@ -3644,7 +3644,7 @@ cmd_rclick() {
         echo ""
         echo "  Usage: ai rclick keybind <combo>"
         echo "  Examples:"
-        echo "    ai rclick keybind Super+Shift+a    (default)"
+        echo "    ai rclick keybind Super+Shift+a    "
         echo "    ai rclick keybind Ctrl+Shift+a"
         echo "    ai rclick keybind Super+Alt+a"
         echo "    ai rclick keybind F12"
@@ -3763,10 +3763,10 @@ cmd_rclick() {
       ;;
 
     *)
-      hdr "Right-Click AI Context Menu (v2.6.0.1)"
+      hdr "Right-Click AI Context Menu "
       echo ""
       echo "  ${B}ai rclick install${R}             — Install for all detected DEs/WMs"
-      echo "  ${B}ai rclick fix-auth${R}            — Fix 'not authorized' error (v2.6.0.1)"
+      echo "  ${B}ai rclick fix-auth${R}            — Fix 'not authorized' error "
       echo "  ${B}ai rclick keybind <combo>${R}      — Change keyboard shortcut"
       echo "  ${B}ai rclick uninstall${R}           — Remove all integrations"
       echo "  ${B}ai rclick model <name>${R}         — Set VL model"
@@ -3774,7 +3774,7 @@ cmd_rclick() {
       echo "  ${B}ai rclick test${R}                 — Test with clipboard content"
       echo "  ${B}ai rclick status${R}               — Show full status"
       echo ""
-      echo "  ${B}Supported DEs/WMs (all auto-detected):${R}"
+      echo "  ${B}Supported DEs/WMs all auto-detected:${R}"
       echo "    GNOME · KDE Plasma 5+6 · XFCE · MATE · Cinnamon/Mint"
       echo "    Hyprland · sway · i3 · Openbox · LXDE · macOS · Windows"
       echo "    Openbox · LXDE/LXQt · i3 · sway · Hyprland"
@@ -4213,7 +4213,7 @@ _model_list_presets() {
   done
   echo ""
   echo "  Use: ${B}ai model-create new mymodel nano${R}"
-  echo "  Or:  ${B}ai model-create new mymodel custom${R} (opens editor)"
+  echo "  Or:  ${B}ai model-create new mymodel custom${R} opens editor"
 }
 
 _model_new() {
@@ -4581,7 +4581,7 @@ cmd_audio() {
       echo "  ${B}ai audio transcribe <file> [--lang en] [--model base]${R}"
       echo "  ${B}ai audio tts <text> [--voice nova] [--out file.mp3]${R}"
       echo "  ${B}ai audio analyze <file>${R}      — Analyze audio with AI"
-      echo "  ${B}ai audio convert <in> <out>${R}  — Convert format (ffmpeg)"
+      echo "  ${B}ai audio convert <in> <out>${R}  — Convert format "
       echo "  ${B}ai audio extract <video>${R}     — Extract audio from video"
       echo "  ${B}ai audio ask <file> <question>${R} — Ask about audio content"
       echo "  ${B}ai audio play <file>${R}          — Play audio file"
@@ -4791,7 +4791,7 @@ cmd_video() {
       echo -e "${B}${BCYAN}Video Commands${R}"
       echo "  ${B}ai video analyze <file>${R}          — Analyze video content with AI"
       echo "  ${B}ai video transcribe <file>${R}       — Transcribe video audio"
-      echo "  ${B}ai video caption <file>${R}          — Generate captions/subtitles (.srt)"
+      echo "  ${B}ai video caption <file>${R}          — Generate captions/subtitles .srt"
       echo "  ${B}ai video convert <in> <out>${R}      — Convert video format"
       echo "  ${B}ai video extract <file> [fps]${R}    — Extract frames"
       echo "  ${B}ai video ask <file> <question>${R}   — Ask about video"
@@ -4964,7 +4964,7 @@ cmd_vision() {
       echo "  ${B}ai vision compare <img1> <img2>${R}    — Compare two images"
       echo ""
       echo "  Supports: jpg, png, gif, webp, bmp"
-      echo "  Backends: OpenAI GPT-4o (best), Claude 3, Gemini 1.5, LLaVA (local)"
+      echo "  Backends: OpenAI GPT-4o best, Claude 3, Gemini 1.5, LLaVA local"
       ;;
   esac
 }
@@ -6000,12 +6000,12 @@ cmd_system() {
     *)
       echo "Usage: ai system <set|save|load|list|show|clear|delete>"
       echo ""
-      echo "  ai system set \"<prompt>\"         Set custom system prompt (this session)"
+      echo "  ai system set \"<prompt>\"         Set custom system prompt "
       echo "  ai system save <name> \"<prompt>\"  Save to named library"
       echo "  ai system load <name>             Activate a saved prompt"
       echo "  ai system list                    List saved + built-in personas"
       echo "  ai system show                    Show the current active system prompt"
-      echo "  ai system clear                   Remove custom prompt (revert to persona)"
+      echo "  ai system clear                   Remove custom prompt "
       echo "  ai system delete <name>           Delete a saved prompt"
       ;;
   esac
@@ -6119,7 +6119,7 @@ User: ${prompt}"
       -c "${CONTEXT_SIZE:-4096}" \
       --n-gpu-layers "${GPU_LAYERS:--1}" \
       --threads "${THREADS:-4}" -s 0 --no-display-prompt --log-disable 2>/dev/null | \
-      grep -v "^llama_\|^ggml_\|^llm_load\|^system_info\|^main:\|^sampling:\|^build info\|^CUDA\|^Metal\|warning:" || true
+      grep -v "^llama\|^ggml\|^llm_load\|^system_info\|^main:\|^sampling\|^build info\|^CUDA\|^Metal\|warning:\|n_ctx_per_seq\|will not be utilized\|^$" || true
   else
     err "llama.cpp not found. Run: ai install-deps"
     info "Or install manually: pip install llama-cpp-python"
@@ -6483,7 +6483,7 @@ dispatch_ask() {
       ;;
   esac
 
-  if [[ $rc -ne 0 || -z "$response" ]]; then
+  if [[ $rc -ne 0 ]]; then
     err "No response from backend '$backend'."
     [[ -z "${ACTIVE_MODEL:-}" ]] && echo "  Hint: no model set. Run: ai recommended"
     [[ "$backend" == "pytorch" && ! -d "${ACTIVE_MODEL:-x}" ]] && \
@@ -7614,8 +7614,8 @@ cmd_status() {
     local apid; apid=$(cat "$API_PID_FILE" 2>/dev/null)
     kill -0 "$apid" 2>/dev/null && api_status="${BGREEN}running${R} — PID $apid) on $API_HOST:$API_PORT"
   fi
-  printf "  %-22s " "LLM API (v2.4):"; echo -e "$api_status"
-  printf "  %-22s %s\n" "Datasets (v2.4):" "$(ls "$DATASETS_DIR" 2>/dev/null | wc -l) dataset(s)"
+  printf "  %-22s " "LLM API :"; echo -e "$api_status"
+  printf "  %-22s %s\n" "Datasets :" "$(ls "$DATASETS_DIR" 2>/dev/null | wc -l) dataset(s)"
   echo ""
   printf "  %-22s %s\n" "Temperature:"  "$TEMPERATURE"
   printf "  %-22s %s\n" "Max tokens:"   "$MAX_TOKENS"
@@ -8053,7 +8053,7 @@ cmd_bench() {
   printf "  Average: %dms\n" $(( total / runs ))
 }
 # ════════════════════════════════════════════════════════════════════════════════
-#  CUSTOM DATASET CREATION  (v2.4)
+#  CUSTOM DATASET CREATION  
 #  ai dataset create <name>               — Create a new dataset
 #  ai dataset add <name> <prompt> <resp>  — Add a prompt/response pair
 #  ai dataset add-file <name> <jsonl>     — Import from JSONL file
@@ -8570,7 +8570,7 @@ except Exception as e:
 }
 
 # ════════════════════════════════════════════════════════════════════════════════
-#  UNIVERSAL LLM API SERVER  (v2.4)
+#  UNIVERSAL LLM API SERVER  
 #  OpenAI-compatible REST API — works with any LLM client
 #  Supports: GGUF, PyTorch, OpenAI, Claude, Gemini, HF backends
 #
@@ -9558,13 +9558,13 @@ PYEOF
     unshare) _api_share_stop ;;
 
     *)
-      hdr "LLM API Server (v2.4.5) — OpenAI-compatible"
+      hdr "LLM API Server v2.4.5 — OpenAI-compatible"
       echo ""
       echo "  ${B}Server${R}"
       echo "  ai api start [--port 8080] [--host 0.0.0.0] [--key <token>]"
       echo "  ai api stop / status / test / config"
       echo ""
-      echo "  ${B}Key Hosting (v2.4.5) — share your model with others${R}"
+      echo "  ${B}Key Hosting v2.4.5 — share your model with others${R}"
       echo "  ai api key-gen [--label name] [--rate N/min]"
       echo "    Creates a unique key others can use to call YOUR running model"
       echo "  ai api keys list            — Show all generated keys + usage"
@@ -9592,7 +9592,7 @@ PYEOF
 }
 
 # ════════════════════════════════════════════════════════════════════════════════
-#  API KEY MANAGEMENT  (v2.4.5)
+#  API KEY MANAGEMENT  v2.4.5
 #  Create unique shareable keys so others can access your running model
 #  Keys stored in ~/.config/ai-cli/api_keys.json
 #  Each key has: id, key (secret), label, created, active, rate_limit,
@@ -9643,7 +9643,7 @@ PYEOF
 
 _api_keys_list() {
   [[ ! -f "$API_KEYS_FILE" ]] && { info "No keys yet. Create one: ai api key-gen"; return; }
-  hdr "API Keys (v2.4.5)"
+  hdr "API Keys v2.4.5"
   python3 - <<'PYEOF'
 import json, sys
 try:
@@ -9965,7 +9965,7 @@ _api_share_stop() {
 }
 
 # ════════════════════════════════════════════════════════════════════════════════
-#  MULTI-AI CHAT ARENA  (v2.4.5)
+#  MULTI-AI CHAT ARENA  v2.4.5
 #  Two or more AI agents discuss a topic; user watches, steers, rates, or stops.
 #  If MULTIAI_RLHF_TRAIN=1, rated exchanges update model weights automatically.
 #  Conversation is saved as a custom dataset (for later fine-tuning).
@@ -10249,7 +10249,7 @@ cmd_multiai() {
 }
 
 _multiai_help() {
-  hdr "Multi-AI Chat Arena (v2.4.5)"
+  hdr "Multi-AI Chat Arena v2.4.5"
   echo ""
   echo "  ${B}ai multiai \"<topic>\"${R}              — Two AIs discuss a topic"
   echo "  ${B}ai multiai debate \"<topic>\"${R}        — Adversarial: AIs take opposite sides"
@@ -14179,7 +14179,7 @@ Question: ${_aw_prompt}"
       fi
       dispatch_ask "$_aw_prompt" ;;
 
-    ask-think|think)
+    ask-think|think|ask-t)
       local _at_prompt="$*"
       if [[ -z "$_at_prompt" ]]; then
         read -rp "$(echo -e "${BCYAN}Think: ${R}")" _at_prompt
@@ -15787,28 +15787,42 @@ cmd_change() {
     latest|-L)
       hdr "AI CLI v${VERSION} — Latest Changes"
       echo ""
-      echo -e "  ${B}${BCYAN}v3.1.2${R}"
+      echo -e "  ${B}${BCYAN}v3.1.3${R}"
       echo ""
-      echo -e "  ${B}New:${R}"
-      echo "    + GUI v7.1 — scrolling output, search, scrollbar, 46 items"
-      echo "    + GUI+ v3.1 — memory tab, API chat tab"
-      echo "    + ai ask-think — chain-of-thought reasoning"
-      echo "    + ai ask-w-t — thinking + web search combined"
-      echo "    + ai ask-web now shows source URLs"
-      echo "    + ai mem list/add/clear/search — memory management"
-      echo "    + ai api start with /chat endpoint"
-      echo "    + 10 thinking/reasoning models added"
-      echo "    + Modular lib/ architecture with 9 modules"
+      echo -e "  ${B}New Features:${R}"
+      echo "    + GUI v7.1 — PgUp/PgDn scrolling, search, scrollbar, 46 items"
+      echo "    + API Server v3 — /chat web UI, key management, CORS"
+      echo "    + ai ask-think / ai ask-t — chain-of-thought reasoning"
+      echo "    + ai ask-w-t / ai awt — thinking + web search combined"
+      echo "    + ai ask-web / ai ask-w — shows source URLs before answering"
+      echo "    + ai mem list/add/edit/delete/search — full memory management"
+      echo "    + ai test -S/-N/-A — speed, network, all tests"
+      echo "    + 10 thinking/reasoning models: o3, o1, DeepSeek-R1, Qwen3"
+      echo "    + 205 total recommended models across 32 categories"
+      echo "    + Modular lib/ architecture — 9 independent modules"
+      echo "    + Firefox Extension v2 — sidebar chat + context menu"
+      echo "    + rclick v3.2 — Windows, macOS, Linux Mint support"
+      echo "    + iSH support with local models"
       echo ""
-      echo -e "  ${B}Fixes:${R}"
+      echo -e "  ${B}Bug Fixes:${R}"
       echo "    + All syntax errors fixed — passes bash -n clean"
-      echo "    + Removed all duplicate functions"
-      echo "    + Fixed unmatched quotes in prompt strings"
-      echo "    + GPU detection stale cache fix"
-      echo "    + macOS bash 3.2 auto-switch to bash 4+"
-      echo "    + rclick v3.2 — Windows, macOS, Mint support"
+      echo "    + Removed all duplicate functions — 500+ lines of dead code gone"
+      echo "    + Fixed parentheses in 40+ echo/printf statements"
+      echo "    + Fixed unmatched apostrophes in prompt strings"
+      echo "    + GPU detection stale cache fix for GTX 1080"
+      echo "    + Silenced all llama.cpp warnings including context size"
+      echo "    + macOS bash 3.2 auto-switch to Homebrew bash 4+"
       echo "    + Canvas v2 keybinds fixed"
       echo "    + No more AI fallthrough on unknown commands"
+      echo "    + dispatch_ask no longer errors on empty response"
+      echo ""
+      echo -e "  ${B}New Commands:${R}"
+      echo "    ask-web  ask-think  ask-w-t  test  health  perf  compare"
+      echo "    snap  template  rag  batch  branch  export  import  cleanup"
+      echo "    preset  plugin  notebook  plan  memory  favorite  schedule"
+      echo "    profile  write  learn  quiz  interview  shell  git  json"
+      echo "    sql  docker  regex  cron  math  net  date  text  clip  find"
+      echo "    change  security  sysinfo  analytics  cost  tokens  watch"
       echo ""
       echo "    + Silenced all llama.cpp warnings and logs"
       echo "    + Unknown commands no longer auto-pass to AI"
@@ -16306,7 +16320,7 @@ cmd_chain() {
 
       echo "$prev_output" | head -10
       local lines=$(echo "$prev_output" | wc -l)
-      (( lines > 10 )) && printf "  ${DIM}... (%d lines total)${R}\n" "$lines"
+      (( lines > 10 )) && printf "  ${DIM}... — %d lines${R}\n" "$lines"
     done < "$chain_file"
 
     echo ""
@@ -18873,7 +18887,7 @@ cmd_test() {
       local api_start=$(date +%s%3N 2>/dev/null || echo 0)
       curl -fsSL "https://api.github.com" -o /dev/null 2>/dev/null
       local api_end=$(date +%s%3N 2>/dev/null || echo 0)
-      printf "  API RTT:  %d ms (github.com)\n" "$(( api_end - api_start ))"
+      printf "  API RTT:  %d ms \n" "$(( api_end - api_start ))"
       ;;
     -A|--all|all)
       cmd_test -S
@@ -18887,7 +18901,7 @@ cmd_test() {
       echo ""
       echo "  -S, --speed      Test model inference speed"
       echo "  -N, --network    Test network (download/upload/latency)"
-      echo "  -A, --all        Run all tests (default)"
+      echo "  -A, --all        Run all tests "
       ;;
   esac
 }
