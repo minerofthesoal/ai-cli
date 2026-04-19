@@ -690,9 +690,8 @@ jobs:
             **macOS (Intel & Apple Silicon):**
             ```bash
             curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/installers/install-mac.sh | sh
-            # Requires nb or Homebrew. Install bash 4+:
-            nb install bash    # or: brew install bash
             ```
+            > Requires `nb` or `brew`. Install bash 4+: `nb install bash` or `brew install bash`
 
             **macOS (.dmg — Intel & Apple Silicon):**
             Download the `.dmg`, open it, double-click "AI CLI Installer"
