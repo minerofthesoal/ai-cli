@@ -420,80 +420,84 @@ jobs:
           PLISTEOF
           sed -i '' 's/^          //' "${DMG_STAGE}/${APP}/Contents/Info.plist"
 
-          # Installer executable (shell script that opens Terminal)
+          # Installer executable — simple script that opens Terminal with install
           cat > "${DMG_STAGE}/${APP}/Contents/MacOS/install" << 'SCRIPTEOF'
-          #!/bin/bash
-          DIR="$(cd "$(dirname "$0")/../Resources/payload" && pwd)"
-          SCRIPT=$(cat << 'INNEREOF'
-          set -e
-          echo ""
-          echo "╔══════════════════════════════════════╗"
-          echo "║   AI CLI Installer for macOS         ║"
-          echo "╚══════════════════════════════════════╝"
-          echo ""
-
-          PREFIX="/usr/local"
-          PAYLOAD="__PAYLOAD__"
-
-          # Install bash 4+ if needed
-          if (( BASH_VERSINFO[0] < 4 )); then
-            echo "Installing bash 4+ via Homebrew..."
-            if ! command -v brew &>/dev/null; then
-              echo "Installing Homebrew first..."
-              /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-              eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv 2>/dev/null)"
-            fi
-            brew install bash 2>/dev/null || true
-          fi
-
-          echo "Installing ai-cli to ${PREFIX}/bin/ai..."
-          sudo mkdir -p "${PREFIX}/bin" "${PREFIX}/share/ai-cli"
-          sudo cp "${PAYLOAD}/ai" "${PREFIX}/bin/ai"
-          sudo chmod +x "${PREFIX}/bin/ai"
-
-          # Copy support files
-          for f in requirements.txt LICENSE README.md; do
-            [ -f "${PAYLOAD}/$f" ] && sudo cp "${PAYLOAD}/$f" "${PREFIX}/share/ai-cli/"
-          done
-          [ -d "${PAYLOAD}/installers" ] && sudo cp -r "${PAYLOAD}/installers" "${PREFIX}/share/ai-cli/"
-
-          # Create config dir
-          mkdir -p "$HOME/.config/ai-cli" 2>/dev/null || true
-
-          echo ""
-          echo "✅ AI CLI installed!"
-          echo ""
-          echo "  Quick start:"
-          echo "    ai --help          Show all commands"
-          echo "    ai ask \"hello\"     Ask a question"
-          echo "    ai chat            Interactive chat"
-          echo "    ai recommended     Browse 195 models"
-          echo "    ai install-deps    Install Python ML deps"
-          echo ""
-          echo "  If using zsh (default on macOS), add to ~/.zshrc:"
-          echo "    alias ai='/opt/homebrew/bin/bash /usr/local/bin/ai'"
-          echo ""
-          read -p "Press Enter to close..."
-          INNEREOF
-
-          SCRIPT="${SCRIPT/__PAYLOAD__/$DIR}"
-          osascript -e "tell application \"Terminal\" to do script \"${SCRIPT//\"/\\\"}\"" 2>/dev/null || \
-            open -a Terminal.app "$0"
-          SCRIPTEOF
-          sed -i '' 's/^          //' "${DMG_STAGE}/${APP}/Contents/MacOS/install"
+#!/bin/bash
+DIR="$(cd "$(dirname "$0")/../Resources/payload" && pwd)"
+INSTALL_SCRIPT="$DIR/_do_install.sh"
+open -a Terminal "$INSTALL_SCRIPT"
+SCRIPTEOF
           chmod +x "${DMG_STAGE}/${APP}/Contents/MacOS/install"
 
-          # Create uninstaller app too
+          # The actual install logic (separate script, no nesting issues)
+          cat > "${DMG_STAGE}/${APP}/Contents/Resources/payload/_do_install.sh" << INSTALLEOF
+#!/bin/bash
+set -e
+echo ""
+echo "╔══════════════════════════════════════╗"
+echo "║   AI CLI v${VER} Installer for macOS   ║"
+echo "╚══════════════════════════════════════╝"
+echo ""
+PREFIX="/usr/local"
+DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+
+# Install Homebrew bash if needed
+if ! /opt/homebrew/bin/bash --version &>/dev/null && ! /usr/local/bin/bash --version &>/dev/null; then
+  echo "Installing Homebrew (needed for bash 4+)..."
+  if ! command -v brew &>/dev/null; then
+    /bin/bash -c "\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    eval "\$(/opt/homebrew/bin/brew shellenv 2>/dev/null)" || true
+  fi
+  brew install bash 2>/dev/null || true
+fi
+
+echo "Installing ai-cli to \${PREFIX}/bin/ai..."
+sudo mkdir -p "\${PREFIX}/bin" "\${PREFIX}/share/ai-cli"
+sudo cp "\${DIR}/ai" "\${PREFIX}/bin/ai"
+sudo chmod +x "\${PREFIX}/bin/ai"
+
+for f in requirements.txt LICENSE README.md; do
+  [ -f "\${DIR}/\$f" ] && sudo cp "\${DIR}/\$f" "\${PREFIX}/share/ai-cli/"
+done
+[ -d "\${DIR}/installers" ] && sudo cp -r "\${DIR}/installers" "\${PREFIX}/share/ai-cli/"
+
+mkdir -p "\$HOME/.config/ai-cli" 2>/dev/null || true
+
+echo ""
+echo "✅ AI CLI v${VER} installed!"
+echo ""
+echo "  Quick start:"
+echo "    ai --help          Show all commands"
+echo "    ai ask \"hello\"     Ask a question"
+echo "    ai chat            Interactive chat"
+echo "    ai recommended     Browse 195 models"
+echo "    ai install-deps    Install Python ML deps"
+echo ""
+read -p "Press Enter to close..."
+INSTALLEOF
+          chmod +x "${DMG_STAGE}/${APP}/Contents/Resources/payload/_do_install.sh"
+
+          # Create uninstaller app
           UNAPP="Uninstall AI CLI.app"
           mkdir -p "${DMG_STAGE}/${UNAPP}/Contents/MacOS"
+          mkdir -p "${DMG_STAGE}/${UNAPP}/Contents/Resources"
+          cat > "${DMG_STAGE}/${UNAPP}/Contents/Resources/uninstall.sh" << 'UNSCRIPTEOF'
+#!/bin/bash
+echo "Removing ai-cli..."
+sudo rm -f /usr/local/bin/ai
+sudo rm -rf /usr/local/share/ai-cli
+echo "Done. Config at ~/.config/ai-cli/ preserved."
+read -p "Press Enter to close..."
+UNSCRIPTEOF
+          chmod +x "${DMG_STAGE}/${UNAPP}/Contents/Resources/uninstall.sh"
           cat > "${DMG_STAGE}/${UNAPP}/Contents/MacOS/uninstall" << 'UNEOF'
-          #!/bin/bash
-          osascript -e 'tell application "Terminal" to do script "echo Removing ai-cli... && sudo rm -f /usr/local/bin/ai && sudo rm -rf /usr/local/share/ai-cli && echo Done. Config preserved at ~/.config/ai-cli/"'
-          UNEOF
-          sed -i '' 's/^          //' "${DMG_STAGE}/${UNAPP}/Contents/MacOS/uninstall"
+#!/bin/bash
+DIR="$(cd "$(dirname "$0")/../Resources" && pwd)"
+open -a Terminal "$DIR/uninstall.sh"
+UNEOF
           chmod +x "${DMG_STAGE}/${UNAPP}/Contents/MacOS/uninstall"
-          cp "${DMG_STAGE}/${APP}/Contents/Info.plist" "${DMG_STAGE}/${UNAPP}/Contents/Info.plist"
-          sed -i '' 's/AI CLI Installer/Uninstall AI CLI/g; s/install/uninstall/g' "${DMG_STAGE}/${UNAPP}/Contents/Info.plist"
+          cp "${DMG_STAGE}/${APP}/Contents/Info.plist" "${DMG_STAGE}/${UNAPP}/Contents/"
+          sed -i '' 's/AI CLI Installer/Uninstall AI CLI/; s/>install</>uninstall</' "${DMG_STAGE}/${UNAPP}/Contents/Info.plist"
 
           # Add README
           cat > "${DMG_STAGE}/README.txt" << RDMEOF
