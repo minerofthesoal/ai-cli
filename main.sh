@@ -16,16 +16,16 @@ set -euo pipefail
 VERSION="3.1.3.1"
 
 # macOS ships bash 3.2 which lacks associative arrays (declare -A).
-# Require bash 4+ or auto-switch to nanobrew/Homebrew bash if available.
+# Require bash 4+ or auto-switch to nb/Homebrew bash if available.
 if (( BASH_VERSINFO[0] < 4 )); then
-  for _newbash in /opt/nanobrew/bin/bash /opt/homebrew/bin/bash /usr/local/bin/bash /run/current-system/sw/bin/bash; do
+  for _newbash in /opt/nb/bin/bash /opt/homebrew/bin/bash /usr/local/bin/bash /run/current-system/sw/bin/bash; do
     if [[ -x "$_newbash" ]] && "$_newbash" --version 2>/dev/null | grep -q 'version [4-9]'; then
       exec "$_newbash" "$0" "$@"
     fi
   done
   echo "AI CLI requires bash 4+. Your version: ${BASH_VERSION}"
   echo ""
-  echo "  macOS fix:  nanobrew install bash   OR   brew install bash"
+  echo "  macOS fix:  nb install bash   OR   brew install bash"
   exit 1
 fi
 
@@ -94,7 +94,7 @@ find_llama() {
   done
   for d in "$HOME/.local/bin" "$HOME/bin" "$HOME/llama.cpp/build/bin" \
             "$HOME/llama.cpp/build" "$HOME/llama.cpp" "/usr/local/bin" \
-            "/opt/llama.cpp/bin" "/opt/nanobrew/bin" "/opt/homebrew/bin"; do
+            "/opt/llama.cpp/bin" "/opt/nb/bin" "/opt/homebrew/bin"; do
     for b in llama-cli llama llama-run main; do
       [[ -x "$d/$b" ]] && { echo "$d/$b"; return 0; }
     done
@@ -7415,15 +7415,15 @@ cmd_install_deps() {
       sudo zypper install -y python3 python3-pip python3-devel git cmake \
         gcc ffmpeg curl jq espeak libsndfile-devel \
         libopenssl-devel python3-tk 2>/dev/null || true
-    elif command -v nanobrew &>/dev/null || command -v brew &>/dev/null; then
-      if command -v nanobrew &>/dev/null; then
-        info "Detected nanobrew (macOS)..."
-        nanobrew install bash python3 cmake ffmpeg jq espeak libsndfile 2>/dev/null || true
+    elif command -v nb &>/dev/null || command -v brew &>/dev/null; then
+      if command -v nb &>/dev/null; then
+        info "Detected nb (macOS)..."
+        nb install bash python3 cmake ffmpeg jq espeak libsndfile 2>/dev/null || true
       else
         info "Detected Homebrew (macOS)..."
         brew install bash python3 cmake ffmpeg jq espeak libsndfile 2>/dev/null || true
       fi
-      info "Note: macOS needs bash 4+. Run: nanobrew install bash  OR  brew install bash"
+      info "Note: macOS needs bash 4+. Run: nb install bash  OR  brew install bash"
     elif command -v apk &>/dev/null; then
       info "Detected APK (Alpine/iSH)..."
       apk update 2>/dev/null || true

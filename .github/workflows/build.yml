@@ -398,9 +398,9 @@ jobs:
           echo ""; echo "AI CLI v${VER} Installer"; echo ""
           PREFIX="/usr/local"
           DIR="\$(cd "\$(dirname "\$0")" && pwd)"
-          if ! /opt/nanobrew/bin/bash --version &>/dev/null 2>&1 && ! /opt/homebrew/bin/bash --version &>/dev/null 2>&1; then
+          if ! /opt/nb/bin/bash --version &>/dev/null 2>&1 && ! /opt/homebrew/bin/bash --version &>/dev/null 2>&1; then
             echo "Installing bash 4+ ..."
-            if command -v nanobrew &>/dev/null; then nanobrew install bash 2>/dev/null || true
+            if command -v nb &>/dev/null; then nb install bash 2>/dev/null || true
             elif command -v brew &>/dev/null; then brew install bash 2>/dev/null || true
             else /bin/bash -c "\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && brew install bash 2>/dev/null || true
             fi
@@ -690,8 +690,8 @@ jobs:
             **macOS (Intel & Apple Silicon):**
             ```bash
             curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/installers/install-mac.sh | sh
-            # Requires nanobrew or Homebrew. Install bash 4+:
-            nanobrew install bash    # or: brew install bash
+            # Requires nb or Homebrew. Install bash 4+:
+            nb install bash    # or: brew install bash
             ```
 
             **macOS (.dmg — Intel & Apple Silicon):**
