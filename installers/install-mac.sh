@@ -88,10 +88,10 @@ verify_macos() {
     info "macOS ${BOLD}${MAC_VER}${RESET} (${CHIP_TYPE}, ${ARCH})"
 }
 
-# ── Package Manager (nanobrew or Homebrew) ────────────────────────────────────
+# ── Package Manager (nb or Homebrew) ────────────────────────────────────
 ensure_homebrew() {
-    if command -v nanobrew >/dev/null 2>&1; then
-        ok "nanobrew found"
+    if command -v nb >/dev/null 2>&1; then
+        ok "nb found"
         return
     fi
     if command -v brew >/dev/null 2>&1; then
@@ -123,9 +123,9 @@ install_deps() {
         return
     fi
 
-    # Use nanobrew if available, otherwise Homebrew
+    # Use nb if available, otherwise Homebrew
     local PKG_CMD="brew"
-    command -v nanobrew >/dev/null 2>&1 && PKG_CMD="nanobrew"
+    command -v nb >/dev/null 2>&1 && PKG_CMD="nb"
     info "Installing dependencies via ${PKG_CMD}..."
 
     DEPS="python@3.12 curl git bash"
