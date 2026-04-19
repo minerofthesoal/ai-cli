@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -euo pipefail
-VERSION="3.1.0"
+VERSION="3.1.1"
 
 # macOS ships bash 3.2 which lacks associative arrays (declare -A).
 # Require bash 4+ or auto-switch to Homebrew bash if available.
@@ -14195,7 +14195,7 @@ ${_ask_prompt}"
 Web search results:
 ${_aw_results}
 ${_aw_context:+
-User's known facts: ${_aw_context}}
+Users known facts: ${_aw_context}}
 
 Question: ${_aw_prompt}
 
@@ -14218,7 +14218,7 @@ ${_aw_prompt}"
 
 Question: ${_at_prompt}
 
-Let's think through this step by step:" ;;
+Lets think through this step by step:" ;;
 
     ask-think-web|ask-w-t|awt|thinkweb)
       local _atw_prompt="$*"
@@ -14246,7 +14246,7 @@ ${_atw_results:-No results found}
 
 Question: ${_atw_prompt}
 
-Let's reason through this step by step:"
+Lets reason through this step by step:"
       dispatch_ask "$_atw_full" ;;
     chat)       cmd_chat_interactive ;;
     code)
