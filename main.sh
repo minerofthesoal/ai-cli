@@ -19,9 +19,16 @@ VERSION="3.1.3.1"
 # Require bash 4+ or auto-switch to nb/Homebrew bash if available.
 if (( BASH_VERSINFO[0] < 4 )); then
   for _newbash in /opt/nb/bin/bash /opt/homebrew/bin/bash /usr/local/bin/bash /run/current-system/sw/bin/bash; do
-    if [[ -x "$_newbash" ]] && "$_newbash" --version 2>/dev/null | grep -q 'version [4-9]'; then
-      exec "$_newbash" "$0" "$@"
+    [[ ! -x "$_newbash" ]] && continue
+    # Skip if wrong CPU architecture
+    if command -v file >/dev/null 2>&1; then
+      _arch=$(uname -m 2>/dev/null)
+      _barch=$(file "$_newbash" 2>/dev/null)
+      [[ "$_arch" == "x86_64" && "$_barch" != *x86_64* && "$_barch" != *i386* ]] && continue
+      [[ "$_arch" == "arm64" && "$_barch" != *arm64* ]] && continue
     fi
+    "$_newbash" --version >/dev/null 2>&1 || continue
+    exec "$_newbash" "$0" "$@"
   done
   echo "AI CLI requires bash 4+. Your version: ${BASH_VERSION}"
   echo ""
