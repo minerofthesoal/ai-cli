@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -euo pipefail
-VERSION="3.0.0"
+VERSION="3.1.0"
 
 # macOS ships bash 3.2 which lacks associative arrays (declare -A).
 # Require bash 4+ or auto-switch to Homebrew bash if available.
@@ -31,6 +31,15 @@ if (( BASH_VERSINFO[0] < 4 )); then
   exit 1
 fi
 
+# ── v3.1.0: Source modular lib files if available ─────────────────────────────
+_AI_LIB="${AI_CLI_LIB:-$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/lib}"
+[[ ! -d "$_AI_LIB" ]] && _AI_LIB="/usr/share/ai-cli/lib"
+[[ ! -d "$_AI_LIB" ]] && _AI_LIB="/usr/local/share/ai-cli/lib"
+if [[ -d "$_AI_LIB" ]]; then
+  for _mod in "$_AI_LIB"/*.sh; do
+    [[ -f "$_mod" ]] && source "$_mod"
+  done
+fi
 # ════════════════════════════════════════════════════════════════════════════════
 #  ENVIRONMENT DETECTION
 # ════════════════════════════════════════════════════════════════════════════════
