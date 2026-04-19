@@ -14,7 +14,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -euo pipefail
-VERSION="2.9.6.6"
+VERSION="3.0.0"
 
 # macOS ships bash 3.2 which lacks associative arrays (declare -A).
 # Require bash 4+ or auto-switch to Homebrew bash if available.
@@ -2594,70 +2594,69 @@ _rclick_write_script() {
   local vl_model="${RCLICK_VL_MODEL:-qwen3vl}"
   local vl_dir="$MODELS_DIR/rclick_vl"
 
-  cat > /tmp/ai_rclick_v3.1.sh << RCLICK_SCRIPT
+  cat > /tmp/ai_rclick_v3.1.sh <<RCLICK_SCRIPT
 #!/usr/bin/env bash
-# AI Right-Click Handler v3.1 — installed by ai-cli v2.7.1
-# Fixes: newline handling, Python UI fallback, yad output, cleaner results
-# New: Rewrite, To bullet points, Copy to clipboard action
-# Supports: X11, Wayland, all major DEs/WMs
+# AI Right-Click Handler v3.2 — installed by ai-cli v${VERSION}
 CLI_BIN="${cli_bin}"
 VL_MODEL_DIR="${vl_dir}"
 VL_TYPE="${vl_model}"
+RCLICK_SCRIPT
+  cat >> /tmp/ai_rclick_v3.1.sh << 'RCLICK_SCRIPT'
 
 # ── Copy text to clipboard ─────────────────────────────────────────────────────
 copy_to_clipboard() {
-  local text="\$1"
-  if [[ -n "\${WAYLAND_DISPLAY:-}" || -n "\${SWAYSOCK:-}" || -n "\${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
-    command -v wl-copy &>/dev/null && echo "\$text" | wl-copy 2>/dev/null && return
+  local text="$1"
+  if [[ -n "${WAYLAND_DISPLAY:-}" || -n "${SWAYSOCK:-}" || -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+    command -v wl-copy &>/dev/null && echo "$text" | wl-copy 2>/dev/null && return
   fi
-  command -v xclip  &>/dev/null && echo "\$text" | xclip -selection clipboard 2>/dev/null && return
-  command -v xsel   &>/dev/null && echo "\$text" | xsel --clipboard --input 2>/dev/null && return
+  command -v xclip  &>/dev/null && echo "$text" | xclip -selection clipboard 2>/dev/null && return
+  command -v xsel   &>/dev/null && echo "$text" | xsel --clipboard --input 2>/dev/null && return
 }
 
 # ── Get selected text (X11 primary / Wayland / clipboard) ─────────────────────
 get_text() {
   local t=""
   # Wayland primary selection
-  if [[ -n "\${WAYLAND_DISPLAY:-}" || -n "\${SWAYSOCK:-}" || -n "\${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
-    command -v wl-paste &>/dev/null && t=\$(wl-paste --primary --no-newline 2>/dev/null || true)
+  if [[ -n "${WAYLAND_DISPLAY:-}" || -n "${SWAYSOCK:-}" || -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+    command -v wl-paste &>/dev/null && t=$(wl-paste --primary --no-newline 2>/dev/null || true)
   fi
   # X11 primary (highlighted text — most reliable for "select then trigger")
-  if [[ -z "\$t" ]]; then
-    command -v xclip &>/dev/null && t=\$(xclip -selection primary -o 2>/dev/null || true)
-    [[ -z "\$t" ]] && command -v xsel &>/dev/null && t=\$(xsel --primary --output 2>/dev/null || true)
+  if [[ -z "$t" ]]; then
+    command -v xclip &>/dev/null && t=$(xclip -selection primary -o 2>/dev/null || true)
+    [[ -z "$t" ]] && command -v xsel &>/dev/null && t=$(xsel --primary --output 2>/dev/null || true)
   fi
   # Clipboard fallback
-  if [[ -z "\$t" ]]; then
-    command -v xclip  &>/dev/null && t=\$(xclip -selection clipboard -o 2>/dev/null || true)
-    [[ -z "\$t" ]] && command -v xsel     &>/dev/null && t=\$(xsel --clipboard --output 2>/dev/null || true)
-    [[ -z "\$t" ]] && command -v wl-paste &>/dev/null && t=\$(wl-paste --no-newline 2>/dev/null || true)
+  if [[ -z "$t" ]]; then
+    command -v xclip  &>/dev/null && t=$(xclip -selection clipboard -o 2>/dev/null || true)
+    [[ -z "$t" ]] && command -v xsel     &>/dev/null && t=$(xsel --clipboard --output 2>/dev/null || true)
+    [[ -z "$t" ]] && command -v wl-paste &>/dev/null && t=$(wl-paste --no-newline 2>/dev/null || true)
   fi
-  echo "\${t:0:4000}"
+  echo "${t:0:4000}"
 }
 
 # ── Show result in best available UI ──────────────────────────────────────────
 # v3.1 fix: Python fallback now writes code to temp file (heredoc-to-stdin was broken)
 show_result() {
-  local title="\$1" body="\$2" tmp
-  tmp=\$(mktemp /tmp/ai_result_XXXXX.txt)
-  printf '%s\n' "\$body" > "\$tmp"
+  local title="$1" body="$2" tmp
+  tmp=$(mktemp /tmp/ai_result_XXXXX.txt)
+  printf '%s\n' "$body" > "$tmp"
   # Always save last result for recovery
-  cp "\$tmp" /tmp/ai_rclick_last_result.txt
+  cp "$tmp" /tmp/ai_rclick_last_result.txt
 
   if command -v zenity &>/dev/null; then
-    zenity --text-info --title="\$title" --filename="\$tmp" \
+    zenity --text-info --title="$title" --filename="$tmp" \
            --width=760 --height=520 --font="Monospace 10" 2>/dev/null &
   elif command -v kdialog &>/dev/null; then
-    kdialog --title "\$title" --textbox "\$tmp" 760 520 2>/dev/null &
+    kdialog --title "$title" --textbox "$tmp" 760 520 2>/dev/null &
   elif command -v yad &>/dev/null; then
-    yad --text-info --filename="\$tmp" --title="\$title" \
+    yad --text-info --filename="$tmp" --title="$title" \
         --width=760 --height=520 --wrap --button=Close:0 2>/dev/null &
   elif command -v xmessage &>/dev/null; then
-    xmessage -file "\$tmp" -title "\$title" -buttons OK 2>/dev/null &
+    xmessage -file "$tmp" -title "$title" -buttons OK 2>/dev/null &
   elif command -v python3 &>/dev/null; then
     # v3.1 fix: write Python UI code to a temp file (heredoc-to-stdin broken with &)
-    local _py_tmp; _py_tmp=\$(mktemp /tmp/ai_rclick_ui_XXXX.py)
-    cat > "\$_py_tmp" << 'INNER_PYEOF'
+    local _py_tmp; _py_tmp=$(mktemp /tmp/ai_rclick_ui_XXXX.py)
+    cat > "$_py_tmp" << 'INNER_PYEOF'
 import sys, pathlib, tkinter as tk
 from tkinter import scrolledtext, font as tkfont
 title_arg = sys.argv[1] if len(sys.argv) > 1 else "AI Result"
@@ -2688,27 +2687,27 @@ tk.Button(btn_frame, text='Close', command=root.destroy,
     bg='#292e42', fg='#c0caf5', relief='flat', padx=8).pack(side='right', padx=4)
 root.mainloop()
 INNER_PYEOF
-    python3 "\$_py_tmp" "\$title" "\$tmp" &
-    (sleep 120 && rm -f "\$_py_tmp") &
+    python3 "$_py_tmp" "$title" "$tmp" &
+    (sleep 120 && rm -f "$_py_tmp") &
   elif command -v foot &>/dev/null; then
-    foot -e bash -c "cat '\$tmp'; echo; printf 'Press Enter to close...'; read -r _" &
+    foot -e bash -c "cat '$tmp'; echo; printf 'Press Enter to close...'; read -r _" &
   elif command -v alacritty &>/dev/null; then
-    alacritty -e bash -c "cat '\$tmp'; echo; printf 'Press Enter to close...'; read -r _" &
+    alacritty -e bash -c "cat '$tmp'; echo; printf 'Press Enter to close...'; read -r _" &
   elif command -v xterm &>/dev/null; then
-    xterm -title "\$title" -e "cat '\$tmp'; printf 'Press Enter...'; read -r _" &
+    xterm -title "$title" -e "cat '$tmp'; printf 'Press Enter...'; read -r _" &
   else
     # Last resort: notification + file
-    notify-send "\$title" "\${body:0:300}..." -t 20000 -i dialog-information 2>/dev/null || true
+    notify-send "$title" "${body:0:300}..." -t 20000 -i dialog-information 2>/dev/null || true
     echo "Full result saved: /tmp/ai_rclick_last_result.txt"
   fi
   # Cleanup after 90 s
-  (sleep 90 && rm -f "\$tmp") &
+  (sleep 90 && rm -f "$tmp") &
 }
 
 # ── Action menu (v3.1) ────────────────────────────────────────────────────────
 choose_action() {
-  local ctx="\${1:0:80}"
-  local has_files="\${2:-0}"
+  local ctx="${1:0:80}"
+  local has_files="${2:-0}"
   local action=""
 
   # Full action list — new in v3.1: Rewrite, Bullet points, To JSON
@@ -2724,38 +2723,38 @@ choose_action() {
     "To bullet points"
     "Ask a question..."
   )
-  [[ "\$has_files" == "1" ]] && opts+=("Analyze file(s)" "Summarize file(s)")
+  [[ "$has_files" == "1" ]] && opts+=("Analyze file(s)" "Summarize file(s)")
 
   if command -v zenity &>/dev/null; then
     local list_args=()
-    for o in "\${opts[@]}"; do list_args+=(FALSE "\$o"); done
-    action=\$(zenity --list --radiolist \
+    for o in "${opts[@]}"; do list_args+=(FALSE "$o"); done
+    action=$(zenity --list --radiolist \
       --title="AI Right-Click v3.1" \
-      --text="Context: \${ctx:0:60}...\n\nChoose an action:" \
+      --text="Context: ${ctx:0:60}...\n\nChoose an action:" \
       --column="" --column="Action" \
-      "\${list_args[@]}" --width=440 --height=440 2>/dev/null) || return 1
+      "${list_args[@]}" --width=440 --height=440 2>/dev/null) || return 1
   elif command -v kdialog &>/dev/null; then
     local menu_args=()
     local i=1
-    for o in "\${opts[@]}"; do menu_args+=("\$i" "\$o"); ((i++)); done
+    for o in "${opts[@]}"; do menu_args+=("$i" "$o"); ((i++)); done
     local choice
-    choice=\$(kdialog --menu "AI: \${ctx:0:60}..." "\${menu_args[@]}" 2>/dev/null) || return 1
-    action="\${opts[\$((choice-1))]}"
+    choice=$(kdialog --menu "AI: ${ctx:0:60}..." "${menu_args[@]}" 2>/dev/null) || return 1
+    action="${opts[$((choice-1))]}"
   elif command -v yad &>/dev/null; then
     # v3.1 fix: use --print-column=2 to avoid column-header/FALSE prefix in output
     local yad_rows=()
-    for o in "\${opts[@]}"; do yad_rows+=(FALSE "\$o"); done
-    action=\$(yad --list --radiolist \
+    for o in "${opts[@]}"; do yad_rows+=(FALSE "$o"); done
+    action=$(yad --list --radiolist \
       --title="AI Right-Click v3.1" \
-      --text="Context: \${ctx:0:60}..." \
+      --text="Context: ${ctx:0:60}..." \
       --column="●" --column="Action" \
       --print-column=2 \
-      "\${yad_rows[@]}" \
+      "${yad_rows[@]}" \
       --width=400 --height=400 2>/dev/null | sed 's/|//g' | tr -d '\n') || return 1
   elif command -v python3 &>/dev/null; then
     # v3.1 fix: write Python picker to temp file (heredoc-to-stdin broken with &)
-    local _py_pick; _py_pick=\$(mktemp /tmp/ai_rclick_pick_XXXX.py)
-    cat > "\$_py_pick" << 'INNER_PYEOF'
+    local _py_pick; _py_pick=$(mktemp /tmp/ai_rclick_pick_XXXX.py)
+    cat > "$_py_pick" << 'INNER_PYEOF'
 import sys, tkinter as tk
 ctx  = sys.argv[1] if len(sys.argv) > 1 else ""
 opts = sys.argv[2:]
@@ -2790,27 +2789,27 @@ root.bind('<Escape>', lambda e: root.destroy())
 root.mainloop()
 if chosen: print(chosen[0])
 INNER_PYEOF
-    action=\$(python3 "\$_py_pick" "\$ctx" "\${opts[@]}" 2>/dev/null) || { rm -f "\$_py_pick"; return 1; }
-    rm -f "\$_py_pick"
+    action=$(python3 "$_py_pick" "$ctx" "${opts[@]}" 2>/dev/null) || { rm -f "$_py_pick"; return 1; }
+    rm -f "$_py_pick"
   else
     action="Explain this"  # headless fallback
   fi
-  [[ -z "\$action" ]] && return 1
-  echo "\$action"
+  [[ -z "$action" ]] && return 1
+  echo "$action"
 }
 
 # ── Custom question input ─────────────────────────────────────────────────────
 ask_custom_question() {
-  local ctx="\${1:0:100}"
+  local ctx="${1:0:100}"
   local q=""
   if command -v zenity &>/dev/null; then
-    q=\$(zenity --entry --title="Ask AI" \
-      --text="Context: \${ctx:0:60}...\n\nYour question:" --width=520 2>/dev/null) || return 1
+    q=$(zenity --entry --title="Ask AI" \
+      --text="Context: ${ctx:0:60}...\n\nYour question:" --width=520 2>/dev/null) || return 1
   elif command -v kdialog &>/dev/null; then
-    q=\$(kdialog --title "Ask AI" --inputbox "Your question about: \${ctx:0:60}..." "" 2>/dev/null) || return 1
+    q=$(kdialog --title "Ask AI" --inputbox "Your question about: ${ctx:0:60}..." "" 2>/dev/null) || return 1
   elif command -v python3 &>/dev/null; then
-    local _py_ask; _py_ask=\$(mktemp /tmp/ai_rclick_ask_XXXX.py)
-    cat > "\$_py_ask" << 'INNER_PYEOF'
+    local _py_ask; _py_ask=$(mktemp /tmp/ai_rclick_ask_XXXX.py)
+    cat > "$_py_ask" << 'INNER_PYEOF'
 import sys, tkinter as tk
 from tkinter import simpledialog
 ctx = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -2820,46 +2819,46 @@ q = simpledialog.askstring('Ask AI',
     parent=root)
 print(q or '')
 INNER_PYEOF
-    q=\$(python3 "\$_py_ask" "\$ctx" 2>/dev/null); rm -f "\$_py_ask"
-    q=\$(echo "\$q" | tr -d '\r')
+    q=$(python3 "$_py_ask" "$ctx" 2>/dev/null); rm -f "$_py_ask"
+    q=$(echo "$q" | tr -d '\r')
   else
     q="Explain this"
   fi
-  [[ -z "\$q" ]] && return 1
-  echo "\$q"
+  [[ -z "$q" ]] && return 1
+  echo "$q"
 }
 
 # ── Build AI prompt from action + context ─────────────────────────────────────
 # v3.1 fix: use printf for proper newline handling (echo doesn't interpolate \n)
 build_prompt() {
-  local action="\$1"
-  local context="\$2"
-  local files="\$3"
-  case "\$action" in
+  local action="$1"
+  local context="$2"
+  local files="$3"
+  case "$action" in
     "Explain this")
-      printf 'Explain the following clearly and concisely:\n\n%s\n' "\$context" ;;
+      printf 'Explain the following clearly and concisely:\n\n%s\n' "$context" ;;
     "Summarize")
-      printf 'Summarize the following in a few sentences:\n\n%s\n' "\$context" ;;
+      printf 'Summarize the following in a few sentences:\n\n%s\n' "$context" ;;
     "Fix code / errors")
-      printf 'Fix any bugs or errors in the following code. Show the corrected version with an explanation of changes:\n\n%s\n' "\$context" ;;
+      printf 'Fix any bugs or errors in the following code. Show the corrected version with an explanation of changes:\n\n%s\n' "$context" ;;
     "Find bugs")
-      printf 'Identify all bugs, issues, and potential problems in the following code. Be specific:\n\n%s\n' "\$context" ;;
+      printf 'Identify all bugs, issues, and potential problems in the following code. Be specific:\n\n%s\n' "$context" ;;
     "Generate tests")
-      printf 'Generate comprehensive unit tests for the following code:\n\n%s\n' "\$context" ;;
+      printf 'Generate comprehensive unit tests for the following code:\n\n%s\n' "$context" ;;
     "Rewrite / improve")
-      printf 'Rewrite and improve the following code or text. Make it cleaner, more efficient, and well-structured:\n\n%s\n' "\$context" ;;
+      printf 'Rewrite and improve the following code or text. Make it cleaner, more efficient, and well-structured:\n\n%s\n' "$context" ;;
     "Improve writing")
-      printf 'Improve the clarity, grammar, and style of the following text:\n\n%s\n' "\$context" ;;
+      printf 'Improve the clarity, grammar, and style of the following text:\n\n%s\n' "$context" ;;
     "Translate to English")
-      printf 'Translate the following to English:\n\n%s\n' "\$context" ;;
+      printf 'Translate the following to English:\n\n%s\n' "$context" ;;
     "To bullet points")
-      printf 'Convert the following into clear, concise bullet points:\n\n%s\n' "\$context" ;;
+      printf 'Convert the following into clear, concise bullet points:\n\n%s\n' "$context" ;;
     "Analyze file(s)")
-      printf 'Analyze the following file(s) and provide insights:\n\nContext: %s\n\nFiles: %s\n' "\$context" "\$files" ;;
+      printf 'Analyze the following file(s) and provide insights:\n\nContext: %s\n\nFiles: %s\n' "$context" "$files" ;;
     "Summarize file(s)")
-      printf 'Summarize the content of the following file(s):\n\nContext: %s\n\nFiles: %s\n' "\$context" "\$files" ;;
+      printf 'Summarize the content of the following file(s):\n\nContext: %s\n\nFiles: %s\n' "$context" "$files" ;;
     *)
-      printf '%s\n\nContext:\n%s\n' "\$action" "\$context" ;;
+      printf '%s\n\nContext:\n%s\n' "$action" "$context" ;;
   esac
 }
 
@@ -2867,19 +2866,19 @@ build_prompt() {
 main() {
   local files_str=""
   local has_files=0
-  if [[ \$# -gt 0 ]]; then
-    files_str="\$*"
+  if [[ $# -gt 0 ]]; then
+    files_str="$*"
     has_files=1
   fi
 
-  local selected; selected=\$(get_text)
+  local selected; selected=$(get_text)
 
   # If no text selected but files given, use first filename as context
-  if [[ -z "\$selected" && \$has_files -eq 1 ]]; then
-    selected="\$1"
+  if [[ -z "$selected" && $has_files -eq 1 ]]; then
+    selected="$1"
   fi
 
-  if [[ -z "\$selected" && \$has_files -eq 0 ]]; then
+  if [[ -z "$selected" && $has_files -eq 0 ]]; then
     notify-send "AI Right-Click v3.1" \
       "No text selected and no files passed. Highlight text first, then press the shortcut." \
       -t 6000 -i dialog-information 2>/dev/null || \
@@ -2888,51 +2887,51 @@ main() {
   fi
 
   local action
-  action=\$(choose_action "\$selected" "\$has_files") || exit 0
-  [[ -z "\$action" ]] && exit 0
+  action=$(choose_action "$selected" "$has_files") || exit 0
+  [[ -z "$action" ]] && exit 0
 
   local full_prompt
-  if [[ "\$action" == "Ask a question..." ]]; then
+  if [[ "$action" == "Ask a question..." ]]; then
     local custom_q
-    custom_q=\$(ask_custom_question "\$selected") || exit 0
-    full_prompt=\$(printf '%s\n\nContext:\n%s\n' "\$custom_q" "\$selected")
+    custom_q=$(ask_custom_question "$selected") || exit 0
+    full_prompt=$(printf '%s\n\nContext:\n%s\n' "$custom_q" "$selected")
   else
-    full_prompt=\$(build_prompt "\$action" "\$selected" "\$files_str")
+    full_prompt=$(build_prompt "$action" "$selected" "$files_str")
     # Include file contents for file actions (v3.1: safer wc -c check)
-    if [[ \$has_files -eq 1 && "\$action" == *"file"* ]]; then
-      for f in "\$@"; do
-        if [[ -f "\$f" ]]; then
-          local fsz; fsz=\$(wc -c < "\$f" 2>/dev/null || echo 0)
+    if [[ $has_files -eq 1 && "$action" == *"file"* ]]; then
+      for f in "$@"; do
+        if [[ -f "$f" ]]; then
+          local fsz; fsz=$(wc -c < "$f" 2>/dev/null || echo 0)
           if (( fsz < 8192 )); then
-            full_prompt+=\$(printf '\n\n--- %s ---\n' "\$f")
-            full_prompt+=\$(head -100 "\$f" 2>/dev/null)
+            full_prompt+=$(printf '\n\n--- %s ---\n' "$f")
+            full_prompt+=$(head -100 "$f" 2>/dev/null)
           fi
         fi
       done
     fi
   fi
 
-  notify-send "AI Right-Click v3.1" "Processing: \${action}..." \
+  notify-send "AI Right-Click v3.1" "Processing: ${action}..." \
     -t 3000 -i dialog-information 2>/dev/null || true
 
   local result
-  result=\$("\$CLI_BIN" ask "\$full_prompt" 2>&1)
+  result=$("$CLI_BIN" ask "$full_prompt" 2>&1)
   # v3.1: strip leading/trailing blank lines from result for cleaner output
-  result=\$(echo "\$result" | sed '/^[[:space:]]*\$/{ /./!d; }' | sed -e '1{/^$/d}' 2>/dev/null || echo "\$result")
+  result=$(echo "$result" | sed '/^[[:space:]]*$/{ /./!d; }' | sed -e '1{/^$/d}' 2>/dev/null || echo "$result")
 
-  if [[ -z "\$result" ]]; then
+  if [[ -z "$result" ]]; then
     result="[No response — is 'ai' installed and a model configured?]
 Run: ai status   to check your setup.
 Run: ai ask 'hello'  to test."
   fi
 
   # Offer to copy result to clipboard before showing dialog
-  copy_to_clipboard "\$result" 2>/dev/null || true
+  copy_to_clipboard "$result" 2>/dev/null || true
 
-  show_result "AI — \${action}" "\$result"
+  show_result "AI — ${action}" "$result"
 }
 
-main "\$@"
+main "$@"
 RCLICK_SCRIPT
 
   sudo cp /tmp/ai_rclick_v3.1.sh "$script_path"
