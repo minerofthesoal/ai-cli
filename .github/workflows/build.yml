@@ -393,18 +393,11 @@ jobs:
 
           # Install script
           cat > "${DMG_STAGE}/${APP}/Contents/Resources/payload/_do_install.sh" <<INSTEOF
-          #!/bin/bash
+          #!/bin/sh
           set -e
           echo ""; echo "AI CLI v${VER} Installer"; echo ""
           PREFIX="/usr/local"
           DIR="\$(cd "\$(dirname "\$0")" && pwd)"
-          if ! /opt/nb/bin/bash --version &>/dev/null 2>&1 && ! /opt/homebrew/bin/bash --version &>/dev/null 2>&1; then
-            echo "Installing bash 4+ ..."
-            if command -v nb &>/dev/null; then nb install bash 2>/dev/null || true
-            elif command -v brew &>/dev/null; then brew install bash 2>/dev/null || true
-            else /bin/bash -c "\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && brew install bash 2>/dev/null || true
-            fi
-          fi
           echo "Installing to \${PREFIX}/bin/ai..."
           sudo mkdir -p "\${PREFIX}/bin" "\${PREFIX}/share/ai-cli"
           sudo cp "\${DIR}/ai" "\${PREFIX}/bin/ai"
@@ -690,9 +683,8 @@ jobs:
             **macOS (Intel & Apple Silicon):**
             ```bash
             curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/installers/install-mac.sh | sh
-            # Requires nb or Homebrew. Install bash 4+:
-            nb install bash    # or: brew install bash
             ```
+            > Requires `nb` or `brew`. Install bash 4+: `nb install bash` or `brew install bash`
 
             **macOS (.dmg — Intel & Apple Silicon):**
             Download the `.dmg`, open it, double-click "AI CLI Installer"
