@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║  AI.SH v2.9.0 — Universal AI CLI · GUI v7 · GUI+ v3 · Node Editor · API   ║
-# ║  GGUF·PyTorch·Diffusers·OpenAI·Claude·Gemini·HF·Audio·Video·Vision·GUI    ║
-# ║  Extensions·.aipack·Firefox·Projects·RLHF-v2·Canvas-v3·Dataset-Gen·FLUX   ║
-# ║  Nodes·125+NodeBank·GUI+3.0x·DetailedHelp·ModernCmds·AliasesV2·ErrorCodes ║
-# ║  SnapConfig·PerfBench·ModelCompare·RAGPipeline·BatchQueue·PromptTemplates  ║
-# ║  v2.9.0: bug fixes·QOL·perf benchmark·config snapshots·RAG·prompt library ║
-# ║          model compare·batch queue·retry logic·better error handling       ║
-# ║          health check·export/import·conversation branching·plugin system   ║
+# ║  AI.SH v3.0.0 — Universal AI CLI · GUI v7 · GUI+ v3 · 195 Models · 8 APIs║
+# ║  GGUF·PyTorch·OpenAI·Claude·Gemini·Groq·Mistral·Together·HuggingFace      ║
+# ║  RAG·Batch·Snap·Perf·Compare·Templates·Branch·Export·Notebook·Learn·Quiz  ║
+# ║  rclick v3.2 (Win+Mac+Linux) · iSH · bash 4+ auto-switch · Canvas v2     ║
+# ║  v3.0.0: major core rewrite — removed all duplicate functions, fixed GPU   ║
+# ║          detection, silenced llama warnings, bash 3.2 compat, ask-web     ║
+# ║          ai test (-S/-N/-A), 60+ commands with ai -h <cmd> help           ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 # Linux/Mac:   chmod +x ai.sh && sudo cp ai.sh /usr/local/bin/ai
 # Arch Linux:  pacman -S python python-pip git ffmpeg && ai install-deps
