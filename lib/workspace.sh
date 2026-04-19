@@ -110,12 +110,40 @@ cmd_plan() {
 cmd_memory() {
   local sub="${1:-}"; shift 2>/dev/null || true
   case "$sub" in
-    add) echo "${*:?fact}" >> "$MEMORY_FILE"; ok "Remembered" ;;
-    list) hdr "Memory"; cat "$MEMORY_FILE" 2>/dev/null || info "Empty" ;;
+    add|remember) echo "${*:?Usage: ai mem add FACT}" >> "$MEMORY_FILE"; ok "Remembered: $*" ;;
+    list|show|ls)
+      hdr "AI Memory"
+      if [[ ! -s "$MEMORY_FILE" ]]; then
+        info "No memories yet. Add one: ai mem add \"your name is John\""
+        return
+      fi
+      local n=0
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        (( n++ ))
+        printf "  ${BCYAN}%3d${R}  %s\n" "$n" "$line"
+      done < "$MEMORY_FILE"
+      echo ""
+      info "$n memories | Edit: ai mem edit | Clear: ai mem clear" ;;
+    edit) ${EDITOR:-nano} "$MEMORY_FILE"; ok "Memory file saved" ;;
+    delete|rm)
+      local n="${1:?Usage: ai mem delete NUMBER}"
+      sed -i "${n}d" "$MEMORY_FILE" 2>/dev/null || sed -i '' "${n}d" "$MEMORY_FILE" 2>/dev/null
+      ok "Memory #$n deleted" ;;
     context) cat "$MEMORY_FILE" 2>/dev/null ;;
-    clear) > "$MEMORY_FILE"; ok "Cleared" ;;
-    search) grep -i "${1:?keyword}" "$MEMORY_FILE" 2>/dev/null ;;
-    *) echo "Usage: ai memory <add|list|clear|search|context>" ;;
+    clear) > "$MEMORY_FILE"; ok "Memory cleared" ;;
+    search) grep -in "${1:?keyword}" "$MEMORY_FILE" 2>/dev/null || info "No matches" ;;
+    *)
+      echo "Usage: ai mem <add|list|edit|delete|clear|search>"
+      echo ""
+      echo "  add \"fact\"     Remember a fact"
+      echo "  list           Show all memories with numbers"
+      echo "  edit           Open memory file in editor"
+      echo "  delete N       Delete memory by number"
+      echo "  search WORD    Search memories"
+      echo "  clear          Delete all memories"
+      echo "  context        Output raw for prompt injection"
+      ;;
   esac
 }
 

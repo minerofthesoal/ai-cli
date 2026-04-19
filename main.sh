@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -euo pipefail
-VERSION="3.1.1"
+VERSION="3.1.2"
 
 # macOS ships bash 3.2 which lacks associative arrays (declare -A).
 # Require bash 4+ or auto-switch to Homebrew bash if available.
@@ -15785,10 +15785,29 @@ cmd_change() {
     latest|-L)
       hdr "AI CLI v${VERSION} — Latest Changes"
       echo ""
-      echo -e "  ${B}${BCYAN}v2.9.5${R}"
+      echo -e "  ${B}${BCYAN}v3.1.2${R}"
+      echo ""
+      echo -e "  ${B}New:${R}"
+      echo "    + GUI v7.1 — scrolling output, search, scrollbar, 46 items"
+      echo "    + GUI+ v3.1 — memory tab, API chat tab"
+      echo "    + ai ask-think — chain-of-thought reasoning"
+      echo "    + ai ask-w-t — thinking + web search combined"
+      echo "    + ai ask-web now shows source URLs"
+      echo "    + ai mem list/add/clear/search — memory management"
+      echo "    + ai api start with /chat endpoint"
+      echo "    + 10 thinking/reasoning models added"
+      echo "    + Modular lib/ architecture with 9 modules"
       echo ""
       echo -e "  ${B}Fixes:${R}"
-      echo "    + GPU: fixed stale cache + GPU_LAYERS=0 bug (GTX 1080)"
+      echo "    + All syntax errors fixed — passes bash -n clean"
+      echo "    + Removed all duplicate functions"
+      echo "    + Fixed unmatched quotes in prompt strings"
+      echo "    + GPU detection stale cache fix"
+      echo "    + macOS bash 3.2 auto-switch to bash 4+"
+      echo "    + rclick v3.2 — Windows, macOS, Mint support"
+      echo "    + Canvas v2 keybinds fixed"
+      echo "    + No more AI fallthrough on unknown commands"
+      echo ""
       echo "    + Silenced all llama.cpp warnings and logs"
       echo "    + Unknown commands no longer auto-pass to AI"
       echo "    + Canvas v2 keybinds fully fixed"

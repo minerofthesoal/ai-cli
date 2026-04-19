@@ -71,9 +71,32 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self._send(200, {})
 
+    def _send_html(self, code, html):
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html")
+        self.end_headers()
+        self.wfile.write(html.encode())
+
     def do_GET(self):
         if self.path == "/health": self._send(200, {"status": "ok"})
         elif self.path == "/v1/models": self._send(200, {"data": [{"id": MODEL, "object": "model"}]})
+        elif self.path == "/chat":
+            self._send_html(200, """<!DOCTYPE html><html><head><title>AI CLI Chat</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;height:100vh;display:flex;flex-direction:column}
+#msgs{flex:1;overflow-y:auto;padding:16px}.u{background:#313244;margin:8px 0 8px 40px;padding:10px;border-radius:8px}
+.a{background:#181825;border:1px solid #313244;margin:8px 40px 8px 0;padding:10px;border-radius:8px;white-space:pre-wrap}
+#bar{background:#181825;padding:10px;display:flex;gap:8px;border-top:1px solid #313244}
+#p{flex:1;background:#313244;border:1px solid #45475a;color:#cdd6f4;padding:10px;border-radius:6px;font-size:14px;resize:none}
+#p:focus{outline:none;border-color:#89b4fa}button{background:#89b4fa;color:#1e1e2e;border:none;padding:10px 18px;border-radius:6px;cursor:pointer;font-weight:600}
+button:hover{background:#74c7ec}h3{padding:10px 16px;background:#181825;border-bottom:1px solid #313244;color:#89b4fa}</style></head>
+<body><h3>AI CLI Chat</h3><div id="msgs"></div><div id="bar"><textarea id="p" rows="1" placeholder="Type a message..."></textarea><button onclick="send()">Send</button></div>
+<script>const m=document.getElementById("msgs"),p=document.getElementById("p");
+function add(r,t){const d=document.createElement("div");d.className=r;d.textContent=t;m.appendChild(d);m.scrollTop=m.scrollHeight}
+async function send(){const t=p.value.trim();if(!t)return;p.value="";add("u",t);
+try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},
+body:JSON.stringify({messages:[{role:"user",content:t}]})});const d=await r.json();
+add("a",d.choices?.[0]?.message?.content||"No response")}catch(e){add("a","Error: "+e.message)}}
+p.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}})</script></body></html>""")
         else: self._send(404, {"error": "not found"})
 
     def do_POST(self):
