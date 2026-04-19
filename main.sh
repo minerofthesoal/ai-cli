@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
 # ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║  AI.SH v2.9.0 — Universal AI CLI · GUI v7 · GUI+ v3 · Node Editor · API   ║
-# ║  GGUF·PyTorch·Diffusers·OpenAI·Claude·Gemini·HF·Audio·Video·Vision·GUI    ║
-# ║  Extensions·.aipack·Firefox·Projects·RLHF-v2·Canvas-v3·Dataset-Gen·FLUX   ║
-# ║  Nodes·125+NodeBank·GUI+3.0x·DetailedHelp·ModernCmds·AliasesV2·ErrorCodes ║
-# ║  SnapConfig·PerfBench·ModelCompare·RAGPipeline·BatchQueue·PromptTemplates  ║
-# ║  v2.9.0: bug fixes·QOL·perf benchmark·config snapshots·RAG·prompt library ║
-# ║          model compare·batch queue·retry logic·better error handling       ║
-# ║          health check·export/import·conversation branching·plugin system   ║
+# ║  AI.SH v3.0.0 — Universal AI CLI · GUI v7 · GUI+ v3 · 195 Models · 8 APIs║
+# ║  GGUF·PyTorch·OpenAI·Claude·Gemini·Groq·Mistral·Together·HuggingFace      ║
+# ║  RAG·Batch·Snap·Perf·Compare·Templates·Branch·Export·Notebook·Learn·Quiz  ║
+# ║  rclick v3.2 (Win+Mac+Linux) · iSH · bash 4+ auto-switch · Canvas v2     ║
+# ║  v3.0.0: major core rewrite — removed all duplicate functions, fixed GPU   ║
+# ║          detection, silenced llama warnings, bash 3.2 compat, ask-web     ║
+# ║          ai test (-S/-N/-A), 60+ commands with ai -h <cmd> help           ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 # Linux/Mac:   chmod +x ai.sh && sudo cp ai.sh /usr/local/bin/ai
 # Arch Linux:  pacman -S python python-pip git ffmpeg && ai install-deps
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -euo pipefail
-VERSION="2.9.6.6"
+VERSION="3.0.0"
 
 # macOS ships bash 3.2 which lacks associative arrays (declare -A).
 # Require bash 4+ or auto-switch to Homebrew bash if available.
@@ -2594,70 +2593,69 @@ _rclick_write_script() {
   local vl_model="${RCLICK_VL_MODEL:-qwen3vl}"
   local vl_dir="$MODELS_DIR/rclick_vl"
 
-  cat > /tmp/ai_rclick_v3.1.sh << RCLICK_SCRIPT
+  cat > /tmp/ai_rclick_v3.1.sh <<RCLICK_SCRIPT
 #!/usr/bin/env bash
-# AI Right-Click Handler v3.1 — installed by ai-cli v2.7.1
-# Fixes: newline handling, Python UI fallback, yad output, cleaner results
-# New: Rewrite, To bullet points, Copy to clipboard action
-# Supports: X11, Wayland, all major DEs/WMs
+# AI Right-Click Handler v3.2 — installed by ai-cli v${VERSION}
 CLI_BIN="${cli_bin}"
 VL_MODEL_DIR="${vl_dir}"
 VL_TYPE="${vl_model}"
+RCLICK_SCRIPT
+  cat >> /tmp/ai_rclick_v3.1.sh << 'RCLICK_SCRIPT'
 
 # ── Copy text to clipboard ─────────────────────────────────────────────────────
 copy_to_clipboard() {
-  local text="\$1"
-  if [[ -n "\${WAYLAND_DISPLAY:-}" || -n "\${SWAYSOCK:-}" || -n "\${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
-    command -v wl-copy &>/dev/null && echo "\$text" | wl-copy 2>/dev/null && return
+  local text="$1"
+  if [[ -n "${WAYLAND_DISPLAY:-}" || -n "${SWAYSOCK:-}" || -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+    command -v wl-copy &>/dev/null && echo "$text" | wl-copy 2>/dev/null && return
   fi
-  command -v xclip  &>/dev/null && echo "\$text" | xclip -selection clipboard 2>/dev/null && return
-  command -v xsel   &>/dev/null && echo "\$text" | xsel --clipboard --input 2>/dev/null && return
+  command -v xclip  &>/dev/null && echo "$text" | xclip -selection clipboard 2>/dev/null && return
+  command -v xsel   &>/dev/null && echo "$text" | xsel --clipboard --input 2>/dev/null && return
 }
 
 # ── Get selected text (X11 primary / Wayland / clipboard) ─────────────────────
 get_text() {
   local t=""
   # Wayland primary selection
-  if [[ -n "\${WAYLAND_DISPLAY:-}" || -n "\${SWAYSOCK:-}" || -n "\${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
-    command -v wl-paste &>/dev/null && t=\$(wl-paste --primary --no-newline 2>/dev/null || true)
+  if [[ -n "${WAYLAND_DISPLAY:-}" || -n "${SWAYSOCK:-}" || -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+    command -v wl-paste &>/dev/null && t=$(wl-paste --primary --no-newline 2>/dev/null || true)
   fi
   # X11 primary (highlighted text — most reliable for "select then trigger")
-  if [[ -z "\$t" ]]; then
-    command -v xclip &>/dev/null && t=\$(xclip -selection primary -o 2>/dev/null || true)
-    [[ -z "\$t" ]] && command -v xsel &>/dev/null && t=\$(xsel --primary --output 2>/dev/null || true)
+  if [[ -z "$t" ]]; then
+    command -v xclip &>/dev/null && t=$(xclip -selection primary -o 2>/dev/null || true)
+    [[ -z "$t" ]] && command -v xsel &>/dev/null && t=$(xsel --primary --output 2>/dev/null || true)
   fi
   # Clipboard fallback
-  if [[ -z "\$t" ]]; then
-    command -v xclip  &>/dev/null && t=\$(xclip -selection clipboard -o 2>/dev/null || true)
-    [[ -z "\$t" ]] && command -v xsel     &>/dev/null && t=\$(xsel --clipboard --output 2>/dev/null || true)
-    [[ -z "\$t" ]] && command -v wl-paste &>/dev/null && t=\$(wl-paste --no-newline 2>/dev/null || true)
+  if [[ -z "$t" ]]; then
+    command -v xclip  &>/dev/null && t=$(xclip -selection clipboard -o 2>/dev/null || true)
+    [[ -z "$t" ]] && command -v xsel     &>/dev/null && t=$(xsel --clipboard --output 2>/dev/null || true)
+    [[ -z "$t" ]] && command -v wl-paste &>/dev/null && t=$(wl-paste --no-newline 2>/dev/null || true)
   fi
-  echo "\${t:0:4000}"
+  echo "${t:0:4000}"
 }
 
 # ── Show result in best available UI ──────────────────────────────────────────
 # v3.1 fix: Python fallback now writes code to temp file (heredoc-to-stdin was broken)
 show_result() {
-  local title="\$1" body="\$2" tmp
-  tmp=\$(mktemp /tmp/ai_result_XXXXX.txt)
-  printf '%s\n' "\$body" > "\$tmp"
+  local title="$1" body="$2" tmp
+  tmp=$(mktemp /tmp/ai_result_XXXXX.txt)
+  printf '%s\n' "$body" > "$tmp"
   # Always save last result for recovery
-  cp "\$tmp" /tmp/ai_rclick_last_result.txt
+  cp "$tmp" /tmp/ai_rclick_last_result.txt
 
   if command -v zenity &>/dev/null; then
-    zenity --text-info --title="\$title" --filename="\$tmp" \
+    zenity --text-info --title="$title" --filename="$tmp" \
            --width=760 --height=520 --font="Monospace 10" 2>/dev/null &
   elif command -v kdialog &>/dev/null; then
-    kdialog --title "\$title" --textbox "\$tmp" 760 520 2>/dev/null &
+    kdialog --title "$title" --textbox "$tmp" 760 520 2>/dev/null &
   elif command -v yad &>/dev/null; then
-    yad --text-info --filename="\$tmp" --title="\$title" \
+    yad --text-info --filename="$tmp" --title="$title" \
         --width=760 --height=520 --wrap --button=Close:0 2>/dev/null &
   elif command -v xmessage &>/dev/null; then
-    xmessage -file "\$tmp" -title "\$title" -buttons OK 2>/dev/null &
+    xmessage -file "$tmp" -title "$title" -buttons OK 2>/dev/null &
   elif command -v python3 &>/dev/null; then
     # v3.1 fix: write Python UI code to a temp file (heredoc-to-stdin broken with &)
-    local _py_tmp; _py_tmp=\$(mktemp /tmp/ai_rclick_ui_XXXX.py)
-    cat > "\$_py_tmp" << 'INNER_PYEOF'
+    local _py_tmp; _py_tmp=$(mktemp /tmp/ai_rclick_ui_XXXX.py)
+    cat > "$_py_tmp" << 'INNER_PYEOF'
 import sys, pathlib, tkinter as tk
 from tkinter import scrolledtext, font as tkfont
 title_arg = sys.argv[1] if len(sys.argv) > 1 else "AI Result"
@@ -2688,27 +2686,27 @@ tk.Button(btn_frame, text='Close', command=root.destroy,
     bg='#292e42', fg='#c0caf5', relief='flat', padx=8).pack(side='right', padx=4)
 root.mainloop()
 INNER_PYEOF
-    python3 "\$_py_tmp" "\$title" "\$tmp" &
-    (sleep 120 && rm -f "\$_py_tmp") &
+    python3 "$_py_tmp" "$title" "$tmp" &
+    (sleep 120 && rm -f "$_py_tmp") &
   elif command -v foot &>/dev/null; then
-    foot -e bash -c "cat '\$tmp'; echo; printf 'Press Enter to close...'; read -r _" &
+    foot -e bash -c "cat '$tmp'; echo; printf 'Press Enter to close...'; read -r _" &
   elif command -v alacritty &>/dev/null; then
-    alacritty -e bash -c "cat '\$tmp'; echo; printf 'Press Enter to close...'; read -r _" &
+    alacritty -e bash -c "cat '$tmp'; echo; printf 'Press Enter to close...'; read -r _" &
   elif command -v xterm &>/dev/null; then
-    xterm -title "\$title" -e "cat '\$tmp'; printf 'Press Enter...'; read -r _" &
+    xterm -title "$title" -e "cat '$tmp'; printf 'Press Enter...'; read -r _" &
   else
     # Last resort: notification + file
-    notify-send "\$title" "\${body:0:300}..." -t 20000 -i dialog-information 2>/dev/null || true
+    notify-send "$title" "${body:0:300}..." -t 20000 -i dialog-information 2>/dev/null || true
     echo "Full result saved: /tmp/ai_rclick_last_result.txt"
   fi
   # Cleanup after 90 s
-  (sleep 90 && rm -f "\$tmp") &
+  (sleep 90 && rm -f "$tmp") &
 }
 
 # ── Action menu (v3.1) ────────────────────────────────────────────────────────
 choose_action() {
-  local ctx="\${1:0:80}"
-  local has_files="\${2:-0}"
+  local ctx="${1:0:80}"
+  local has_files="${2:-0}"
   local action=""
 
   # Full action list — new in v3.1: Rewrite, Bullet points, To JSON
@@ -2724,38 +2722,38 @@ choose_action() {
     "To bullet points"
     "Ask a question..."
   )
-  [[ "\$has_files" == "1" ]] && opts+=("Analyze file(s)" "Summarize file(s)")
+  [[ "$has_files" == "1" ]] && opts+=("Analyze file(s)" "Summarize file(s)")
 
   if command -v zenity &>/dev/null; then
     local list_args=()
-    for o in "\${opts[@]}"; do list_args+=(FALSE "\$o"); done
-    action=\$(zenity --list --radiolist \
+    for o in "${opts[@]}"; do list_args+=(FALSE "$o"); done
+    action=$(zenity --list --radiolist \
       --title="AI Right-Click v3.1" \
-      --text="Context: \${ctx:0:60}...\n\nChoose an action:" \
+      --text="Context: ${ctx:0:60}...\n\nChoose an action:" \
       --column="" --column="Action" \
-      "\${list_args[@]}" --width=440 --height=440 2>/dev/null) || return 1
+      "${list_args[@]}" --width=440 --height=440 2>/dev/null) || return 1
   elif command -v kdialog &>/dev/null; then
     local menu_args=()
     local i=1
-    for o in "\${opts[@]}"; do menu_args+=("\$i" "\$o"); ((i++)); done
+    for o in "${opts[@]}"; do menu_args+=("$i" "$o"); ((i++)); done
     local choice
-    choice=\$(kdialog --menu "AI: \${ctx:0:60}..." "\${menu_args[@]}" 2>/dev/null) || return 1
-    action="\${opts[\$((choice-1))]}"
+    choice=$(kdialog --menu "AI: ${ctx:0:60}..." "${menu_args[@]}" 2>/dev/null) || return 1
+    action="${opts[$((choice-1))]}"
   elif command -v yad &>/dev/null; then
     # v3.1 fix: use --print-column=2 to avoid column-header/FALSE prefix in output
     local yad_rows=()
-    for o in "\${opts[@]}"; do yad_rows+=(FALSE "\$o"); done
-    action=\$(yad --list --radiolist \
+    for o in "${opts[@]}"; do yad_rows+=(FALSE "$o"); done
+    action=$(yad --list --radiolist \
       --title="AI Right-Click v3.1" \
-      --text="Context: \${ctx:0:60}..." \
+      --text="Context: ${ctx:0:60}..." \
       --column="●" --column="Action" \
       --print-column=2 \
-      "\${yad_rows[@]}" \
+      "${yad_rows[@]}" \
       --width=400 --height=400 2>/dev/null | sed 's/|//g' | tr -d '\n') || return 1
   elif command -v python3 &>/dev/null; then
     # v3.1 fix: write Python picker to temp file (heredoc-to-stdin broken with &)
-    local _py_pick; _py_pick=\$(mktemp /tmp/ai_rclick_pick_XXXX.py)
-    cat > "\$_py_pick" << 'INNER_PYEOF'
+    local _py_pick; _py_pick=$(mktemp /tmp/ai_rclick_pick_XXXX.py)
+    cat > "$_py_pick" << 'INNER_PYEOF'
 import sys, tkinter as tk
 ctx  = sys.argv[1] if len(sys.argv) > 1 else ""
 opts = sys.argv[2:]
@@ -2790,27 +2788,27 @@ root.bind('<Escape>', lambda e: root.destroy())
 root.mainloop()
 if chosen: print(chosen[0])
 INNER_PYEOF
-    action=\$(python3 "\$_py_pick" "\$ctx" "\${opts[@]}" 2>/dev/null) || { rm -f "\$_py_pick"; return 1; }
-    rm -f "\$_py_pick"
+    action=$(python3 "$_py_pick" "$ctx" "${opts[@]}" 2>/dev/null) || { rm -f "$_py_pick"; return 1; }
+    rm -f "$_py_pick"
   else
     action="Explain this"  # headless fallback
   fi
-  [[ -z "\$action" ]] && return 1
-  echo "\$action"
+  [[ -z "$action" ]] && return 1
+  echo "$action"
 }
 
 # ── Custom question input ─────────────────────────────────────────────────────
 ask_custom_question() {
-  local ctx="\${1:0:100}"
+  local ctx="${1:0:100}"
   local q=""
   if command -v zenity &>/dev/null; then
-    q=\$(zenity --entry --title="Ask AI" \
-      --text="Context: \${ctx:0:60}...\n\nYour question:" --width=520 2>/dev/null) || return 1
+    q=$(zenity --entry --title="Ask AI" \
+      --text="Context: ${ctx:0:60}...\n\nYour question:" --width=520 2>/dev/null) || return 1
   elif command -v kdialog &>/dev/null; then
-    q=\$(kdialog --title "Ask AI" --inputbox "Your question about: \${ctx:0:60}..." "" 2>/dev/null) || return 1
+    q=$(kdialog --title "Ask AI" --inputbox "Your question about: ${ctx:0:60}..." "" 2>/dev/null) || return 1
   elif command -v python3 &>/dev/null; then
-    local _py_ask; _py_ask=\$(mktemp /tmp/ai_rclick_ask_XXXX.py)
-    cat > "\$_py_ask" << 'INNER_PYEOF'
+    local _py_ask; _py_ask=$(mktemp /tmp/ai_rclick_ask_XXXX.py)
+    cat > "$_py_ask" << 'INNER_PYEOF'
 import sys, tkinter as tk
 from tkinter import simpledialog
 ctx = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -2820,46 +2818,46 @@ q = simpledialog.askstring('Ask AI',
     parent=root)
 print(q or '')
 INNER_PYEOF
-    q=\$(python3 "\$_py_ask" "\$ctx" 2>/dev/null); rm -f "\$_py_ask"
-    q=\$(echo "\$q" | tr -d '\r')
+    q=$(python3 "$_py_ask" "$ctx" 2>/dev/null); rm -f "$_py_ask"
+    q=$(echo "$q" | tr -d '\r')
   else
     q="Explain this"
   fi
-  [[ -z "\$q" ]] && return 1
-  echo "\$q"
+  [[ -z "$q" ]] && return 1
+  echo "$q"
 }
 
 # ── Build AI prompt from action + context ─────────────────────────────────────
 # v3.1 fix: use printf for proper newline handling (echo doesn't interpolate \n)
 build_prompt() {
-  local action="\$1"
-  local context="\$2"
-  local files="\$3"
-  case "\$action" in
+  local action="$1"
+  local context="$2"
+  local files="$3"
+  case "$action" in
     "Explain this")
-      printf 'Explain the following clearly and concisely:\n\n%s\n' "\$context" ;;
+      printf 'Explain the following clearly and concisely:\n\n%s\n' "$context" ;;
     "Summarize")
-      printf 'Summarize the following in a few sentences:\n\n%s\n' "\$context" ;;
+      printf 'Summarize the following in a few sentences:\n\n%s\n' "$context" ;;
     "Fix code / errors")
-      printf 'Fix any bugs or errors in the following code. Show the corrected version with an explanation of changes:\n\n%s\n' "\$context" ;;
+      printf 'Fix any bugs or errors in the following code. Show the corrected version with an explanation of changes:\n\n%s\n' "$context" ;;
     "Find bugs")
-      printf 'Identify all bugs, issues, and potential problems in the following code. Be specific:\n\n%s\n' "\$context" ;;
+      printf 'Identify all bugs, issues, and potential problems in the following code. Be specific:\n\n%s\n' "$context" ;;
     "Generate tests")
-      printf 'Generate comprehensive unit tests for the following code:\n\n%s\n' "\$context" ;;
+      printf 'Generate comprehensive unit tests for the following code:\n\n%s\n' "$context" ;;
     "Rewrite / improve")
-      printf 'Rewrite and improve the following code or text. Make it cleaner, more efficient, and well-structured:\n\n%s\n' "\$context" ;;
+      printf 'Rewrite and improve the following code or text. Make it cleaner, more efficient, and well-structured:\n\n%s\n' "$context" ;;
     "Improve writing")
-      printf 'Improve the clarity, grammar, and style of the following text:\n\n%s\n' "\$context" ;;
+      printf 'Improve the clarity, grammar, and style of the following text:\n\n%s\n' "$context" ;;
     "Translate to English")
-      printf 'Translate the following to English:\n\n%s\n' "\$context" ;;
+      printf 'Translate the following to English:\n\n%s\n' "$context" ;;
     "To bullet points")
-      printf 'Convert the following into clear, concise bullet points:\n\n%s\n' "\$context" ;;
+      printf 'Convert the following into clear, concise bullet points:\n\n%s\n' "$context" ;;
     "Analyze file(s)")
-      printf 'Analyze the following file(s) and provide insights:\n\nContext: %s\n\nFiles: %s\n' "\$context" "\$files" ;;
+      printf 'Analyze the following file(s) and provide insights:\n\nContext: %s\n\nFiles: %s\n' "$context" "$files" ;;
     "Summarize file(s)")
-      printf 'Summarize the content of the following file(s):\n\nContext: %s\n\nFiles: %s\n' "\$context" "\$files" ;;
+      printf 'Summarize the content of the following file(s):\n\nContext: %s\n\nFiles: %s\n' "$context" "$files" ;;
     *)
-      printf '%s\n\nContext:\n%s\n' "\$action" "\$context" ;;
+      printf '%s\n\nContext:\n%s\n' "$action" "$context" ;;
   esac
 }
 
@@ -2867,19 +2865,19 @@ build_prompt() {
 main() {
   local files_str=""
   local has_files=0
-  if [[ \$# -gt 0 ]]; then
-    files_str="\$*"
+  if [[ $# -gt 0 ]]; then
+    files_str="$*"
     has_files=1
   fi
 
-  local selected; selected=\$(get_text)
+  local selected; selected=$(get_text)
 
   # If no text selected but files given, use first filename as context
-  if [[ -z "\$selected" && \$has_files -eq 1 ]]; then
-    selected="\$1"
+  if [[ -z "$selected" && $has_files -eq 1 ]]; then
+    selected="$1"
   fi
 
-  if [[ -z "\$selected" && \$has_files -eq 0 ]]; then
+  if [[ -z "$selected" && $has_files -eq 0 ]]; then
     notify-send "AI Right-Click v3.1" \
       "No text selected and no files passed. Highlight text first, then press the shortcut." \
       -t 6000 -i dialog-information 2>/dev/null || \
@@ -2888,51 +2886,51 @@ main() {
   fi
 
   local action
-  action=\$(choose_action "\$selected" "\$has_files") || exit 0
-  [[ -z "\$action" ]] && exit 0
+  action=$(choose_action "$selected" "$has_files") || exit 0
+  [[ -z "$action" ]] && exit 0
 
   local full_prompt
-  if [[ "\$action" == "Ask a question..." ]]; then
+  if [[ "$action" == "Ask a question..." ]]; then
     local custom_q
-    custom_q=\$(ask_custom_question "\$selected") || exit 0
-    full_prompt=\$(printf '%s\n\nContext:\n%s\n' "\$custom_q" "\$selected")
+    custom_q=$(ask_custom_question "$selected") || exit 0
+    full_prompt=$(printf '%s\n\nContext:\n%s\n' "$custom_q" "$selected")
   else
-    full_prompt=\$(build_prompt "\$action" "\$selected" "\$files_str")
+    full_prompt=$(build_prompt "$action" "$selected" "$files_str")
     # Include file contents for file actions (v3.1: safer wc -c check)
-    if [[ \$has_files -eq 1 && "\$action" == *"file"* ]]; then
-      for f in "\$@"; do
-        if [[ -f "\$f" ]]; then
-          local fsz; fsz=\$(wc -c < "\$f" 2>/dev/null || echo 0)
+    if [[ $has_files -eq 1 && "$action" == *"file"* ]]; then
+      for f in "$@"; do
+        if [[ -f "$f" ]]; then
+          local fsz; fsz=$(wc -c < "$f" 2>/dev/null || echo 0)
           if (( fsz < 8192 )); then
-            full_prompt+=\$(printf '\n\n--- %s ---\n' "\$f")
-            full_prompt+=\$(head -100 "\$f" 2>/dev/null)
+            full_prompt+=$(printf '\n\n--- %s ---\n' "$f")
+            full_prompt+=$(head -100 "$f" 2>/dev/null)
           fi
         fi
       done
     fi
   fi
 
-  notify-send "AI Right-Click v3.1" "Processing: \${action}..." \
+  notify-send "AI Right-Click v3.1" "Processing: ${action}..." \
     -t 3000 -i dialog-information 2>/dev/null || true
 
   local result
-  result=\$("\$CLI_BIN" ask "\$full_prompt" 2>&1)
+  result=$("$CLI_BIN" ask "$full_prompt" 2>&1)
   # v3.1: strip leading/trailing blank lines from result for cleaner output
-  result=\$(echo "\$result" | sed '/^[[:space:]]*\$/{ /./!d; }' | sed -e '1{/^$/d}' 2>/dev/null || echo "\$result")
+  result=$(echo "$result" | sed '/^[[:space:]]*$/{ /./!d; }' | sed -e '1{/^$/d}' 2>/dev/null || echo "$result")
 
-  if [[ -z "\$result" ]]; then
+  if [[ -z "$result" ]]; then
     result="[No response — is 'ai' installed and a model configured?]
 Run: ai status   to check your setup.
 Run: ai ask 'hello'  to test."
   fi
 
   # Offer to copy result to clipboard before showing dialog
-  copy_to_clipboard "\$result" 2>/dev/null || true
+  copy_to_clipboard "$result" 2>/dev/null || true
 
-  show_result "AI — \${action}" "\$result"
+  show_result "AI — ${action}" "$result"
 }
 
-main "\$@"
+main "$@"
 RCLICK_SCRIPT
 
   sudo cp /tmp/ai_rclick_v3.1.sh "$script_path"
@@ -2949,7 +2947,7 @@ RCLICK_SCRIPT
   command -v attr &>/dev/null && \
     sudo attr -s "user.nautilus-trusted" -V "" "$script_path" 2>/dev/null || true
   rm -f /tmp/ai_rclick_v3.1.sh
-  ok "Installed: $script_path (rclick v3.1, trust flags set)"
+  ok "Installed: $script_path (rclick v3.2, trust flags set)"
 }
 
 _rclick_download_vl() {
@@ -3422,6 +3420,120 @@ _rclick_install_xbindkeys() {
   fi
 }
 
+# v3.2: Linux Mint / Cinnamon — Nemo file manager actions
+_rclick_install_cinnamon() {
+  info "Installing Cinnamon/Nemo right-click actions..."
+  local nemo_dir="$HOME/.local/share/nemo/actions"
+  mkdir -p "$nemo_dir"
+  for action in "Ask AI" "Summarize" "Explain" "Fix Code" "Rewrite"; do
+    local safe_name; safe_name=$(echo "$action" | tr ' ' '_' | tr '[:upper:]' '[:lower:]')
+    cat > "$nemo_dir/ai-${safe_name}.nemo_action" <<NEMOEOF
+[Nemo Action]
+Name=$action
+Comment=Send to AI CLI
+Exec=bash -c 'ai-rclick "$action" %F'
+Selection=any
+Extensions=any;
+Icon-Name=dialog-information
+NEMOEOF
+  done
+  ok "Cinnamon/Nemo: ${#actions[@]} actions installed in $nemo_dir"
+  info "Restart Nemo: nemo -q && nemo &"
+}
+
+# v3.2: macOS — Services menu + keyboard shortcut
+_rclick_install_macos() {
+  info "Installing macOS Services integration..."
+  local workflow_dir="$HOME/Library/Services"
+  mkdir -p "$workflow_dir"
+
+  local wf_dir="$workflow_dir/Ask AI.workflow/Contents"
+  mkdir -p "$wf_dir"
+  cat > "$wf_dir/Info.plist" <<'MACPLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSServices</key>
+  <array>
+    <dict>
+      <key>NSMenuItem</key>
+      <dict><key>default</key><string>Ask AI</string></dict>
+      <key>NSMessage</key><string>runWorkflowAsService</string>
+      <key>NSSendTypes</key><array><string>NSStringPboardType</string></array>
+    </dict>
+  </array>
+</dict>
+</plist>
+MACPLIST
+  cat > "$wf_dir/document.wflow" <<'MACWFLOW'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>actions</key>
+  <array>
+    <dict>
+      <key>action</key>
+      <dict>
+        <key>ActionBundlePath</key><string>/System/Library/Automator/Run Shell Script.action</string>
+        <key>ActionName</key><string>Run Shell Script</string>
+        <key>ActionParameters</key>
+        <dict>
+          <key>COMMAND_STRING</key><string>/usr/local/bin/ai ask "$@" | pbcopy &amp;&amp; osascript -e 'display notification "AI response copied to clipboard" with title "AI CLI"'</string>
+          <key>CheckedForUserDefaultShell</key><true/>
+          <key>inputMethod</key><integer>1</integer>
+          <key>shell</key><string>/bin/bash</string>
+        </dict>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>
+MACWFLOW
+  ok "macOS: 'Ask AI' service installed"
+  info "Access: Select text → right-click → Services → Ask AI"
+  info "Or set a keyboard shortcut in: System Settings → Keyboard → Shortcuts → Services"
+}
+
+# v3.2: Windows — PowerShell context menu (registry-based)
+_rclick_install_windows() {
+  info "Installing Windows right-click menu..."
+  local ps_script="$CONFIG_DIR/rclick_install.ps1"
+  cat > "$ps_script" <<'WINEOF'
+# AI CLI Right-Click Menu Installer for Windows
+$ErrorActionPreference = "Stop"
+
+# Add "Ask AI" to right-click context menu for all files
+$regPath = "Registry::HKEY_CURRENT_USER\Software\Classes\*\shell\AskAI"
+$cmdPath = "$regPath\command"
+New-Item -Path $regPath -Force | Out-Null
+Set-ItemProperty -Path $regPath -Name "(Default)" -Value "Ask AI"
+Set-ItemProperty -Path $regPath -Name "Icon" -Value "cmd.exe"
+New-Item -Path $cmdPath -Force | Out-Null
+Set-ItemProperty -Path $cmdPath -Name "(Default)" -Value 'cmd /k bash -c "ai ask \"$(cat \"%1\")\" "'
+
+# Add "Ask AI" for selected text (background)
+$bgPath = "Registry::HKEY_CURRENT_USER\Software\Classes\Directory\Background\shell\AskAI"
+$bgCmd = "$bgPath\command"
+New-Item -Path $bgPath -Force | Out-Null
+Set-ItemProperty -Path $bgPath -Name "(Default)" -Value "Ask AI (clipboard)"
+New-Item -Path $bgCmd -Force | Out-Null
+Set-ItemProperty -Path $bgCmd -Name "(Default)" -Value 'cmd /k bash -c "ai ask \"$(powershell.exe -c Get-Clipboard)\" "'
+
+Write-Host "AI CLI right-click menu installed!" -ForegroundColor Green
+Write-Host "Right-click any file or desktop background to use."
+WINEOF
+  ok "Windows: PowerShell installer created at $ps_script"
+  if [[ $IS_WINDOWS -eq 1 ]]; then
+    info "Running installer..."
+    powershell.exe -ExecutionPolicy Bypass -File "$(cygpath -w "$ps_script")" 2>/dev/null || \
+      warn "Auto-install failed. Run manually: powershell -File $ps_script"
+  else
+    info "Copy to Windows and run: powershell -ExecutionPolicy Bypass -File rclick_install.ps1"
+  fi
+}
+
 cmd_rclick() {
   local sub="${1:-help}"; shift || true
   case "$sub" in
@@ -3469,6 +3581,18 @@ cmd_rclick() {
       # Openbox (standalone)
       if command -v openbox &>/dev/null && [[ ! " ${installed[*]} " =~ "LXDE" ]]; then
         _rclick_install_openbox && installed+=("Openbox")
+      fi
+      # v3.2: Cinnamon / Linux Mint (Nemo)
+      if [[ "$de" =~ (Cinnamon|X-Cinnamon) ]] || command -v cinnamon &>/dev/null || command -v nemo &>/dev/null; then
+        _rclick_install_cinnamon && installed+=("Cinnamon/Mint")
+      fi
+      # v3.2: macOS
+      if [[ $IS_MACOS -eq 1 ]]; then
+        _rclick_install_macos && installed+=("macOS")
+      fi
+      # v3.2: Windows
+      if [[ $IS_WINDOWS -eq 1 ]] || [[ $IS_WSL -eq 1 ]]; then
+        _rclick_install_windows && installed+=("Windows")
       fi
 
       # If nothing matched or as extra fallback, install xbindkeys
@@ -3631,7 +3755,8 @@ cmd_rclick() {
       echo "  ${B}ai rclick status${R}               — Show full status"
       echo ""
       echo "  ${B}Supported DEs/WMs (all auto-detected):${R}"
-      echo "    GNOME · KDE Plasma 5+6 · XFCE · MATE · Cinnamon"
+      echo "    GNOME · KDE Plasma 5+6 · XFCE · MATE · Cinnamon/Mint"
+      echo "    Hyprland · sway · i3 · Openbox · LXDE · macOS · Windows"
       echo "    Openbox · LXDE/LXQt · i3 · sway · Hyprland"
       echo "    X11 universal: xbindkeys fallback"
       echo ""
@@ -4006,56 +4131,6 @@ Be systematic. Use web_search for current information. Never make up facts."
 # ════════════════════════════════════════════════════════════════════════════════
 #  ENHANCED WEB SEARCH (no rate limiting, multiple backends)
 # ════════════════════════════════════════════════════════════════════════════════
-cmd_websearch() {
-  local query="$*"; local backend="${SEARCH_ENGINE:-ddg}"
-  [[ -z "$query" ]] && { read -rp "Search: " query; }
-  [[ -z "$query" ]] && return
-
-  hdr "🌐 Web Search: $query"
-  echo ""
-
-  local results_json
-  results_json=$(_agent_web_search "$query")
-
-  # Display results
-  echo "$results_json" | python3 - "$query" <<'PYEOF'
-import json, sys
-try:
-    results = json.loads(sys.stdin.read())
-    if not results:
-        print("  No results found")
-        sys.exit(0)
-    for i, r in enumerate(results, 1):
-        print(f"  {i}. {r.get('title','')[:70]}")
-        snippet = r.get('snippet','')
-        if snippet and snippet != r.get('title',''):
-            print(f"     {snippet[:120]}")
-        url = r.get('url','')
-        if url: print(f"     {url[:80]}")
-        print()
-except Exception as e:
-    print(f"Parse error: {e}")
-PYEOF
-
-  echo ""
-  # Use AI to summarize if model available
-  if [[ -n "$ACTIVE_MODEL" || -n "${OPENAI_API_KEY:-}" || -n "${ANTHROPIC_API_KEY:-}" || -n "${GEMINI_API_KEY:-}" ]]; then
-    local context
-    context=$(echo "$results_json" | python3 -c "
-import json,sys
-results=json.load(sys.stdin)
-lines=[]
-for r in results:
-    lines.append(f\"Title: {r.get('title','')}\nSnippet: {r.get('snippet','')}\nURL: {r.get('url','')}\")
-print('\n'.join(lines))")
-    hdr "AI Summary"
-    dispatch_ask "Based on these search results, answer: $query
-
-$context
-
-Be factual, cite the sources." 2>/dev/null
-  fi
-}
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  MODEL LOADING PERSISTENCE (save/restore between install/update)
@@ -5731,95 +5806,10 @@ GPCEOF
 BUILTIN_TOOLS=("web_search" "read_file" "write_file" "run_code" "list_dir"
                "get_time" "get_sysinfo" "calc" "download_file" "image_info")
 
-run_tool() {
-  local name="$1"; local args_json="${2:-{}}"
-  case "$name" in
-    web_search)
-      local q; q=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('query',''))" 2>/dev/null)
-      web_search "$q" 5 ;;
-    read_file)
-      local p; p=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('path',''))" 2>/dev/null)
-      [[ -f "$p" ]] && cat "$p" || echo "File not found: $p" ;;
-    write_file)
-      local p c
-      p=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('path',''))" 2>/dev/null)
-      c=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('content',''))" 2>/dev/null)
-      echo "$c" > "$p" && echo "Written: $p" ;;
-    run_code)
-      local lang code
-      lang=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('language','python'))" 2>/dev/null)
-      code=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('code',''))" 2>/dev/null)
-      case "$lang" in
-        python|py) echo "$code" | python3 2>&1 ;;
-        bash|sh)   echo "$code" | bash 2>&1 ;;
-        js|node)   echo "$code" | node 2>&1 ;;
-        *) echo "Unsupported language: $lang" ;;
-      esac ;;
-    list_dir)
-      local p; p=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('path','.'))" 2>/dev/null)
-      ls -la "$p" 2>&1 ;;
-    get_time) date ;;
-    get_sysinfo)
-      echo "OS: $(uname -s -r)"
-      echo "CPU: $(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | xargs || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo '?')"
-      echo "RAM: $(free -h 2>/dev/null | awk '/^Mem/{print $2}' || echo '?')"
-      [[ -n "$PYTHON" ]] && echo "Python: $($PYTHON --version 2>&1)"
-      command -v nvidia-smi &>/dev/null && nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo "GPU: none/unknown"
-      ;;
-    calc)
-      local expr; expr=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('expression',''))" 2>/dev/null)
-      python3 -c "import math; print(eval('$expr'))" 2>&1 ;;
-    download_file)
-      local url sp
-      url=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('url',''))" 2>/dev/null)
-      sp=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('save_path','/tmp/download'))" 2>/dev/null)
-      curl -sL "$url" -o "$sp" && echo "Saved: $sp" ;;
-    image_info)
-      local p; p=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('path',''))" 2>/dev/null)
-      [[ -n "$PYTHON" ]] && "$PYTHON" -c "from PIL import Image; im=Image.open('$p'); print(f'Size: {im.size}, Mode: {im.mode}')" 2>/dev/null || file "$p" ;;
-    *) echo "Unknown tool: $name" ;;
-  esac
-}
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  WEB SEARCH
 # ════════════════════════════════════════════════════════════════════════════════
-web_search() {
-  local query="$1"; local max="${2:-5}"
-  local encoded; encoded=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$query" 2>/dev/null || echo "$query")
-
-  if [[ "${SEARCH_ENGINE:-ddg}" == "brave" ]] && [[ -n "${BRAVE_API_KEY:-}" ]]; then
-    curl -sS "https://api.search.brave.com/res/v1/web/search?q=${encoded}&count=${max}" \
-      -H "Accept: application/json" \
-      -H "X-Subscription-Token: $BRAVE_API_KEY" 2>/dev/null | \
-      python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-for r in d.get('web',{}).get('results',[])[:int('$max')]:
-    print(f\"Title: {r.get('title','')}\")
-    print(f\"URL: {r.get('url','')}\")
-    print(f\"Snippet: {r.get('description','')[:200]}\")
-    print()
-" 2>/dev/null
-  else
-    curl -sS "https://api.duckduckgo.com/?q=${encoded}&format=json&no_redirect=1&no_html=1" 2>/dev/null | \
-      python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-results=[]
-if d.get('AbstractText'):
-    results.append({'title': d.get('Heading',''), 'url': d.get('AbstractURL',''), 'snippet': d.get('AbstractText','')})
-for r in d.get('RelatedTopics',[])[:int('$max')]:
-    if isinstance(r,dict) and r.get('Text'):
-        results.append({'title': r.get('Text','')[:80], 'url': r.get('FirstURL',''), 'snippet': r.get('Text','')[:200]})
-for r in results[:int('$max')]:
-    print(f\"Title: {r['title']}\")
-    print(f\"URL: {r['url']}\")
-    print(f\"Snippet: {r['snippet']}\")
-    print()
-" 2>/dev/null
-  fi
-}
 
 BUILTIN_TOOLS=("web_search" "read_file" "write_file" "run_code" "list_dir"
                "get_time" "get_sysinfo" "calc" "download_file" "image_info")
@@ -6040,20 +6030,24 @@ _inject_session_history() {
 }
 
 _save_session_turn() {
-  local user_msg="$1"; local ai_msg="$2"
+  local user_msg="$1" ai_msg="$2"
   local session="${ACTIVE_SESSION:-default}"
   local sess_file="$SESSIONS_DIR/${session}.json"
   [[ ! -f "$sess_file" ]] && echo "[]" > "$sess_file"
-  python3 -c "
-import json,sys
-f='$sess_file'
-hist=json.load(open(f))
-hist.append({'role':'user','content':$(echo "$user_msg" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))')})
-hist.append({'role':'assistant','content':$(echo "$ai_msg" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))')})
-# Keep last 20 turns
-if len(hist)>40: hist=hist[-40:]
-json.dump(hist,open(f,'w'),indent=2)
-" 2>/dev/null || true
+  SESSION_FILE="$sess_file" USER_MSG="$user_msg" AI_MSG="$ai_msg" \
+    "$PYTHON" -c '
+import json, os
+f = os.environ["SESSION_FILE"]
+try:
+    hist = json.load(open(f))
+except (json.JSONDecodeError, FileNotFoundError):
+    hist = []
+hist.append({"role": "user", "content": os.environ["USER_MSG"]})
+hist.append({"role": "assistant", "content": os.environ["AI_MSG"]})
+if len(hist) > 40:
+    hist = hist[-40:]
+json.dump(hist, open(f, "w"), indent=2)
+' 2>/dev/null || true
 }
 
 ask_gguf() {
@@ -6527,128 +6521,6 @@ dispatch_ask() {
 # ════════════════════════════════════════════════════════════════════════════════
 #  FINE-TUNING PIPELINE
 # ════════════════════════════════════════════════════════════════════════════════
-cmd_finetune() {
-  local sub="${1:-help}"; shift || true
-  case "$sub" in
-    prepare)
-      local data="${1:-}"; [[ -z "$data" ]] && { err "Data file required"; return 1; }
-      [[ ! -f "$data" ]] && { err "Not found: $data"; return 1; }
-      local out="$FINETUNE_DIR/dataset.jsonl"
-      info "Preparing dataset from $data..."
-      "$PYTHON" - <<PYEOF
-import json, re
-data_file = "$data"
-out_file = "$out"
-records = []
-with open(data_file) as f:
-    content = f.read()
-# Try JSONL
-try:
-    for line in content.splitlines():
-        line = line.strip()
-        if not line: continue
-        obj = json.loads(line)
-        if isinstance(obj, dict):
-            txt = obj.get('text') or (obj.get('instruction','') + '\n' + obj.get('output',''))
-            records.append({'text': txt})
-    print(f"Loaded {len(records)} JSONL records")
-except:
-    # Try Q&A format
-    pairs = re.split(r'### Human:', content)
-    for p in pairs:
-        if '### Assistant:' in p:
-            parts = p.split('### Assistant:', 1)
-            q = parts[0].strip(); a = parts[1].strip()
-            if q and a:
-                records.append({'text': f'### Human: {q}\n### Assistant: {a}'})
-    if not records:
-        # Plain text: split into chunks
-        chunks = [content[i:i+512] for i in range(0,len(content),512)]
-        records = [{'text': c} for c in chunks if c.strip()]
-    print(f"Prepared {len(records)} records from plain text/QA")
-
-with open(out_file, 'w') as f:
-    for r in records:
-        f.write(json.dumps(r) + '\n')
-print(f"Saved: {out_file}")
-PYEOF
-      ;;
-    start)
-      local base="${1:-}"; local data="${2:-$FINETUNE_DIR/dataset.jsonl}"; local out="${3:-$FINETUNE_DIR/finetuned_$(date +%Y%m%d_%H%M%S)}"
-      [[ -z "$base" ]] && { err "Base model required"; return 1; }
-      [[ ! -f "$data" ]] && { err "Dataset not found: $data. Run: ai finetune prepare <data>"; return 1; }
-      info "Starting LoRA fine-tune: $base → $out"
-      mkdir -p "$out"
-      BASE_MODEL="$base" DATA_FILE="$data" OUT_DIR="$out" "$PYTHON" - <<'PYEOF'
-import os, json, sys
-try:
-    import torch
-    from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, Trainer, DataCollatorForLanguageModeling
-    from peft import LoraConfig, get_peft_model, TaskType
-    from datasets import Dataset
-    from trl import SFTTrainer
-except ImportError as e:
-    print(f"Missing: {e}\nRun: ai install-deps"); sys.exit(1)
-base = os.environ['BASE_MODEL']
-data_file = os.environ['DATA_FILE']
-out_dir   = os.environ['OUT_DIR']
-tokenizer = AutoTokenizer.from_pretrained(base)
-tokenizer.pad_token = tokenizer.eos_token
-model = AutoModelForCausalLM.from_pretrained(base, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32)
-lora = LoraConfig(task_type=TaskType.CAUSAL_LM,r=16,lora_alpha=32,lora_dropout=0.05,target_modules=["q_proj","k_proj","v_proj","o_proj"])
-model = get_peft_model(model, lora)
-records=[]
-with open(data_file) as f:
-    for line in f:
-        obj=json.loads(line); txt=obj.get('text','')
-        if txt: records.append({'text':txt})
-ds = Dataset.from_list(records)
-device='cuda' if torch.cuda.is_available() else 'cpu'
-model=model.to(device)
-args=TrainingArguments(output_dir=out_dir,num_train_epochs=3,per_device_train_batch_size=1,gradient_accumulation_steps=4,learning_rate=2e-4,fp16=(device=='cuda'),logging_steps=20,save_steps=200,save_total_limit=2,report_to='none')
-trainer=SFTTrainer(model=model,args=args,train_dataset=ds,tokenizer=tokenizer,dataset_text_field='text',max_seq_length=512)
-trainer.train()
-model.save_pretrained(out_dir)
-tokenizer.save_pretrained(out_dir)
-print(f"Saved: {out_dir}")
-PYEOF
-      ;;
-    merge)
-      local adapter="${1:-}"; local base="${2:-}"; local out="${3:-${1}_merged}"
-      [[ -z "$adapter" || -z "$base" ]] && { err "Usage: ai finetune merge <adapter> <base> [out]"; return 1; }
-      info "Merging adapter into base model..."
-      ADAPTER="$adapter" BASE="$base" OUT="$out" "$PYTHON" - <<'PYEOF'
-import os,torch
-from transformers import AutoTokenizer
-from peft import PeftModel, AutoPeftModelForCausalLM
-base=os.environ['BASE']; adapter=os.environ['ADAPTER']; out=os.environ['OUT']
-model=AutoPeftModelForCausalLM.from_pretrained(adapter,torch_dtype=torch.float16)
-merged=model.merge_and_unload()
-merged.save_pretrained(out)
-tok=AutoTokenizer.from_pretrained(base)
-tok.save_pretrained(out)
-print(f"Merged: {out}")
-PYEOF
-      ;;
-    quantize)
-      local model="${1:-}"; local quant="${2:-Q4_K_M}"
-      [[ -z "$model" ]] && { err "Model path required"; return 1; }
-      local script="$HOME/llama.cpp/convert_hf_to_gguf.py"
-      [[ ! -f "$script" ]] && { err "llama.cpp not found at $HOME/llama.cpp"; return 1; }
-      local out="${model}_${quant}.gguf"
-      info "Quantizing to $quant..."
-      "$PYTHON" "$script" "$model" --outfile "$out" --outtype "${quant,,}" && ok "GGUF: $out"
-      ;;
-    status)
-      hdr "Fine-tune Status"
-      [[ -f "$FINETUNE_DIR/dataset.jsonl" ]] && echo "  Dataset: $(wc -l < "$FINETUNE_DIR/dataset.jsonl") records" || echo "  Dataset: none"
-      ls -td "$FINETUNE_DIR"/finetuned_*/ 2>/dev/null | head -5 | while read -r d; do
-        echo "  Model: $(basename "$d") ($(du -sh "$d" 2>/dev/null | cut -f1))"
-      done
-      ;;
-    *) echo "Usage: ai finetune prepare|start|merge|quantize|status" ;;
-  esac
-}
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  IMAGE GENERATION
@@ -6661,31 +6533,6 @@ PYEOF
 # ════════════════════════════════════════════════════════════════════════════════
 #  FINE-TUNING PIPELINE
 # ════════════════════════════════════════════════════════════════════════════════
-_save_session_turn() {
-  local user_msg="$1"; local ai_msg="$2"
-  local session="${ACTIVE_SESSION:-default}"
-  local sess_file="$SESSIONS_DIR/${session}.json"
-  [[ ! -f "$sess_file" ]] && echo "[]" > "$sess_file"
-  python3 -c "
-import json,sys
-f='$sess_file'
-hist=json.load(open(f))
-hist.append({'role':'user','content':$(echo "$user_msg" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))')})
-hist.append({'role':'assistant','content':$(echo "$ai_msg" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))')})
-# Keep last 20 turns
-if len(hist)>40: hist=hist[-40:]
-json.dump(hist,open(f,'w'),indent=2)
-" 2>/dev/null || true
-  # v2.6: Also append to project history (persistent multi-chat memory)
-  if [[ -n "${ACTIVE_PROJECT:-}" && -d "$PROJECTS_DIR/$ACTIVE_PROJECT" ]]; then
-    local proj_hist="$PROJECTS_DIR/$ACTIVE_PROJECT/history.jsonl"
-    local ts; ts=$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)
-    printf '%s\n%s\n' \
-      "{\"role\":\"user\",\"content\":$(echo "$user_msg" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))' 2>/dev/null || echo '""'),\"ts\":\"$ts\"}" \
-      "{\"role\":\"assistant\",\"content\":$(echo "$ai_msg" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))' 2>/dev/null || echo '""'),\"ts\":\"$ts\"}" \
-      >> "$proj_hist" 2>/dev/null || true
-  fi
-}
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -7806,69 +7653,6 @@ cmd_status() {
 # ════════════════════════════════════════════════════════════════════════════════
 #  HELP
 # ════════════════════════════════════════════════════════════════════════════════
-show_help() {
-  echo -e "${B}${BWHITE}AI CLI v${VERSION}${R} — Chat · Vision · Audio · Video · Canvas · TTM · MTM · Mtm"
-  echo ""
-  echo -e "${B}${BCYAN}ASKING & CHAT${R}"
-  echo "  ai ask <prompt>                    — Ask a question"
-  echo "  ai chat                            — Interactive chat"
-  echo "  ai -C [name|auto] ask <prompt>     — Named chat (saved as JSONL)"
-  echo "  ai chat-list / chat-show / chat-delete"
-  echo "  ai code <prompt> [--run]           — Generate & optionally run code"
-  echo "  ai pipe / review / explain / summarize / translate"
-  echo ""
-  echo -e "${B}${BCYAN}MEDIA${R}"
-  echo "  ai audio transcribe/tts/analyze/convert/extract/ask/play/info"
-  echo "  ai video analyze/transcribe/caption/extract/trim/convert/ask/summary"
-  echo "  ai vision ask/ocr/caption/compare"
-  echo "  ai imagine <prompt>"
-  echo ""
-  echo -e "${B}${BCYAN}TRAINED MODELS${R}"
-  echo "  ${B}TTM${R}  (~179.35M — any GPU/CPU)      ai ttm <cmd>"
-  echo "  ${B}MTM${R}  (~0.61B  — GTX 1080 fp16)     ai mtm <cmd>"
-  echo "  ${B}Mtm${R}  (~1.075B — RTX 2080+ bf16)    ai Mtm <cmd>   (case sensitive!)"
-  echo ""
-  echo "  Commands: pretrain [c1] [c2]  enable  disable  train-now"
-  echo "            upload [v]  create-repo  status  load [v]"
-  echo "            set-custom1 <hf-id>   set-custom2 <hf-id>"
-  echo ""
-  echo "  Load shortcuts:"
-  echo "    ai -TTM / ai -MTM / ai -Mtm"
-  echo ""
-  echo "  Pretraining datasets (6 standard + 2 custom):"
-  echo "    1. TinyStories (6k)   2. CodeAlpaca (4k)   3. OpenOrca (3k)"
-  echo "    4. The Stack Smol (3k) 5. FineWeb-Edu (4k) 6. Wikipedia-en (4k)"
-  echo "    7. Custom 1 (user-defined HF id or local path)"
-  echo "    8. Custom 2 (user-defined HF id or local path)"
-  echo ""
-  echo -e "${B}${BCYAN}CANVAS${R}"
-  echo "  ai canvas new/open/ask/show/run/edit/diff/save/list/close"
-  echo ""
-  echo -e "${B}${BCYAN}MODELS${R}"
-  echo "  ai model <name>  models  download  recommended  search-models  upload  model-info"
-  echo "  ai model-create new/train/list/edit/info/delete/presets"
-  echo ""
-  echo -e "${B}${BCYAN}FINE-TUNING${R}"
-  echo "  ai finetune prepare/start/merge/quantize/status"
-  echo ""
-  echo -e "${B}${BCYAN}SETTINGS${R}"
-  echo "  ai config [key value]     ai keys [set KEY val]"
-  echo "  ai session list/new/load  ai persona list/set/create"
-  echo "  ai history [--search x]   ai status"
-  echo "  ai install-deps [--cpu-only]"
-  echo "  sudo ai uninstall       (v2.7.3: also works without dash)"
-  echo "  ai alias set/list/del   (v2.7.3: user-defined command aliases)"
-  echo "  ai error-codes          (v2.7.3: structured error code reference)"
-  echo ""
-  echo -e "${B}${BCYAN}GUI${R}"
-  echo "  ai -gui / ai gui   — Python curses GUI (click or keyboard)"
-  echo "  Themes: dark (default) · light · hacker · matrix"
-  echo "  ai config gui_theme <theme>"
-  echo ""
-  echo -e "${B}${BCYAN}HF DATASET SYNC${R}"
-  echo "  ai config hf_dataset_sync 1   — Enable chat sync to $HF_DATASET_REPO"
-  echo "  ai config dataset_key <key>   — Set write-only HF key"
-}
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  MISC HELPERS (personas, sessions, config, history, etc.)
