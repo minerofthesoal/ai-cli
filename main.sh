@@ -3446,7 +3446,7 @@ Extensions=any;
 Icon-Name=dialog-information
 NEMOEOF
   done
-  ok "Cinnamon/Nemo: ${#actions[@]} actions installed in $nemo_dir"
+  ok "Cinnamon/Nemo: 5 actions installed in $nemo_dir"
   info "Restart Nemo: nemo -q && nemo &"
 }
 
