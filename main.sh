@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -euo pipefail
-VERSION="3.1.2"
+VERSION="3.1.2.5"
 
 # macOS ships bash 3.2 which lacks associative arrays (declare -A).
 # Require bash 4+ or auto-switch to Homebrew bash if available.
@@ -14003,7 +14003,7 @@ cat << 'HELPEOF'
     ai websearch "Python async await" 10
 HELPEOF
     ;;
-    ask-web|askweb|aw) echo "  ai ask-web \"question\"   Ask with web search context"; echo "  ai aw \"question\"        Short alias"; echo "  ai ask-web -mem \"q\"     Include memory context too" ;;
+    ask-web|askweb|aw|ask-w) echo "  ai ask-web \"question\"   Ask with web search context"; echo "  ai aw \"question\"        Short alias"; echo "  ai ask-web -mem \"q\"     Include memory context too" ;;
     snap|snapshot) cmd_snap 2>/dev/null ;;
     perf|benchmark) echo "  ai perf [--tokens N] [--runs N]   Benchmark model speed" ;;
     compare) echo "  ai compare \"prompt\" [--models a,b,c]   Side-by-side model comparison" ;;
@@ -14126,7 +14126,7 @@ ${_ask_prompt}"
       fi
       dispatch_ask "$_ask_prompt" ;;
 
-    ask-web|askweb|aw)
+    ask-web|askweb|aw|ask-w)
       local _aw_mem=0 _aw_args=()
       while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -14141,39 +14141,41 @@ ${_ask_prompt}"
       fi
       info "Searching the web..."
       local _aw_results=""
-      _aw_results=$(web_search "$_aw_prompt" 5 2>/dev/null) || true
-      [[ -z "$_aw_results" ]] && _aw_results=$(cmd_websearch "$_aw_prompt" 2>/dev/null) || true
-      # Show sources to user
+      _aw_results=$(web_search "$_aw_prompt" 5 2>/dev/null || echo "")
+      # Trim whitespace
+      _aw_results=$(echo "$_aw_results" | sed '/^$/d' | head -50)
+      if [[ -z "$_aw_results" ]]; then
+        _aw_results=$(cmd_websearch "$_aw_prompt" 2>/dev/null || echo "")
+        _aw_results=$(echo "$_aw_results" | sed '/^$/d' | head -50)
+      fi
+      # Show sources
       if [[ -n "$_aw_results" ]]; then
         echo ""
-        echo -e "${B}${BCYAN}Sources:${R}"
-        echo "$_aw_results" | grep -i "^URL:\|^Title:" | while IFS= read -r line; do
-          if [[ "$line" == URL:* ]]; then
-            printf "  ${DIM}%s${R}\n" "${line#URL: }"
-          elif [[ "$line" == Title:* ]]; then
-            printf "  ${B}%s${R}\n" "${line#Title: }"
-          fi
+        echo -e "  ${B}${BCYAN}Sources found:${R}"
+        echo "$_aw_results" | grep -i "^URL:\|^Title:" | head -10 | while IFS= read -r _src; do
+          case "$_src" in
+            URL:*|url:*)   printf "    ${DIM}%s${R}\n" "${_src#*: }" ;;
+            Title:*|title:*) printf "    ${B}%s${R}\n" "${_src#*: }" ;;
+          esac
         done
         echo ""
+      else
+        warn "No web results found — answering from model knowledge only"
       fi
+      # Build prompt
       local _aw_context=""
-      [[ $_aw_mem -eq 1 ]] && _aw_context=$(cmd_memory context 2>/dev/null) || true
+      if [[ $_aw_mem -eq 1 ]]; then
+        _aw_context=$(cmd_memory context 2>/dev/null || echo "")
+      fi
       if [[ -n "$_aw_results" ]]; then
-        _aw_prompt="You have access to the following web search results. Use them to answer the question. Cite sources when possible.
+        _aw_prompt="Use these web search results to answer. Cite sources.
 
-Web search results:
+Search results:
 ${_aw_results}
 ${_aw_context:+
-Users known facts: ${_aw_context}}
+Known facts: ${_aw_context}}
 
-Question: ${_aw_prompt}
-
-Answer using the search results above:"
-      else
-        warn "No web results found"
-        [[ -n "$_aw_context" ]] && _aw_prompt="Known facts: ${_aw_context}
-
-${_aw_prompt}"
+Question: ${_aw_prompt}"
       fi
       dispatch_ask "$_aw_prompt" ;;
 
