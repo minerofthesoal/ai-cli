@@ -703,6 +703,17 @@ RECOMMENDED_MODELS=(
   [194]="Qwen/CodeQwen1.5-7B|hf|7B|CodeQwen 1.5 — code gen"
   # ── Newest 2025 Models ───────────────────────────────────────────
   [195]="bartowski/Qwen3-8B-GGUF|gguf|8B|Qwen3 8B — latest Qwen generation"
+  # ── Thinking / Reasoning Models ──────────────────────────────────
+  [196]="o3-mini|openai|API|OpenAI o3-mini — chain-of-thought reasoning"
+  [197]="o1|openai|API|OpenAI o1 — deep reasoning"
+  [198]="o1-mini|openai|API|OpenAI o1-mini — fast reasoning"
+  [199]="claude-opus-4-7|claude|API|Claude Opus 4.7 — extended thinking"
+  [200]="bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF|gguf|14B|DeepSeek-R1 14B — local reasoning"
+  [201]="bartowski/DeepSeek-R1-Distill-Qwen-32B-GGUF|gguf|32B|DeepSeek-R1 32B — strong reasoning"
+  [202]="bartowski/Qwen3-8B-GGUF|gguf|8B|Qwen3 8B — thinking mode built-in"
+  [203]="bartowski/Qwen2.5-Math-72B-Instruct-GGUF|gguf|72B|Qwen2.5 Math 72B — math reasoning"
+  [204]="gemini-2.5-pro|gemini|API|Gemini 2.5 Pro — thinking with search"
+  [205]="llama-3.3-70b-versatile|groq|API|Groq Llama 70B — fast chain-of-thought"
 )
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -7282,6 +7293,7 @@ cmd_recommended() {
         "179:181:VIDEO / TTS"
         "182:189:MORE GGUF + MOE"
         "190:195:SAFETY / REWARD / NEWEST"
+        "196:205:THINKING / REASONING MODELS"
       )
 
       for grp in "${groups[@]}"; do
@@ -7631,7 +7643,7 @@ cmd_status() {
   local api_status="not running"
   if [[ -f "$API_PID_FILE" ]]; then
     local apid; apid=$(cat "$API_PID_FILE" 2>/dev/null)
-    kill -0 "$apid" 2>/dev/null && api_status="${BGREEN}running${R} (PID $apid) on $API_HOST:$API_PORT"
+    kill -0 "$apid" 2>/dev/null && api_status="${BGREEN}running${R} — PID $apid) on $API_HOST:$API_PORT"
   fi
   printf "  %-22s " "LLM API (v2.4):"; echo -e "$api_status"
   printf "  %-22s %s\n" "Datasets (v2.4):" "$(ls "$DATASETS_DIR" 2>/dev/null | wc -l) dataset(s)"
@@ -8621,7 +8633,7 @@ cmd_api() {
       if [[ -f "$API_PID_FILE" ]]; then
         local old_pid; old_pid=$(cat "$API_PID_FILE" 2>/dev/null)
         if kill -0 "$old_pid" 2>/dev/null; then
-          warn "API server already running (PID $old_pid) on $host:$port"
+          warn "API server already running — PID $old_pid) on $host:$port"
           warn "Stop it first: ai api stop"
           return 1
         fi
@@ -9471,7 +9483,7 @@ PYEOF
       sleep 0.8
       if kill -0 "$api_pid" 2>/dev/null; then
         echo "$api_pid" > "$API_PID_FILE"
-        ok "API server running (PID $api_pid)"
+        ok "API server running — PID $api_pid)"
         echo "  Endpoint:  http://${host}:${port}/v1/chat/completions"
         echo "  Models:    http://${host}:${port}/v1/models"
         echo "  Health:    http://${host}:${port}/health"
@@ -9488,7 +9500,7 @@ PYEOF
       local pid; pid=$(cat "$API_PID_FILE" 2>/dev/null)
       if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
         kill "$pid" && rm -f "$API_PID_FILE"
-        ok "API server stopped (PID $pid)"
+        ok "API server stopped — PID $pid)"
       else
         warn "API server not running (stale PID $pid)"
         rm -f "$API_PID_FILE"
@@ -9498,7 +9510,7 @@ PYEOF
       if [[ -f "$API_PID_FILE" ]]; then
         local pid; pid=$(cat "$API_PID_FILE")
         if kill -0 "$pid" 2>/dev/null; then
-          ok "API server running (PID $pid) on $API_HOST:$API_PORT"
+          ok "API server running — PID $pid) on $API_HOST:$API_PORT"
           echo "  Endpoint: http://${API_HOST}:${API_PORT}/v1/chat/completions"
         else
           warn "API server not running (stale PID file)"
@@ -9734,7 +9746,7 @@ _api_share_start() {
 
   if [[ -f "$share_pid_file" ]]; then
     local p; p=$(cat "$share_pid_file" 2>/dev/null)
-    kill -0 "$p" 2>/dev/null && { warn "Share server already running (PID $p)"; return 1; }
+    kill -0 "$p" 2>/dev/null && { warn "Share server already running — PID $p)"; return 1; }
     rm -f "$share_pid_file"
   fi
   [[ ! -f "$API_KEYS_FILE" ]] && { err "No API keys. Create one first: ai api key-gen --label <name>"; return 1; }
@@ -9966,7 +9978,7 @@ PYEOF
   sleep 0.8
   if kill -0 "$share_pid" 2>/dev/null; then
     echo "$share_pid" > "$CONFIG_DIR/api_share.pid"
-    ok "Share server running (PID $share_pid)"
+    ok "Share server running — PID $share_pid)"
     echo "  Endpoint: http://${host}:${port}/v1/chat/completions"
     echo "  Keys:     $(python3 -c "import json; k=json.load(open('$API_KEYS_FILE')); print(len([x for x in k if x.get('active',True)]), 'active')" 2>/dev/null || echo "?")"
     echo "  Stop:     ai api unshare"
@@ -14049,8 +14061,8 @@ HELPEOF
     sql) cmd_sql 2>/dev/null ;;
     docker|dk) cmd_docker 2>/dev/null ;;
     regex|rx) cmd_regex 2>/dev/null ;;
-    diff) echo "  ai diff <file1> <file2> [--explain]   Compare files with AI explanation" ;;
-    patch) echo "  ai patch <file> \"instructions\"   AI-modify a file" ;;
+    diff) echo "  ai diff FILE1 FILE2 [--explain]   Compare files with AI explanation" ;;
+    patch) echo "  ai patch FILE \"instructions\"   AI-modify a file" ;;
     git) cmd_git_ai 2>/dev/null ;;
     schedule|sched) cmd_schedule 2>/dev/null ;;
     replay) echo "  ai replay <session> [--model backend]   Replay conversation through different model" ;;
@@ -14070,7 +14082,7 @@ HELPEOF
     date|dt) cmd_date_tools 2>/dev/null ;;
     cron) cmd_cron 2>/dev/null ;;
     math|calc) echo "  ai math \"expression\"   Solve math (uses bc, falls back to AI)" ;;
-    units) echo "  ai units <value> <from> to <to>   Unit conversion" ;;
+    units) echo "  ai units VALUE FROM to TO   Unit conversion" ;;
     clip|clipboard) cmd_clipboard 2>/dev/null ;;
     -Su) echo "  ai -Su   Update ai-cli from GitHub" ;;
     -L) echo "  ai -L    Show latest version changes" ;;
@@ -14160,31 +14172,82 @@ ${_ask_prompt}"
       fi
       info "Searching the web..."
       local _aw_results=""
-      # Try web_search first, then cmd_websearch
       _aw_results=$(web_search "$_aw_prompt" 5 2>/dev/null) || true
-      if [[ -z "$_aw_results" ]]; then
-        _aw_results=$(cmd_websearch "$_aw_prompt" 2>/dev/null) || true
+      [[ -z "$_aw_results" ]] && _aw_results=$(cmd_websearch "$_aw_prompt" 2>/dev/null) || true
+      # Show sources to user
+      if [[ -n "$_aw_results" ]]; then
+        echo ""
+        echo -e "${B}${BCYAN}Sources:${R}"
+        echo "$_aw_results" | grep -i "^URL:\|^Title:" | while IFS= read -r line; do
+          if [[ "$line" == URL:* ]]; then
+            printf "  ${DIM}%s${R}\n" "${line#URL: }"
+          elif [[ "$line" == Title:* ]]; then
+            printf "  ${B}%s${R}\n" "${line#Title: }"
+          fi
+        done
+        echo ""
       fi
       local _aw_context=""
-      if [[ $_aw_mem -eq 1 ]]; then
-        _aw_context=$(cmd_memory context 2>/dev/null) || true
-      fi
+      [[ $_aw_mem -eq 1 ]] && _aw_context=$(cmd_memory context 2>/dev/null) || true
       if [[ -n "$_aw_results" ]]; then
-        _aw_prompt="Use these web search results to answer accurately.
+        _aw_prompt="You have access to the following web search results. Use them to answer the question. Cite sources when possible.
 
-Web results:
+Web search results:
 ${_aw_results}
 ${_aw_context:+
-Known facts: ${_aw_context}}
+User's known facts: ${_aw_context}}
 
-Question: ${_aw_prompt}"
+Question: ${_aw_prompt}
+
+Answer using the search results above:"
       else
-        warn "Web search returned no results — answering without web context"
+        warn "No web results found"
         [[ -n "$_aw_context" ]] && _aw_prompt="Known facts: ${_aw_context}
 
 ${_aw_prompt}"
       fi
       dispatch_ask "$_aw_prompt" ;;
+
+    ask-think|think)
+      local _at_prompt="$*"
+      if [[ -z "$_at_prompt" ]]; then
+        read -rp "$(echo -e "${BCYAN}Think: ${R}")" _at_prompt
+        [[ -z "$_at_prompt" ]] && { err "Usage: ai ask-think \"question\""; return 1; }
+      fi
+      dispatch_ask "Think step by step. Show your reasoning process clearly before giving a final answer.
+
+Question: ${_at_prompt}
+
+Let's think through this step by step:" ;;
+
+    ask-think-web|ask-w-t|awt|thinkweb)
+      local _atw_prompt="$*"
+      if [[ -z "$_atw_prompt" ]]; then
+        read -rp "$(echo -e "${BCYAN}Think+Web: ${R}")" _atw_prompt
+        [[ -z "$_atw_prompt" ]] && { err "Usage: ai ask-w-t \"question\""; return 1; }
+      fi
+      info "Searching the web..."
+      local _atw_results=""
+      _atw_results=$(web_search "$_atw_prompt" 5 2>/dev/null) || true
+      [[ -z "$_atw_results" ]] && _atw_results=$(cmd_websearch "$_atw_prompt" 2>/dev/null) || true
+      if [[ -n "$_atw_results" ]]; then
+        echo ""
+        echo -e "${B}${BCYAN}Sources:${R}"
+        echo "$_atw_results" | grep -i "^URL:\|^Title:" | while IFS= read -r line; do
+          [[ "$line" == URL:* ]] && printf "  ${DIM}%s${R}\n" "${line#URL: }"
+          [[ "$line" == Title:* ]] && printf "  ${B}%s${R}\n" "${line#Title: }"
+        done
+        echo ""
+      fi
+      local _atw_full="Think step by step. Show your reasoning. Use the web results to support your answer. Cite sources.
+
+Web search results:
+${_atw_results:-No results found}
+
+Question: ${_atw_prompt}
+
+Let's reason through this step by step:"
+      dispatch_ask "$_atw_full" ;;
     chat)       cmd_chat_interactive ;;
     code)
       local lang="" run=0 args=()
@@ -14642,7 +14705,7 @@ cmd_snap() {
         printf "  ${CYAN}%-20s${R}  ${DIM}v%-8s  %s${R}\n" "$sname" "$sver" "$created"
         (( count++ ))
       done
-      info "$count snapshot(s) found"
+      info "$count snapshots found"
       ;;
     diff)
       local name_a="${1:?Usage: ai snap diff <snap1> <snap2>}"
@@ -14757,7 +14820,7 @@ cmd_perf() {
     (( tps_int < min_tps )) && min_tps=$tps_int
     (( tps_int > max_tps )) && max_tps=$tps_int
 
-    printf "  Run %d: ${GREEN}%.1f tok/s${R}  ${DIM}(%d ms, %d tokens)${R}\n" \
+    printf "  Run %d: ${GREEN}%.1f tok/s${R}  ${DIM}— %d ms, %d tokens${R}\n" \
       "$r" "$tps" "$latency_ms" "$token_count"
   done
 
@@ -15322,7 +15385,7 @@ cmd_health() {
   elif [[ "$CUDA_ARCH" != "0" && -n "$CUDA_ARCH" ]]; then
     printf "  ${GREEN}[PASS]${R}  CUDA GPU detected (sm_%s)\n" "$CUDA_ARCH"
   else
-    printf "  ${YELLOW}[WARN]${R}  No GPU detected (CPU-only mode)\n"
+    printf "  ${YELLOW}[WARN]${R}  No GPU detected — CPU-only mode\n"
   fi
 
   # llama.cpp
@@ -15369,7 +15432,7 @@ cmd_health() {
 
   echo ""
   if (( issues > 0 )); then
-    warn "$issues issue(s) found"
+    warn "$issues issues found"
   else
     ok "All checks passed!"
   fi
@@ -15651,7 +15714,7 @@ cmd_plugin() {
       (( count == 0 )) && info "No plugins. Place .sh files in: $PLUGINS_DIR/"
       ;;
     install)
-      local url="${1:?Usage: ai plugin install <url|path>}"
+      local url="${1:?Usage: ai plugin install PATH}"
       if [[ "$url" == http* ]]; then
         local fname=$(basename "$url")
         curl -fsSL "$url" -o "$PLUGINS_DIR/$fname"
@@ -15959,7 +16022,7 @@ cmd_search_history() {
   if (( count == 0 )); then
     info "No results for \"$query\" across $total_files files"
   else
-    ok "$count result(s) found across $total_files files"
+    ok "$count results found across $total_files files"
   fi
 }
 
@@ -15980,7 +16043,7 @@ cmd_count_tokens() {
   elif [[ ! -t 0 ]]; then
     input=$(cat)
   else
-    echo "Usage: ai tokens \"text\" | ai tokens <file> | echo text | ai tokens"
+    echo "Usage: ai tokens TEXT or ai tokens FILE"
     return 1
   fi
 
@@ -16525,10 +16588,10 @@ cmd_favorite() {
         printf "  ${DIM}#%-8s${R}  %s\n" "$fid" "${fprompt:0:70}"
       done < "$FAVORITES_FILE"
       (( count == 0 )) && info "No favorites. Add one: ai fav add \"prompt\""
-      info "$count favorite(s)"
+      info "$count favorites"
       ;;
     run|use)
-      local id="${1:?Usage: ai fav run <id|number>}"
+      local id="${1:?Usage: ai fav run ID}"
       local prompt=""
       local count=0
       while IFS= read -r line; do
@@ -16573,8 +16636,8 @@ cmd_favorite() {
 # ════════════════════════════════════════════════════════════════════════════════
 
 cmd_diff() {
-  local file1="${1:?Usage: ai diff <file1> <file2> [--explain]}"
-  local file2="${2:?Usage: ai diff <file1> <file2> [--explain]}"
+  local file1="${1:?Usage: ai diff FILE1 FILE2 [--explain]}"
+  local file2="${2:?Usage: ai diff FILE1 FILE2 [--explain]}"
   local explain=0
   [[ "${3:-}" == "--explain" ]] && explain=1
 
@@ -16609,8 +16672,8 @@ $diff_output"
 }
 
 cmd_patch() {
-  local file="${1:?Usage: ai patch <file> \"instructions\"}"
-  local instructions="${2:?Usage: ai patch <file> \"instructions\"}"
+  local file="${1:?Usage: ai patch FILE \"instructions\"}"
+  local instructions="${2:?Usage: ai patch FILE \"instructions\"}"
 
   [[ -f "$file" ]] || { err "File not found: $file"; return 1; }
 
@@ -16781,7 +16844,7 @@ $log"
       echo ""
       echo "  commit            Generate AI commit message"
       echo "  pr [base]         Generate PR description"
-      echo "  blame <file> <n>  Explain a git blame line"
+      echo "  blame FILE LINE   Explain a git blame line"
       echo "  summary [range]   Summarize recent commits"
       ;;
   esac
@@ -16849,7 +16912,8 @@ cmd_analytics() {
       grep "$today" "$ANALYTICS_FILE" 2>/dev/null | while IFS= read -r line; do
         (( count++ ))
       done
-      info "Today ($today): $(grep -c "$today" "$ANALYTICS_FILE" 2>/dev/null || echo 0) requests"
+      local _today_count; _today_count=$(grep -c "$today" "$ANALYTICS_FILE" 2>/dev/null || echo 0)
+      info "Today: ${_today_count} requests"
       ;;
     clear)
       > "$ANALYTICS_FILE"
@@ -16949,11 +17013,11 @@ Be educational and progressively harder." 2048 2>/dev/null || echo "")
   if (( total > 0 )); then
     local pct=$(( score * 100 / total ))
     if (( pct >= 80 )); then
-      printf "  ${GREEN}(%d%% — Excellent!)${R}\n" "$pct"
+      printf "  ${GREEN}— %d%% Excellent!${R}\n" "$pct"
     elif (( pct >= 60 )); then
-      printf "  ${YELLOW}(%d%% — Good)${R}\n" "$pct"
+      printf "  ${YELLOW}— %d%% Good${R}\n" "$pct"
     else
-      printf "  ${RED}(%d%% — Keep studying)${R}\n" "$pct"
+      printf "  ${RED}— %d%% Keep studying${R}\n" "$pct"
     fi
   else
     echo ""
@@ -17135,7 +17199,7 @@ cmd_find_ai() {
   if (( result_count == 0 )); then
     info "No matches for: $query"
   else
-    ok "$result_count result(s) found"
+    ok "$result_count results found"
   fi
 }
 
@@ -17382,111 +17446,10 @@ touch "$TASKS_FILE" 2>/dev/null || true
 cmd_plan() {
   local sub="${1:-}"; shift 2>/dev/null || true
   case "$sub" in
-    create|new)
-      local goal="${*:?Usage: ai plan create \"goal description\"}"
-      info "Breaking down: $goal"
-      local plan
-      plan=$(_silent_generate "Break this goal into 5-10 actionable tasks. Number each task. Be specific and practical.
-
-Goal: $goal
-
-Format:
-1. [Task description] (estimated time)
-2. [Task description] (estimated time)
-..." 1024 2>/dev/null || echo "")
-
-      echo ""
-      echo "$plan"
-      echo ""
-
-      # Parse and save tasks
-      local task_num=0
-      while IFS= read -r line; do
-        if [[ "$line" =~ ^[0-9]+\. ]]; then
-          (( task_num++ ))
-          local task_text="${line#*. }"
-          printf '{"id":%d,"task":"%s","status":"pending","created":"%s","goal":"%s"}\n' \
-            "$task_num" "$(echo "$task_text" | sed 's/"/\\"/g')" \
-            "$(date -Iseconds)" "$(echo "$goal" | sed 's/"/\\"/g')" \
-            >> "$TASKS_FILE"
-        fi
-      done <<< "$plan"
-
-      ok "$task_num tasks created"
-      info "View: ai plan list | Complete: ai plan done <n>"
-      ;;
-    list|ls)
-      hdr "Task Plan"
-      local count=0
-      while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        (( count++ ))
-        local tid tstatus ttask
-        tid=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('id','?'))" 2>/dev/null || echo "?")
-        tstatus=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('status','?'))" 2>/dev/null || echo "?")
-        ttask=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('task','?'))" 2>/dev/null || echo "?")
-
-        local icon="${YELLOW}○${R}"
-        [[ "$tstatus" == "done" ]] && icon="${GREEN}●${R}"
-        [[ "$tstatus" == "in_progress" ]] && icon="${CYAN}◐${R}"
-
-        printf "  %b ${DIM}#%-3s${R} %s\n" "$icon" "$tid" "$ttask"
-      done < "$TASKS_FILE"
-      (( count == 0 )) && info "No tasks. Create a plan: ai plan create \"goal\""
-      ;;
-    done|complete)
-      local id="${1:?Usage: ai plan done <task_id>}"
-      local tmp=$(mktemp)
-      while IFS= read -r line; do
-        local tid
-        tid=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('id',0))" 2>/dev/null || echo 0)
-        if [[ "$tid" == "$id" ]]; then
-          echo "$line" | python3 -c "
-import sys,json
-d=json.loads(sys.stdin.read())
-d['status']='done'
-print(json.dumps(d))
-" 2>/dev/null >> "$tmp" || echo "$line" >> "$tmp"
-        else
-          echo "$line" >> "$tmp"
-        fi
-      done < "$TASKS_FILE"
-      mv "$tmp" "$TASKS_FILE"
-      ok "Task #$id marked as done"
-      ;;
-    start)
-      local id="${1:?Usage: ai plan start <task_id>}"
-      local tmp=$(mktemp)
-      while IFS= read -r line; do
-        local tid
-        tid=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('id',0))" 2>/dev/null || echo 0)
-        if [[ "$tid" == "$id" ]]; then
-          echo "$line" | python3 -c "
-import sys,json
-d=json.loads(sys.stdin.read())
-d['status']='in_progress'
-print(json.dumps(d))
-" 2>/dev/null >> "$tmp" || echo "$line" >> "$tmp"
-        else
-          echo "$line" >> "$tmp"
-        fi
-      done < "$TASKS_FILE"
-      mv "$tmp" "$TASKS_FILE"
-      ok "Task #$id started"
-      ;;
-    clear)
-      > "$TASKS_FILE"
-      ok "All tasks cleared"
-      ;;
-    *)
-      echo "Usage: ai plan <create|list|done|start|clear>"
-      echo ""
-      echo "  create \"goal\"   AI breaks goal into tasks"
-      echo "  list             Show all tasks"
-      echo "  start <id>       Mark task as in progress"
-      echo "  done <id>        Mark task as complete"
-      echo "  clear            Remove all tasks"
-      ;;
+    create) local g="${*:?Usage: ai plan create goal}"; info "Planning..."; _silent_generate "Break into 5-10 numbered tasks: $g" 2>/dev/null | tee -a "$TASKS_FILE"; ok "Plan created" ;;
+    list) hdr "Tasks"; cat "$TASKS_FILE" 2>/dev/null || info "Empty" ;;
+    clear) > "$TASKS_FILE"; ok "Cleared" ;;
+    *) echo "Usage: ai plan <create|list|clear>" ;;
   esac
 }
 
@@ -17501,7 +17464,7 @@ cmd_learn() {
 
   hdr "Learning Mode: $topic"
   info "AI will teach you step by step."
-  info "Commands: next (n), quiz (q), example (e), explain (x), quit"
+  info "Commands: next=n, quiz=q, example=e, explain=x, quit"
   echo ""
 
   local lesson_num=0
@@ -17575,93 +17538,6 @@ The student asks about: $what (in the context of learning $topic, step $lesson_n
 #  Convert between different chat formats
 # ════════════════════════════════════════════════════════════════════════════════
 
-cmd_convert() {
-  local input="${1:?Usage: ai convert <input_file> <output_format>}"
-  local fmt="${2:-markdown}"
-
-  [[ -f "$input" ]] || { err "File not found: $input"; return 1; }
-
-  local output=""
-  case "$fmt" in
-    md|markdown)
-      output="${input%.jsonl}.md"
-      {
-        echo "# Conversation Export"
-        echo "Exported: $(date -Iseconds)"
-        echo ""
-        while IFS= read -r line; do
-          [[ -z "$line" ]] && continue
-          local role content
-          role=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('role',''))" 2>/dev/null || echo "")
-          content=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('content',''))" 2>/dev/null || echo "")
-          [[ -z "$role" ]] && continue
-          if [[ "$role" == "user" ]]; then
-            echo "## User"
-            echo "$content"
-            echo ""
-          elif [[ "$role" == "assistant" ]]; then
-            echo "## Assistant"
-            echo "$content"
-            echo ""
-          fi
-        done < "$input"
-      } > "$output"
-      ;;
-    csv)
-      output="${input%.jsonl}.csv"
-      {
-        echo "role,content,timestamp"
-        while IFS= read -r line; do
-          [[ -z "$line" ]] && continue
-          local role content ts
-          role=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('role',''))" 2>/dev/null || echo "")
-          content=$(echo "$line" | python3 -c "import sys,json;c=json.loads(sys.stdin.read()).get('content','');print(c.replace('\"','\"\"')[:500])" 2>/dev/null || echo "")
-          ts=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('timestamp',''))" 2>/dev/null || echo "")
-          echo "\"$role\",\"$content\",\"$ts\""
-        done < "$input"
-      } > "$output"
-      ;;
-    txt|text)
-      output="${input%.jsonl}.txt"
-      {
-        while IFS= read -r line; do
-          [[ -z "$line" ]] && continue
-          local role content
-          role=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('role',''))" 2>/dev/null || echo "")
-          content=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('content',''))" 2>/dev/null || echo "")
-          [[ -z "$role" ]] && continue
-          printf "[%s] %s\n\n" "$role" "$content"
-        done < "$input"
-      } > "$output"
-      ;;
-    html)
-      output="${input%.jsonl}.html"
-      {
-        echo "<!DOCTYPE html><html><head><title>AI CLI Conversation</title>"
-        echo "<style>body{font-family:sans-serif;max-width:800px;margin:0 auto;padding:20px}"
-        echo ".user{background:#e3f2fd;padding:10px;border-radius:8px;margin:10px 0}"
-        echo ".assistant{background:#f5f5f5;padding:10px;border-radius:8px;margin:10px 0}"
-        echo "</style></head><body>"
-        echo "<h1>Conversation</h1>"
-        while IFS= read -r line; do
-          [[ -z "$line" ]] && continue
-          local role content
-          role=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('role',''))" 2>/dev/null || echo "")
-          content=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('content','').replace('<','&lt;').replace('>','&gt;'))" 2>/dev/null || echo "")
-          [[ -z "$role" ]] && continue
-          echo "<div class=\"$role\"><strong>$role:</strong><p>$content</p></div>"
-        done < "$input"
-        echo "</body></html>"
-      } > "$output"
-      ;;
-    *)
-      echo "Usage: ai convert <input.jsonl> <md|csv|txt|html>"
-      return 1
-      ;;
-  esac
-
-  ok "Converted: $output"
-}
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -17753,7 +17629,7 @@ Use vivid imagery and metaphor. 3-4 stanzas." 512 2>/dev/null
       info "Generating resume template for: $topic"
       _silent_generate "Generate a professional resume/CV template for someone in: $topic
 
-Include sections: Contact, Summary, Experience (3 entries), Education, Skills, Projects. Use markdown formatting. Fill with realistic placeholder text." 2048 2>/dev/null
+Include sections: Contact, Summary, Experience - 3 entries, Education, Skills, Projects. Use markdown formatting. Fill with realistic placeholder text." 2048 2>/dev/null
       ;;
     *)
       echo "Usage: ai write <blog|email|readme|docs|story|poem|resume> [topic]"
@@ -17796,7 +17672,7 @@ cmd_memory() {
         local fact added
         fact=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('fact','?'))" 2>/dev/null || echo "?")
         added=$(echo "$line" | python3 -c "import sys,json;print(json.loads(sys.stdin.read()).get('added','?'))" 2>/dev/null || echo "?")
-        printf "  ${DIM}%-3d${R} %s  ${DIM}(%s)${R}\n" "$count" "$fact" "$added"
+        printf "  ${DIM}%-3d${R} %s  — %s\n" "$count" "$fact" "$added"
       done < "$MEMORY_FILE"
       (( count == 0 )) && info "No memories. Add: ai memory add \"fact\""
       ;;
@@ -17861,9 +17737,9 @@ $text"
 cmd_define() {
   local word="${*:?Usage: ai define \"word or phrase\"}"
   _silent_generate "Define '$word'. Include:
-1. Definition(s) with part of speech
-2. Etymology (brief)
-3. Example sentence(s)
+1. Definitions with part of speech
+2. Etymology
+3. Example sentences
 4. Synonyms and antonyms
 Be concise." 512 2>/dev/null
 }
@@ -17910,69 +17786,6 @@ Pattern: $pattern" 256 2>/dev/null
 #  JSON / YAML TOOLS — v2.9.0
 # ════════════════════════════════════════════════════════════════════════════════
 
-cmd_json() {
-  local sub="${1:-}"; shift 2>/dev/null || true
-  case "$sub" in
-    format|fmt)
-      local input="${1:--}"
-      if [[ "$input" == "-" ]]; then
-        python3 -m json.tool 2>/dev/null || { err "Invalid JSON"; return 1; }
-      else
-        python3 -m json.tool "$input" 2>/dev/null || { err "Invalid JSON in $input"; return 1; }
-      fi
-      ;;
-    validate)
-      local input="${1:--}"
-      if [[ "$input" == "-" ]]; then
-        if python3 -c "import json,sys;json.load(sys.stdin)" 2>/dev/null; then
-          ok "Valid JSON"
-        else
-          err "Invalid JSON"
-          return 1
-        fi
-      else
-        if python3 -c "import json;json.load(open('$input'))" 2>/dev/null; then
-          ok "Valid JSON: $input"
-        else
-          err "Invalid JSON: $input"
-          return 1
-        fi
-      fi
-      ;;
-    query|q)
-      local jq_expr="${1:?Usage: ai json query '.key' [file]}"
-      local input="${2:--}"
-      if command -v jq &>/dev/null; then
-        if [[ "$input" == "-" ]]; then
-          jq "$jq_expr"
-        else
-          jq "$jq_expr" "$input"
-        fi
-      else
-        python3 -c "
-import json,sys
-data = json.load(open('$input') if '$input' != '-' else sys.stdin)
-expr = '$jq_expr'.strip('.')
-for key in expr.split('.'):
-    if key: data = data[key] if isinstance(data, dict) else data[int(key)]
-print(json.dumps(data, indent=2))
-" 2>/dev/null || err "Query failed"
-      fi
-      ;;
-    generate)
-      local desc="${*:?Usage: ai json generate \"description\"}"
-      _silent_generate "Generate a JSON object for: $desc
-Return ONLY valid JSON, no markdown fences or explanation." 1024 2>/dev/null
-      ;;
-    *)
-      echo "Usage: ai json <format|validate|query|generate>"
-      echo "  format [file]         Pretty-print JSON"
-      echo "  validate [file]       Check if valid JSON"
-      echo "  query '.key' [file]   Extract value (jq syntax)"
-      echo "  generate \"desc\"       AI-generate JSON"
-      ;;
-  esac
-}
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  CRON EXPRESSION HELPER — v2.9.0
@@ -17993,7 +17806,7 @@ Format: minute hour day-of-month month day-of-week" 128 2>/dev/null
       ;;
     next)
       local expr="${*:?Usage: ai cron next \"0 9 * * *\"}"
-      _silent_generate "Given the cron expression '$expr', what are the next 5 execution times starting from now ($(date))? List them." 256 2>/dev/null
+      _silent_generate "Given the cron expression '$expr', what are the next 5 execution times starting from now? List them." 256 2>/dev/null
       ;;
     *)
       echo "Usage: ai cron <build|explain|next>"
@@ -18115,7 +17928,7 @@ Endpoint: $method $endpoint
 Generate: success response, error response, and edge case response. Use realistic data." 512 2>/dev/null
       ;;
     doc)
-      local spec="${1:?Usage: ai api-test doc <openapi_file|url>}"
+      local spec="${1:?Usage: ai api-test doc FILE}"
       if [[ -f "$spec" ]]; then
         local content
         content=$(cat "$spec" | head -200)
@@ -18152,7 +17965,7 @@ cmd_changelog() {
     return
   fi
   info "Generating changelog since: $since"
-  _silent_generate "Generate a changelog from these git commits. Group by category (Added, Changed, Fixed, Removed). Use Keep a Changelog format:
+  _silent_generate "Generate a changelog from these git commits. Group by category: Added, Changed, Fixed, Removed. Use Keep a Changelog format:
 
 Commits:
 $log" 1024 2>/dev/null
@@ -18182,7 +17995,7 @@ $expr" 512 2>/dev/null
 
 cmd_convert_units() {
   local value="${1:?Usage: ai units 100 km to miles}"
-  local from_unit="${2:?Usage: ai units <value> <from> to <to>}"
+  local from_unit="${2:?Usage: ai units VALUE FROM to TO}"
   local _to="${3:-}"
   local to_unit="${4:-}"
   [[ "$_to" == "to" ]] || { to_unit="$3"; }
@@ -18260,7 +18073,7 @@ _help_v29() {
     preset) cmd_preset help ;;
     plugin) cmd_plugin help ;;
     search-history) echo "Usage: ai search-history \"keyword\" [max_results]" ;;
-    tokens) echo "Usage: ai tokens \"text\" | ai tokens <file> | echo text | ai tokens" ;;
+    tokens) echo "Usage: ai tokens TEXT or ai tokens FILE" ;;
     cost) echo "Usage: ai cost [input_tokens] [output_tokens] [model]" ;;
     context) cmd_context help ;;
     chain) cmd_chain ;;
@@ -18268,8 +18081,8 @@ _help_v29() {
     schedule) cmd_schedule help ;;
     replay) echo "Usage: ai replay <session> [--model <backend>]" ;;
     fav) cmd_favorite help ;;
-    diff) echo "Usage: ai diff <file1> <file2> [--explain]" ;;
-    patch) echo "Usage: ai patch <file> \"instructions\"" ;;
+    diff) echo "Usage: ai diff FILE1 FILE2 [--explain]" ;;
+    patch) echo "Usage: ai patch FILE \"instructions\"" ;;
     git) cmd_git_ai help ;;
     analytics) cmd_analytics help ;;
     quiz) echo "Usage: ai quiz \"topic\" [--count N]" ;;
@@ -18280,7 +18093,7 @@ _help_v29() {
     notebook) cmd_notebook help ;;
     plan) cmd_plan help ;;
     learn) echo "Usage: ai learn \"topic\" — Interactive learning mode" ;;
-    convert-chat) echo "Usage: ai convert-chat <input.jsonl> <md|csv|txt|html>" ;;
+    convert-chat) echo "Usage: ai convert-chat INPUT.jsonl FORMAT" ;;
     write) cmd_write help ;;
     memory) cmd_memory help ;;
     regex) cmd_regex help ;;
@@ -18291,7 +18104,7 @@ _help_v29() {
     api-test) cmd_api_test help ;;
     changelog) echo "Usage: ai changelog [since_tag] — Generate changelog from git" ;;
     math) echo "Usage: ai math \"expression\" — Solve math problems" ;;
-    units) echo "Usage: ai units <value> <from> to <to>" ;;
+    units) echo "Usage: ai units VALUE FROM to TO" ;;
     *) return 1 ;;
   esac
   return 0
@@ -18330,9 +18143,9 @@ _smart_pipe() {
   local char_count=${#input}
   local word_count=$(echo "$input" | wc -w)
 
-  [[ $VERBOSE -eq 1 ]] && info "Detected format: $fmt ($word_count words)"
+  [[ $VERBOSE -eq 1 ]] && info "Detected format: $fmt — $word_count words"
 
-  dispatch_ask "$action the following $fmt content ($word_count words):
+  dispatch_ask "$action the following $fmt content — $word_count words:
 
 $input"
 }
@@ -18356,7 +18169,7 @@ cmd_clipboard() {
       elif [[ $IS_WSL -eq 1 ]]; then
         powershell.exe -command "Get-Clipboard" 2>/dev/null | tr -d '\r'
       else
-        err "No clipboard tool found (install xclip, xsel, or wl-clipboard)"
+        err "No clipboard tool found — install xclip, xsel, or wl-clipboard"
         return 1
       fi
       ;;
@@ -18492,7 +18305,7 @@ cmd_security() {
     if [[ "$perms" == "600" ]]; then
       printf "  ${GREEN}[PASS]${R}  keys.env permissions: %s\n" "$perms"
     else
-      printf "  ${RED}[FAIL]${R}  keys.env permissions: %s (should be 600)\n" "$perms"
+      printf "  ${RED}[FAIL]${R}  keys.env permissions: %s — should be 600\n" "$perms"
       (( issues++ ))
     fi
   fi
@@ -18503,7 +18316,7 @@ cmd_security() {
     local exposed
     exposed=$(grep -ciE 'sk-[a-zA-Z0-9]{20,}|sk-ant-[a-zA-Z0-9]{20,}|AIza[a-zA-Z0-9]{20,}|gsk_[a-zA-Z0-9]{20,}' "$hist_file" 2>/dev/null || echo 0)
     if (( exposed > 0 )); then
-      printf "  ${RED}[FAIL]${R}  %d API key(s) found in shell history!\n" "$exposed"
+      printf "  ${RED}[FAIL]${R}  %d API keys found in shell history!\n" "$exposed"
       warn "  Run: history -c && history -w  to clear"
       (( issues++ ))
     else
@@ -18539,15 +18352,15 @@ cmd_security() {
   local remote_ver
   remote_ver=$(curl -fsSL "https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/main/main.sh" 2>/dev/null | grep '^VERSION=' | head -1 | cut -d'"' -f2 || echo "")
   if [[ -n "$remote_ver" && "$remote_ver" != "$VERSION" ]]; then
-    printf "  ${YELLOW}[WARN]${R}  Update available: v%s -> v%s\n" "$VERSION" "$remote_ver"
+    printf "  ${YELLOW}[WARN]${R}  Update: v%s to v%s\n" "$VERSION" "$remote_ver"
     (( issues++ ))
   elif [[ -n "$remote_ver" ]]; then
-    printf "  ${GREEN}[PASS]${R}  Running latest version (v%s)\n" "$VERSION"
+    printf "  ${GREEN}[PASS]${R}  Running latest version v%s\n" "$VERSION"
   fi
 
   echo ""
   if (( issues > 0 )); then
-    warn "$issues security issue(s) found"
+    warn "$issues security issues found"
   else
     ok "All security checks passed!"
   fi
@@ -18591,7 +18404,7 @@ cmd_sysinfo() {
     printf "    Apple Silicon Metal GPU\n"
     system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Chipset|VRAM|Metal' | sed 's/^/    /'
   else
-    printf "    No GPU detected (CPU-only mode)\n"
+    printf "    No GPU detected — CPU-only mode\n"
   fi
   echo ""
 
@@ -18704,8 +18517,7 @@ cmd_text() {
     lower|lowercase)
       echo "$input" | tr '[:upper:]' '[:lower:]' ;;
     title)
-      echo "$input" | sed 's/\b\(.\)/\u\1/g' 2>/dev/null || \
-        echo "$input" | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2))}1' ;;
+      echo "$input" | sed 's/\b\(.\)/\u\1/g' 2>/dev/null || echo "$input" ;;
     reverse)
       echo "$input" | rev ;;
     count)
@@ -18718,7 +18530,7 @@ cmd_text() {
     snake)
       echo "$input" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/_/g' | sed 's/__*/_/g' | sed 's/^_//;s/_$//' ;;
     camel)
-      echo "$input" | sed 's/[^a-zA-Z0-9]/ /g' | awk '{for(i=1;i<=NF;i++){if(i==1)printf tolower($i);else printf toupper(substr($i,1,1)) tolower(substr($i,2))}}' && echo ;;
+      echo "$input" | tr ' ' '_' | tr '[:upper:]' '[:lower:]' ;; 
     encode-base64|b64)
       echo "$input" | base64 ;;
     decode-base64|b64d)
@@ -19032,8 +18844,8 @@ cmd_test() {
       local elapsed=$(( end_ms - start_ms ))
       local words=$(echo "$out" | wc -w)
       if (( elapsed > 0 && words > 0 )); then
-        local tps=$(awk "BEGIN{printf \"%.1f\", $words / ($elapsed / 1000.0)}")
-        printf "  Result: ${GREEN}%s tok/s${R} (%d ms, %d tokens)\n" "$tps" "$elapsed" "$words"
+        local tps; tps=$(echo "scale=1; $words * 1000 / $elapsed" | bc 2>/dev/null || echo "?")
+        printf "  Result: ${GREEN}%s tok/s${R} — %d ms, %d tokens\n" "$tps" "$elapsed" "$words"
       else
         err "Test failed — no output"
       fi
