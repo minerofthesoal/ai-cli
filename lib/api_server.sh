@@ -123,7 +123,7 @@ p.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefau
 
 print(f"AI CLI API Server v3 — http://{HOST}:{PORT}")
 print(f"Model: {MODEL} | Backend: {BACKEND}")
-print(f"Endpoints: POST /v1/chat/completions, GET /v1/models, GET /health")
+print(f"Endpoints: POST /v1/chat/completions, GET /v1/models, GET /health, GET /chat")
 print("Press Ctrl+C to stop")
 server = http.server.HTTPServer((HOST, PORT), Handler)
 try: server.serve_forever()
@@ -133,9 +133,10 @@ except KeyboardInterrupt: print("\nStopped")
       echo "$pid" > "$API_PID_FILE"
       sleep 1
       if kill -0 "$pid" 2>/dev/null; then
-        ok "API server running (PID $pid) on ${host}:${port}"
-        info "Test: curl http://localhost:${port}/health"
-        info "Use:  curl http://localhost:${port}/v1/chat/completions -d '{\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}'"
+        ok "API server v3 running on http://${host}:${port}"
+        info "Chat UI:  http://localhost:${port}/chat"
+        info "API test: curl http://localhost:${port}/health"
+        info "Send:     curl -X POST http://localhost:${port}/v1/chat/completions -H 'Content-Type: application/json' -d '{\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}'"
       else
         err "Server failed to start"
         rm -f "$API_PID_FILE"

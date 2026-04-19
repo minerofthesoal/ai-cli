@@ -28,7 +28,7 @@ cmd_chat_interactive() {
       /model*) local m="${input#/model }"; [[ -n "$m" && "$m" != "/model" ]] && { ACTIVE_MODEL="$m"; save_config; ok "Model: $m"; } || info "Model: ${ACTIVE_MODEL:-auto}" ;;
       /persona*) local p="${input#/persona }"; [[ -n "$p" && "$p" != "/persona" ]] && { ACTIVE_PERSONA="$p"; save_config; ok "Persona: $p"; } || info "Persona: ${ACTIVE_PERSONA:-default}" ;;
       /system*) local s="${input#/system }"; [[ -n "$s" && "$s" != "/system" ]] && { CUSTOM_SYSTEM_PROMPT="$s"; save_config; ok "System prompt set"; } || info "System: $(_get_effective_system | head -c 80)" ;;
-      /multiline) multiline=$(( 1 - multiline )); ok "Multiline: $(( multiline == 1 )) && echo ON || echo OFF)" ;;
+      /multiline) multiline=$(( 1 - multiline )); if [[ $multiline -eq 1 ]]; then ok "Multiline ON"; else ok "Multiline OFF"; fi ;;
       /temp*) local t="${input#/temp }"; [[ "$t" =~ ^[0-9.]+$ ]] && { TEMPERATURE="$t"; save_config; ok "Temp: $t"; } || info "Temp: $TEMPERATURE" ;;
       /export) mkdir -p "$EXPORTS_DIR"; cp "$SESSIONS_DIR/${ACTIVE_SESSION}.json" "$EXPORTS_DIR/chat_$(date +%Y%m%d%H%M%S).json" 2>/dev/null; ok "Exported" ;;
       /web*) local q="${input#/web }"; info "Web search..."; dispatch_ask "$(web_search "$q" 3 2>/dev/null || echo "")

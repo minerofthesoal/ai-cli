@@ -14325,8 +14325,8 @@ $(cat)" ;;
     # ── v2.4: Custom Datasets ─────────────────────────────────────────────────
     dataset|datasets) cmd_dataset "$@" ;;
 
-    # ── v2.4: LLM API Server ──────────────────────────────────────────────────
-    api)    cmd_api "$@" ;;
+    # ── v3: LLM API Server ───────────────────────────────────────────────────
+    api)    if type cmd_api_v3 &>/dev/null; then cmd_api_v3 "$@"; else cmd_api "$@"; fi ;;
 
     # ── v2.4.5: Multi-AI Arena ────────────────────────────────────────────────
     multiai|multi-ai|arena) cmd_multiai "$@" ;;
