@@ -88,8 +88,12 @@ verify_macos() {
     info "macOS ${BOLD}${MAC_VER}${RESET} (${CHIP_TYPE}, ${ARCH})"
 }
 
-# ── Homebrew ───────────────────────────────────────────────────────────────────
+# ── Package Manager (nanobrew or Homebrew) ────────────────────────────────────
 ensure_homebrew() {
+    if command -v nanobrew >/dev/null 2>&1; then
+        ok "nanobrew found"
+        return
+    fi
     if command -v brew >/dev/null 2>&1; then
         ok "Homebrew found: $(brew --version | head -1)"
         return
@@ -119,7 +123,10 @@ install_deps() {
         return
     fi
 
-    info "Installing dependencies via Homebrew..."
+    # Use nanobrew if available, otherwise Homebrew
+    local PKG_CMD="brew"
+    command -v nanobrew >/dev/null 2>&1 && PKG_CMD="nanobrew"
+    info "Installing dependencies via ${PKG_CMD}..."
 
     DEPS="python@3.12 curl git bash"
     OPT_DEPS="ffmpeg jq node gh"
@@ -130,7 +137,7 @@ install_deps() {
     fi
 
     for pkg in $DEPS; do
-        brew install "$pkg" 2>/dev/null || brew upgrade "$pkg" 2>/dev/null || true
+        $PKG_CMD install "$pkg" 2>/dev/null || $PKG_CMD upgrade "$pkg" 2>/dev/null || true
     done
 
     for pkg in $OPT_DEPS; do
