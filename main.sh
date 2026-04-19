@@ -3,7 +3,7 @@
 # ║  AI.SH v3.0.0 — Universal AI CLI · GUI v7 · GUI+ v3 · 195 Models · 8 APIs║
 # ║  GGUF·PyTorch·OpenAI·Claude·Gemini·Groq·Mistral·Together·HuggingFace      ║
 # ║  RAG·Batch·Snap·Perf·Compare·Templates·Branch·Export·Notebook·Learn·Quiz  ║
-# ║  rclick v3.2 (Win+Mac+Linux) · iSH · bash 4+ auto-switch · Canvas v2     ║
+# ║  rclick v3.2 (Win+Mac+Linux) · iSH · bash 4+ auto-switch · Canvas v3     ║
 # ║  v3.0.0: major core rewrite — removed all duplicate functions, fixed GPU   ║
 # ║          detection, silenced llama warnings, bash 3.2 compat, ask-web     ║
 # ║          ai test (-S/-N/-A), 60+ commands with ai -h <cmd> help           ║
@@ -219,7 +219,7 @@ RLHF_HF_DATASETS_FILE="$CONFIG_DIR/rlhf_hf_datasets.json" # v2.4.5: imported HF 
 GITHUB_DIR="$CONFIG_DIR/github"                            # v2.5:   GitHub integration cache
 PAPERS_DIR="$AI_OUTPUT_DIR/papers"                         # v2.5:   downloaded research papers
 MULTIMODAL_DIR="$CONFIG_DIR/multimodal"                    # v2.5:   multimodal training
-CANVAS_V2_DIR="$AI_OUTPUT_DIR/canvas_v2"                  # v2.5:   Canvas v2 workspaces
+CANVAS_V3_DIR="$AI_OUTPUT_DIR/canvas_v3"                  # v2.5:   Canvas v3 workspaces
 BUILD_DIR="$CONFIG_DIR/builds"                             # v2.5:   XZ bundle output
 PROJECTS_DIR="$CONFIG_DIR/projects"                        # v2.6:   multi-chat projects
 FIRST_RUN_FILE="$CONFIG_DIR/.first_run_done"               # v2.6:   first-run flag
@@ -233,7 +233,7 @@ mkdir -p "$CONFIG_DIR" "$MODELS_DIR" "$SESSIONS_DIR" "$PERSONAS_DIR" \
          "$TTM_DIR" "$MTM_DIR" "$MMTM_DIR" \
          "$CHAT_LOGS_DIR" "$AUDIO_DIR" "$VIDEO_DIR" "$DATASETS_DIR" \
          "$MULTIAI_DIR" "$GITHUB_DIR" "$PAPERS_DIR" \
-         "$MULTIMODAL_DIR" "$CANVAS_V2_DIR" "$BUILD_DIR" "$PROJECTS_DIR" \
+         "$MULTIMODAL_DIR" "$CANVAS_V3_DIR" "$BUILD_DIR" "$PROJECTS_DIR" \
          "$EXTENSIONS_DIR" "$FIREFOX_EXT_DIR"
 touch "$KEYS_FILE" && chmod 600 "$KEYS_FILE"
 touch "$ALIASES_FILE" 2>/dev/null || true
@@ -5644,17 +5644,17 @@ class CanvasTab(tk.Frame):
     def new_ws(self):
         name = simpledialog.askstring("New Workspace", "Workspace name:")
         if name:
-            out = run_ai(f'canvas-v2 new "{name}"')
+            out = run_ai(f'canvas new "{name}"')
             self._set(out)
 
     def open_tui(self):
         name = simpledialog.askstring("Open Workspace", "Workspace name:")
         if name:
-            subprocess.Popen([CLI, "canvas-v2", "open", name])
+            subprocess.Popen([CLI, "canvas", "open", name])
 
     def list_ws(self):
         def _r():
-            out = run_ai("canvas-v2 open")
+            out = run_ai("canvas open")
             self.after(0, lambda: self._set(out))
         threading.Thread(target=_r, daemon=True).start()
 
@@ -11257,12 +11257,12 @@ PYEOF
 # ════════════════════════════════════════════════════════════════════════════════
 #  v2.5: CANVAS v2 — Multi-file workspace, split-pane, live preview, git
 # ════════════════════════════════════════════════════════════════════════════════
-cmd_canvas_v2() {
+cmd_canvas_v3() {
   local sub="${1:-open}"; shift || true
   case "$sub" in
     new)
-      local ws="${1:?Usage: ai canvas-v2 new <workspace-name>}"
-      local ws_dir="$CANVAS_V2_DIR/$ws"
+      local ws="${1:?Usage: ai canvas new <workspace-name>}"
+      local ws_dir="$CANVAS_V3_DIR/$ws"
       [[ -d "$ws_dir" ]] && { err "Workspace exists: $ws"; return 1; }
       mkdir -p "$ws_dir"/{files,preview,exports}
       cat > "$ws_dir/workspace.json" <<EOF
@@ -11278,15 +11278,15 @@ EOF
       git -C "$ws_dir" init -q 2>/dev/null && \
         git -C "$ws_dir" add workspace.json && \
         git -C "$ws_dir" commit -q -m "Init canvas workspace: $ws" 2>/dev/null || true
-      ok "Canvas v2 workspace: $ws_dir"
-      echo "  Add files:  ai canvas-v2 add $ws <file>"
-      echo "  Open TUI:   ai canvas-v2 open $ws"
+      ok "Canvas v3 workspace: $ws_dir"
+      echo "  Add files:  ai canvas add $ws <file>"
+      echo "  Open TUI:   ai canvas open $ws"
       ;;
 
     add)
       local ws="${1:?workspace}" file="${2:?file path}"
-      local ws_dir="$CANVAS_V2_DIR/$ws"
-      [[ ! -d "$ws_dir" ]] && { err "Workspace not found: $ws. Run: ai canvas-v2 new $ws"; return 1; }
+      local ws_dir="$CANVAS_V3_DIR/$ws"
+      [[ ! -d "$ws_dir" ]] && { err "Workspace not found: $ws. Run: ai canvas new $ws"; return 1; }
       cp "$file" "$ws_dir/files/"
       local fname; fname=$(basename "$file")
       # Update workspace.json
@@ -11308,13 +11308,13 @@ print('Added: $fname')
       local ws="${1:-}"
       [[ -z "$ws" ]] && {
         info "Available workspaces:"
-        ls "$CANVAS_V2_DIR/" 2>/dev/null || echo "(none)"
+        ls "$CANVAS_V3_DIR/" 2>/dev/null || echo "(none)"
         return 0
       }
-      local ws_dir="$CANVAS_V2_DIR/$ws"
+      local ws_dir="$CANVAS_V3_DIR/$ws"
       [[ ! -d "$ws_dir" ]] && { err "Workspace not found: $ws"; return 1; }
       [[ -z "$PYTHON" ]] && { err "Python required for Canvas TUI"; return 1; }
-      info "Opening Canvas v2: $ws"
+      info "Opening Canvas v3: $ws"
       "$PYTHON" - "$ws_dir" "$ws" "$ACTIVE_MODEL" "$VERSION" <<'PYEOF'
 import sys, os, json, curses, subprocess, threading, time
 
@@ -11358,7 +11358,7 @@ def canvas_tui(stdscr):
     cursor_y, cursor_x = 0, 0
     ai_output = ""
     split = False
-    status = f"Canvas v2 | {ws_name} | {len(files)} files | ^Q=quit F=new E=edit A=AI S=split G=git P=preview ?=help"
+    status = f"Canvas v3 | {ws_name} | {len(files)} files | ^Q=quit F=new E=edit A=AI S=split G=git P=preview ?=help"
 
     def load_file(fname):
         fp = os.path.join(files_dir, fname)
@@ -11378,7 +11378,7 @@ def canvas_tui(stdscr):
         stdscr.erase()
         h, w = stdscr.getmaxyx()
         # Header
-        header = f" Canvas v2 — {ws_name} | {version} "
+        header = f" Canvas v3 — {ws_name} | {version} "
         stdscr.addstr(0, 0, header.ljust(w), curses.color_pair(4))
         # Left panel: file list
         panel_w = max(20, w // 5)
@@ -11496,17 +11496,65 @@ def canvas_tui(stdscr):
                 elif ext == 'md':
                     subprocess.Popen(['xdg-open', fp], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 status = f"Preview opened: {fname}"
+        elif key in (ord('I'), ord('i')):
+            # AI insert — generate code and append to current file
+            if files:
+                curses.echo()
+                stdscr.addstr(h-1, 0, "AI insert: ")
+                try: prompt = stdscr.getstr(h-1, 11, 100).decode()
+                except: prompt = ""
+                curses.noecho()
+                if prompt:
+                    fname = files[active_idx]
+                    ctx = ''.join(file_content[:30])
+                    status = "AI generating..."
+                    stdscr.addstr(h-2, 0, status[:w-1].ljust(w-1), curses.color_pair(4))
+                    stdscr.refresh()
+                    result = ai_ask(f"Write code for: {prompt}\nExisting file context:\n{ctx[:500]}\nReturn ONLY code, no markdown fences.")
+                    fp = os.path.join(files_dir, fname)
+                    with open(fp, 'a') as f:
+                        f.write('\n' + result + '\n')
+                    file_content = load_file(fname)
+                    status = f"AI code inserted into {fname}"
+        elif key in (ord('D'), ord('d')):
+            if files:
+                fname = files[active_idx]
+                curses.echo()
+                stdscr.addstr(h-1, 0, f"Delete {fname}? y/n: ")
+                try: confirm = stdscr.getstr(h-1, len(f"Delete {fname}? y/n: "), 1).decode()
+                except: confirm = "n"
+                curses.noecho()
+                if confirm.lower() == 'y':
+                    os.remove(os.path.join(files_dir, fname))
+                    files = list_files()
+                    active_idx = min(active_idx, len(files)-1) if files else 0
+                    file_content = load_file(files[active_idx]) if files else []
+                    status = f"Deleted: {fname}"
+        elif key in (ord('R'), ord('r')):
+            if files:
+                fname = files[active_idx]
+                curses.echo()
+                stdscr.addstr(h-1, 0, f"Rename {fname} to: ")
+                try: new_name = stdscr.getstr(h-1, len(f"Rename {fname} to: "), 60).decode()
+                except: new_name = ""
+                curses.noecho()
+                if new_name:
+                    os.rename(os.path.join(files_dir, fname), os.path.join(files_dir, new_name))
+                    files = list_files()
+                    active_idx = files.index(new_name) if new_name in files else 0
+                    file_content = load_file(files[active_idx]) if files else []
+                    status = f"Renamed: {fname} -> {new_name}"
         elif key == ord('?') or key == curses.KEY_F1:
-            status = "Keys: UP/DOWN=files F=new E=edit A=ask-AI S=split G=commit P=preview Ctrl+Q=quit"
+            status = "F=new E=edit A=AI I=insert D=del R=rename S=split G=git P=preview ^Q=quit"
 
 curses.wrapper(canvas_tui)
 PYEOF
       ;;
 
     list)
-      info "Canvas v2 workspaces:"
-      ls -1 "$CANVAS_V2_DIR/" 2>/dev/null | while read -r ws; do
-        local cfg="$CANVAS_V2_DIR/$ws/workspace.json"
+      info "Canvas v3 workspaces:"
+      ls -1 "$CANVAS_V3_DIR/" 2>/dev/null | while read -r ws; do
+        local cfg="$CANVAS_V3_DIR/$ws/workspace.json"
         if [[ -f "$cfg" ]] && [[ -n "$PYTHON" ]]; then
           local nfiles; nfiles=$("$PYTHON" -c "import json; d=json.load(open('$cfg')); print(len(d.get('files',[])))" 2>/dev/null || echo 0)
           echo "  $ws  ($nfiles files)"
@@ -11518,7 +11566,7 @@ PYEOF
 
     delete)
       local ws="${1:?workspace name required}"
-      local ws_dir="$CANVAS_V2_DIR/$ws"
+      local ws_dir="$CANVAS_V3_DIR/$ws"
       [[ ! -d "$ws_dir" ]] && { err "Workspace not found: $ws"; return 1; }
       read -rp "Delete workspace '$ws'? [y/N]: " confirm
       [[ "${confirm,,}" != "y" ]] && { info "Cancelled"; return 0; }
@@ -11527,19 +11575,19 @@ PYEOF
 
     export)
       local ws="${1:?workspace}" fmt="${2:-tar}"
-      local ws_dir="$CANVAS_V2_DIR/$ws"
+      local ws_dir="$CANVAS_V3_DIR/$ws"
       [[ ! -d "$ws_dir" ]] && { err "Workspace not found: $ws"; return 1; }
       local out="$AI_OUTPUT_DIR/${ws}_export.tar.gz"
-      tar -czf "$out" -C "$CANVAS_V2_DIR" "$ws/"
+      tar -czf "$out" -C "$CANVAS_V3_DIR" "$ws/"
       ok "Exported: $out"
       ;;
 
     gist)
       local ws="${1:?workspace}"
-      local ws_dir="$CANVAS_V2_DIR/$ws/files"
+      local ws_dir="$CANVAS_V3_DIR/$ws/files"
       if command -v gh &>/dev/null; then
         info "Uploading $ws to GitHub Gist..."
-        gh gist create "$ws_dir"/* --desc "Canvas v2: $ws" && ok "Gist created"
+        gh gist create "$ws_dir"/* --desc "Canvas v3: $ws" && ok "Gist created"
       else
         err "GitHub CLI (gh) required for Gist upload"
         info "Install: sudo pacman -S github-cli  OR  sudo apt install gh"
@@ -11547,16 +11595,16 @@ PYEOF
       ;;
 
     help|*)
-      hdr "AI CLI — Canvas v2 (v2.5)"
+      hdr "AI CLI — Canvas v3 (v2.5)"
       echo "  Multi-file workspace with split-pane, AI assist, git, live preview"
       echo ""
-      echo "  ai canvas-v2 new <name>          Create new workspace"
-      echo "  ai canvas-v2 open <name>         Open TUI (Ctrl+Q to exit)"
-      echo "  ai canvas-v2 add <ws> <file>     Add file to workspace"
-      echo "  ai canvas-v2 list                List workspaces"
-      echo "  ai canvas-v2 delete <name>       Delete workspace"
-      echo "  ai canvas-v2 export <name> [tar] Export as tarball"
-      echo "  ai canvas-v2 gist <name>         Upload to GitHub Gist"
+      echo "  ai canvas new <name>          Create new workspace"
+      echo "  ai canvas open <name>         Open TUI (Ctrl+Q to exit)"
+      echo "  ai canvas add <ws> <file>     Add file to workspace"
+      echo "  ai canvas list                List workspaces"
+      echo "  ai canvas delete <name>       Delete workspace"
+      echo "  ai canvas export <name> [tar] Export as tarball"
+      echo "  ai canvas gist <name>         Upload to GitHub Gist"
       echo ""
       echo "  TUI keys:  UP/DOWN=switch file  E=edit  A=ask-AI  S=split-pane"
       echo "             F=new-file  G=git-commit  P=preview  ?=help  Ctrl+Q=quit"
@@ -11818,7 +11866,7 @@ show_help() {
   echo -e "${C2}│${R_}             ai dataset from-url <name> <url>"
   echo -e "${C2}│${R_}             ai dataset from-file <name> <file>"
   echo -e "${C2}│${R_}             ai dataset from-paper <name> <arxiv-id>"
-  echo -e "${C2}│${R_}  ${B}Canvas v2:${R_} ai canvas-v2 new/open/add/list/export/gist"
+  echo -e "${C2}│${R_}  ${B}Canvas v3:${R_} ai canvas new/open/add/list/export/gist"
   echo -e "${C2}│${R_}             Multi-file · split-pane · git · AI assist · preview"
   echo -e "${C2}│${R_}  ${B}Image v2:${R_}  ai imagine2 \"<prompt>\" [txt2img|img2img|inpaint]"
   echo -e "${C2}│${R_}  ${B}Pacman:${R_}    ai install-deps  (auto-detects pacman/apt/dnf/brew)"
@@ -13806,7 +13854,7 @@ cat << 'HELPEOF'
   The GUI provides a full-screen terminal interface with:
     Split pane layout     Model browser     Extension manager
     Chat panel            Settings editor   Status panel
-    AI Canvas v2          RLHF trainer      Dataset generator
+    AI Canvas v3          RLHF trainer      Dataset generator
 HELPEOF
     ;;
     gui+|guiplus)
@@ -14325,8 +14373,8 @@ $(cat)" ;;
     tts)         _audio_tts "$@" ;;
     transcribe)  _audio_transcribe "$@" ;;
 
-    # ── Canvas ────────────────────────────────────────────────────────────────
-    canvas)  cmd_canvas "$@" ;;
+    # ── Canvas v3 ──────────────────────────────────────────────────────────
+    canvas)  if type cmd_canvas_v3 &>/dev/null; then cmd_canvas_v3 "$@"; else cmd_canvas "$@"; fi ;;
 
     # ── Models ────────────────────────────────────────────────────────────────
     model)
@@ -14408,9 +14456,6 @@ $(cat)" ;;
 
     # ── v2.5: Multimodal training ─────────────────────────────────────────────
     train-multimodal|multimodal-train|train-mm) cmd_train_multimodal "$@" ;;
-
-    # ── v2.5: Canvas v2 ───────────────────────────────────────────────────────
-    canvas-v2|canvasv2|canvas2) cmd_canvas_v2 "$@" ;;
 
     # ── v2.5: Image generation v2 (img2img, inpaint, LoRA) ────────────────────
     imagine2|imggen2)
@@ -15876,7 +15921,7 @@ cmd_change() {
       echo "    + GPU detection stale cache fix for GTX 1080"
       echo "    + Silenced all llama.cpp warnings including context size"
       echo "    + macOS bash 3.2 auto-switch to Homebrew bash 4+"
-      echo "    + Canvas v2 keybinds fixed"
+      echo "    + Canvas v3 keybinds fixed"
       echo "    + No more AI fallthrough on unknown commands"
       echo "    + dispatch_ask no longer errors on empty response"
       echo ""
@@ -15890,7 +15935,7 @@ cmd_change() {
       echo ""
       echo "    + Silenced all llama.cpp warnings and logs"
       echo "    + Unknown commands no longer auto-pass to AI"
-      echo "    + Canvas v2 keybinds fully fixed"
+      echo "    + Canvas v3 keybinds fully fixed"
       echo "    + Removed duplicate functions (cmd_canvas x3, backends x2)"
       echo ""
       echo -e "  ${B}New:${R}"
@@ -15967,7 +16012,7 @@ cmd_change() {
       echo "    Projects (multi-chat memory) · First-run setup"
       echo ""
       echo -e "  ${B}${BCYAN}v2.5${R}"
-      echo "    GitHub integration · Research papers · Canvas v2"
+      echo "    GitHub integration · Research papers · Canvas v3"
       echo "    Multimodal training · Custom system prompts"
       echo ""
       echo -e "  ${B}${BCYAN}v2.4${R}"
