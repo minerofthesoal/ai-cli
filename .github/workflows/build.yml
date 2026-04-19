@@ -1,4 +1,4 @@
-name: Build & Release
+name: AI CLI Build & Release
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version override (e.g. 2.9.0)'
+        description: 'Version override (e.g. 3.0.0)'
         required: false
         default: ''
 
@@ -357,18 +357,9 @@ jobs:
 
   # ── 7. Build macOS Installer App (.app in .dmg) ────────────────────
   build-dmg:
-    name: Build macOS Installer (${{ matrix.label }})
+    name: Build macOS Installer
     needs: lint
-    strategy:
-      matrix:
-        include:
-          - arch: x86_64
-            label: Intel
-            runner: macos-latest
-          - arch: arm64
-            label: AppleSilicon
-            runner: macos-latest
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -377,152 +368,72 @@ jobs:
         run: |
           VER="${{ needs.lint.outputs.version }}"
           APP="AI CLI Installer.app"
+          UNAPP="Uninstall AI CLI.app"
           DMG_STAGE="build/dmg-stage"
 
-          # Create .app bundle structure
           mkdir -p "${DMG_STAGE}/${APP}/Contents/MacOS"
           mkdir -p "${DMG_STAGE}/${APP}/Contents/Resources/payload"
+          mkdir -p "${DMG_STAGE}/${UNAPP}/Contents/MacOS"
+          mkdir -p "${DMG_STAGE}/${UNAPP}/Contents/Resources"
 
-          # Copy payload files
+          # Copy payload
           cp main.sh "${DMG_STAGE}/${APP}/Contents/Resources/payload/ai"
           chmod +x "${DMG_STAGE}/${APP}/Contents/Resources/payload/ai"
-          cp -r installers/ "${DMG_STAGE}/${APP}/Contents/Resources/payload/"
+          cp -r installers/ "${DMG_STAGE}/${APP}/Contents/Resources/payload/" 2>/dev/null || true
           [ -f misc/requirements.txt ] && cp misc/requirements.txt "${DMG_STAGE}/${APP}/Contents/Resources/payload/"
           [ -f LICENSE ] && cp LICENSE "${DMG_STAGE}/${APP}/Contents/Resources/payload/"
           [ -f README.md ] && cp README.md "${DMG_STAGE}/${APP}/Contents/Resources/payload/"
 
           # Info.plist
-          cat > "${DMG_STAGE}/${APP}/Contents/Info.plist" << PLISTEOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleName</key>
-            <string>AI CLI Installer</string>
-            <key>CFBundleDisplayName</key>
-            <string>AI CLI Installer</string>
-            <key>CFBundleIdentifier</key>
-            <string>com.minerofthesoal.ai-cli-installer</string>
-            <key>CFBundleVersion</key>
-            <string>${VER}</string>
-            <key>CFBundleShortVersionString</key>
-            <string>${VER}</string>
-            <key>CFBundleExecutable</key>
-            <string>install</string>
-            <key>CFBundleIconFile</key>
-            <string>AppIcon</string>
-            <key>LSMinimumSystemVersion</key>
-            <string>12.0</string>
-            <key>CFBundlePackageType</key>
-            <string>APPL</string>
-          </dict>
-          </plist>
-          PLISTEOF
-          sed -i '' 's/^          //' "${DMG_STAGE}/${APP}/Contents/Info.plist"
+          printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n<key>CFBundleName</key><string>AI CLI Installer</string>\n<key>CFBundleIdentifier</key><string>com.minerofthesoal.ai-cli</string>\n<key>CFBundleVersion</key><string>%s</string>\n<key>CFBundleExecutable</key><string>install</string>\n<key>LSMinimumSystemVersion</key><string>12.0</string>\n<key>CFBundlePackageType</key><string>APPL</string>\n</dict></plist>' "$VER" > "${DMG_STAGE}/${APP}/Contents/Info.plist"
 
-          # Installer executable — simple script that opens Terminal with install
-          cat > "${DMG_STAGE}/${APP}/Contents/MacOS/install" << 'SCRIPTEOF'
-#!/bin/bash
-DIR="$(cd "$(dirname "$0")/../Resources/payload" && pwd)"
-INSTALL_SCRIPT="$DIR/_do_install.sh"
-open -a Terminal "$INSTALL_SCRIPT"
-SCRIPTEOF
+          # Launcher
+          printf '#!/bin/bash\nDIR="$(cd "$(dirname "$0")/../Resources/payload" && pwd)"\nopen -a Terminal "$DIR/_do_install.sh"\n' > "${DMG_STAGE}/${APP}/Contents/MacOS/install"
           chmod +x "${DMG_STAGE}/${APP}/Contents/MacOS/install"
 
-          # The actual install logic (separate script, no nesting issues)
-          cat > "${DMG_STAGE}/${APP}/Contents/Resources/payload/_do_install.sh" << INSTALLEOF
-#!/bin/bash
-set -e
-echo ""
-echo "╔══════════════════════════════════════╗"
-echo "║   AI CLI v${VER} Installer for macOS   ║"
-echo "╚══════════════════════════════════════╝"
-echo ""
-PREFIX="/usr/local"
-DIR="\$(cd "\$(dirname "\$0")" && pwd)"
-
-# Install Homebrew bash if needed
-if ! /opt/homebrew/bin/bash --version &>/dev/null && ! /usr/local/bin/bash --version &>/dev/null; then
-  echo "Installing Homebrew (needed for bash 4+)..."
-  if ! command -v brew &>/dev/null; then
-    /bin/bash -c "\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    eval "\$(/opt/homebrew/bin/brew shellenv 2>/dev/null)" || true
-  fi
-  brew install bash 2>/dev/null || true
-fi
-
-echo "Installing ai-cli to \${PREFIX}/bin/ai..."
-sudo mkdir -p "\${PREFIX}/bin" "\${PREFIX}/share/ai-cli"
-sudo cp "\${DIR}/ai" "\${PREFIX}/bin/ai"
-sudo chmod +x "\${PREFIX}/bin/ai"
-
-for f in requirements.txt LICENSE README.md; do
-  [ -f "\${DIR}/\$f" ] && sudo cp "\${DIR}/\$f" "\${PREFIX}/share/ai-cli/"
-done
-[ -d "\${DIR}/installers" ] && sudo cp -r "\${DIR}/installers" "\${PREFIX}/share/ai-cli/"
-
-mkdir -p "\$HOME/.config/ai-cli" 2>/dev/null || true
-
-echo ""
-echo "✅ AI CLI v${VER} installed!"
-echo ""
-echo "  Quick start:"
-echo "    ai --help          Show all commands"
-echo "    ai ask \"hello\"     Ask a question"
-echo "    ai chat            Interactive chat"
-echo "    ai recommended     Browse 195 models"
-echo "    ai install-deps    Install Python ML deps"
-echo ""
-read -p "Press Enter to close..."
-INSTALLEOF
+          # Install script
+          cat > "${DMG_STAGE}/${APP}/Contents/Resources/payload/_do_install.sh" <<INSTEOF
+          #!/bin/bash
+          set -e
+          echo ""; echo "AI CLI v${VER} Installer"; echo ""
+          PREFIX="/usr/local"
+          DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+          if ! /opt/homebrew/bin/bash --version &>/dev/null 2>&1; then
+            echo "Installing Homebrew bash..."
+            command -v brew &>/dev/null || /bin/bash -c "\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            eval "\$(/opt/homebrew/bin/brew shellenv 2>/dev/null)" || true
+            brew install bash 2>/dev/null || true
+          fi
+          echo "Installing to \${PREFIX}/bin/ai..."
+          sudo mkdir -p "\${PREFIX}/bin" "\${PREFIX}/share/ai-cli"
+          sudo cp "\${DIR}/ai" "\${PREFIX}/bin/ai"
+          sudo chmod +x "\${PREFIX}/bin/ai"
+          for f in requirements.txt LICENSE README.md; do [ -f "\${DIR}/\$f" ] && sudo cp "\${DIR}/\$f" "\${PREFIX}/share/ai-cli/"; done
+          [ -d "\${DIR}/installers" ] && sudo cp -r "\${DIR}/installers" "\${PREFIX}/share/ai-cli/"
+          mkdir -p "\$HOME/.config/ai-cli" 2>/dev/null || true
+          echo ""; echo "Done! Run: ai --help"; read -p "Press Enter to close..."
+          INSTEOF
+          sed -i '' 's/^          //' "${DMG_STAGE}/${APP}/Contents/Resources/payload/_do_install.sh"
           chmod +x "${DMG_STAGE}/${APP}/Contents/Resources/payload/_do_install.sh"
 
-          # Create uninstaller app
-          UNAPP="Uninstall AI CLI.app"
-          mkdir -p "${DMG_STAGE}/${UNAPP}/Contents/MacOS"
-          mkdir -p "${DMG_STAGE}/${UNAPP}/Contents/Resources"
-          cat > "${DMG_STAGE}/${UNAPP}/Contents/Resources/uninstall.sh" << 'UNSCRIPTEOF'
-#!/bin/bash
-echo "Removing ai-cli..."
-sudo rm -f /usr/local/bin/ai
-sudo rm -rf /usr/local/share/ai-cli
-echo "Done. Config at ~/.config/ai-cli/ preserved."
-read -p "Press Enter to close..."
-UNSCRIPTEOF
+          # Uninstaller
+          printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n<key>CFBundleName</key><string>Uninstall AI CLI</string>\n<key>CFBundleIdentifier</key><string>com.minerofthesoal.ai-cli-uninstall</string>\n<key>CFBundleVersion</key><string>%s</string>\n<key>CFBundleExecutable</key><string>uninstall</string>\n<key>LSMinimumSystemVersion</key><string>12.0</string>\n<key>CFBundlePackageType</key><string>APPL</string>\n</dict></plist>' "$VER" > "${DMG_STAGE}/${UNAPP}/Contents/Info.plist"
+          printf '#!/bin/bash\necho "Removing ai-cli..."\nsudo rm -f /usr/local/bin/ai\nsudo rm -rf /usr/local/share/ai-cli\necho "Done. Config at ~/.config/ai-cli/ preserved."\nread -p "Press Enter..."\n' > "${DMG_STAGE}/${UNAPP}/Contents/Resources/uninstall.sh"
           chmod +x "${DMG_STAGE}/${UNAPP}/Contents/Resources/uninstall.sh"
-          cat > "${DMG_STAGE}/${UNAPP}/Contents/MacOS/uninstall" << 'UNEOF'
-#!/bin/bash
-DIR="$(cd "$(dirname "$0")/../Resources" && pwd)"
-open -a Terminal "$DIR/uninstall.sh"
-UNEOF
+          printf '#!/bin/bash\nDIR="$(cd "$(dirname "$0")/../Resources" && pwd)"\nopen -a Terminal "$DIR/uninstall.sh"\n' > "${DMG_STAGE}/${UNAPP}/Contents/MacOS/uninstall"
           chmod +x "${DMG_STAGE}/${UNAPP}/Contents/MacOS/uninstall"
-          cp "${DMG_STAGE}/${APP}/Contents/Info.plist" "${DMG_STAGE}/${UNAPP}/Contents/"
-          sed -i '' 's/AI CLI Installer/Uninstall AI CLI/; s/>install</>uninstall</' "${DMG_STAGE}/${UNAPP}/Contents/Info.plist"
 
-          # Add README
-          cat > "${DMG_STAGE}/README.txt" << RDMEOF
-          AI CLI v${VER} — macOS (${{ matrix.label }})
-
-          Double-click "AI CLI Installer" to install.
-          Double-click "Uninstall AI CLI" to remove.
-
-          After install, open Terminal and run:
-            ai --help
-          RDMEOF
+          # README
+          printf 'AI CLI v%s\n\nDouble-click "AI CLI Installer" to install.\nDouble-click "Uninstall AI CLI" to remove.\n' "$VER" > "${DMG_STAGE}/README.txt"
 
           # Build DMG
-          DMG_FILE="build/AI-CLI-${VER}-macOS-${{ matrix.label }}.dmg"
-          hdiutil create -volname "AI CLI ${VER}" \
-            -srcfolder "${DMG_STAGE}" \
-            -ov -format UDZO \
-            "${DMG_FILE}"
-
-          ls -lh "${DMG_FILE}"
+          hdiutil create -volname "AI CLI ${VER}" -srcfolder "${DMG_STAGE}" -ov -format UDZO "build/AI-CLI-${VER}-macOS.dmg"
+          ls -lh build/*.dmg
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: ai-cli-dmg-${{ matrix.label }}
+          name: ai-cli-dmg
           path: build/*.dmg
           retention-days: 30
 
