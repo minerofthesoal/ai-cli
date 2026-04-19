@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -euo pipefail
-VERSION="3.1.1"
+VERSION="3.1.2"
 
 # macOS ships bash 3.2 which lacks associative arrays (declare -A).
 # Require bash 4+ or auto-switch to Homebrew bash if available.
@@ -5078,213 +5078,182 @@ cmd_gui() {
 
   cat > "$gui_script" << 'GUIEOF'
 #!/usr/bin/env python3
-"""AI CLI v2.9.0 — GUI v7: curses TUI with panels, themes, AI chat"""
-import sys, os, curses, subprocess, threading, time, textwrap, json
-
-CLI = sys.argv[1] if len(sys.argv) > 1 else "ai"
-THEME = sys.argv[2] if len(sys.argv) > 2 else "dark"
-EXT_DIR = sys.argv[3] if len(sys.argv) > 3 else os.path.expanduser("~/.config/ai-cli/extensions")
-
-
-THEMES = {
-    "dark":    {"bg":0,"fg":7,"accent":6,"sel_bg":4,"sel_fg":15,"border":6,"title":14,"dim":8},
-    "light":   {"bg":15,"fg":0,"accent":4,"sel_bg":6,"sel_fg":0,"border":4,"title":4,"dim":8},
-    "hacker":  {"bg":0,"fg":2,"accent":10,"sel_bg":2,"sel_fg":0,"border":2,"title":10,"dim":8},
-    "ocean":   {"bg":17,"fg":14,"accent":12,"sel_bg":12,"sel_fg":0,"border":6,"title":14,"dim":8},
-    "nord":    {"bg":236,"fg":153,"accent":67,"sel_bg":67,"sel_fg":15,"border":67,"title":153,"dim":242},
-    "gruvbox": {"bg":235,"fg":223,"accent":214,"sel_bg":214,"sel_fg":235,"border":214,"title":214,"dim":243},
-    "dracula": {"bg":236,"fg":253,"accent":141,"sel_bg":141,"sel_fg":236,"border":141,"title":141,"dim":245},
-}
-T = THEMES.get(THEME, THEMES["dark"])
-
-def strip_ansi(s):
-    import re
-    return re.sub(r'\x1b\[[0-9;]*m', '', s)
-
+"""AI CLI v3.1 — GUI v7.1: curses TUI with scrolling, panels, themes"""
+import sys,os,curses,subprocess,threading,textwrap,re
+CLI=sys.argv[1] if len(sys.argv)>1 else "ai"
+THEME=sys.argv[2] if len(sys.argv)>2 else "dark"
+T={"dark":{"bg":0,"fg":7,"acc":6,"sel":4,"sf":15,"brd":6,"ttl":14,"dim":8,"hdr":4,"hf":15},
+   "light":{"bg":15,"fg":0,"acc":4,"sel":6,"sf":0,"brd":4,"ttl":4,"dim":8,"hdr":6,"hf":0},
+   "hacker":{"bg":0,"fg":2,"acc":10,"sel":2,"sf":0,"brd":2,"ttl":10,"dim":8,"hdr":2,"hf":0},
+   "nord":{"bg":236,"fg":153,"acc":67,"sel":67,"sf":15,"brd":67,"ttl":153,"dim":242,"hdr":67,"hf":15},
+   "dracula":{"bg":236,"fg":253,"acc":141,"sel":141,"sf":236,"brd":141,"ttl":141,"dim":245,"hdr":141,"hf":236},
+   "gruvbox":{"bg":235,"fg":223,"acc":214,"sel":214,"sf":235,"brd":214,"ttl":214,"dim":243,"hdr":214,"hf":235},
+}.get(THEME,{"bg":0,"fg":7,"acc":6,"sel":4,"sf":15,"brd":6,"ttl":14,"dim":8,"hdr":4,"hf":15})
+def strip_ansi(s): return re.sub(r'\x1b\[[0-9;]*m','',s)
 def run_ai(cmd):
     try:
-        env = os.environ.copy()
-        env["NO_COLOR"] = "1"
-        r = subprocess.run(f"{CLI} {cmd}", shell=True, capture_output=True, text=True, timeout=60, env=env)
-        return strip_ansi((r.stdout + r.stderr).strip())
-    except Exception as e:
-        return f"Error: {e}"
-
-def run_ai_bg(cmd, callback):
-    def _run():
-        result = run_ai(cmd)
-        callback(result)
-    threading.Thread(target=_run, daemon=True).start()
-
+        e=os.environ.copy();e["NO_COLOR"]="1"
+        r=subprocess.run(f"{CLI} {cmd}",shell=True,capture_output=True,text=True,timeout=120,env=e)
+        return strip_ansi((r.stdout+r.stderr).strip())
+    except: return "Error: timeout or failure"
 class App:
-    def __init__(self, stdscr):
-        self.s = stdscr
-        self.s.keypad(True)
-        curses.curs_set(0)
-        curses.start_color()
-        curses.use_default_colors()
-        if curses.COLORS >= 256:
-            curses.init_pair(1, T["fg"], T["bg"])
-            curses.init_pair(2, T["accent"], T["bg"])
-            curses.init_pair(3, T["title"], T["bg"])
-            curses.init_pair(4, T["sel_fg"], T["sel_bg"])
-            curses.init_pair(5, T["border"], T["bg"])
-            curses.init_pair(6, T["dim"], T["bg"])
-        else:
-            curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLACK)
-            curses.init_pair(2, curses.COLOR_CYAN, curses.COLOR_BLACK)
-            curses.init_pair(3, curses.COLOR_YELLOW, curses.COLOR_BLACK)
-            curses.init_pair(4, curses.COLOR_BLACK, curses.COLOR_CYAN)
-            curses.init_pair(5, curses.COLOR_CYAN, curses.COLOR_BLACK)
-            curses.init_pair(6, curses.COLOR_WHITE, curses.COLOR_BLACK)
-        self.menu_items = [
-            ("Chat", "chat"), ("Ask", "ask"), ("Agent", "agent"),
-            ("Web Search", "websearch"), ("Models", "recommended"),
-            ("Status", "status"), ("Health", "health"),
-            ("Canvas", "canvas"), ("Notebook", "notebook new gui"),
-            ("Audio", "audio"), ("Video", "video"),
-            ("Vision", "vision ask"), ("Imagine", "imagine"),
-            ("TTM Train", "ttm"), ("RLHF", "rlhf status"),
-            ("Datasets", "dataset list"), ("RAG", "rag"),
-            ("Templates", "template list"), ("Snapshots", "snap list"),
-            ("Batch", "batch list"), ("Compare", "compare"),
-            ("Perf", "perf"), ("Analytics", "analytics"),
-            ("Plugins", "plugin list"), ("Presets", "preset list"),
-            ("Export", "export"), ("Settings", "config"),
-            ("Git AI", "git"), ("Learn", "learn"),
-            ("Write", "write"), ("Quit", "QUIT"),
-        ]
-        self.sel = 0
-        self.output = ["Welcome to AI CLI v2.9.0 — GUI v7", "Use arrow keys, Enter to select, q to quit", ""]
-        self.input_mode = False
-        self.input_buf = ""
-        self.input_label = ""
-        self.input_cmd = ""
-        self.running = False
-
-    def draw(self):
-        self.s.erase()
-        H, W = self.s.getmaxyx()
-        sidebar_w = min(28, W // 3)
-        content_x = sidebar_w + 1
-
-        # Title bar
-        title = f" AI CLI v2.9.0 — GUI v7 [{THEME}] "
-        self.s.addstr(0, max(0, (W - len(title)) // 2), title, curses.color_pair(3) | curses.A_BOLD)
-
-        # Sidebar
-        for i in range(min(H - 3, len(self.menu_items))):
-            y = i + 2
-            label = self.menu_items[i][0]
-            if i == self.sel:
-                self.s.addstr(y, 1, f" {label:<{sidebar_w-3}} ", curses.color_pair(4) | curses.A_BOLD)
-            else:
-                self.s.addstr(y, 2, label[:sidebar_w-3], curses.color_pair(2))
-
-        # Vertical separator
-        for y in range(1, H - 1):
-            try:
-                self.s.addch(y, sidebar_w, curses.ACS_VLINE, curses.color_pair(5))
-            except curses.error:
-                pass
-
-        # Content area
-        content_w = W - content_x - 1
-        for i, line in enumerate(self.output[-(H-4):]):
-            y = i + 2
-            if y >= H - 2:
-                break
-            try:
-                self.s.addstr(y, content_x + 1, line[:content_w], curses.color_pair(1))
-            except curses.error:
-                pass
-
-        # Status bar
-        status = " q:quit | Enter:select | /:search | t:theme "
-        if self.running:
-            status = " Running... "
-        if self.input_mode:
-            status = f" {self.input_label}: {self.input_buf}_ "
+    def __init__(s,scr):
+        s.s=scr;s.s.keypad(True);curses.curs_set(0);curses.start_color();curses.use_default_colors()
         try:
-            self.s.addstr(H - 1, 0, status[:W-1], curses.color_pair(3) | curses.A_BOLD)
-        except curses.error:
-            pass
-        self.s.refresh()
-
-    def handle_input(self):
-        key = self.s.getch()
-        if self.input_mode:
-            if key in (10, 13):  # Enter
-                self.input_mode = False
-                cmd = self.input_cmd.replace("{}", self.input_buf)
-                self.output.append(f"> {cmd}")
-                self.running = True
-                self.draw()
-                result = run_ai(cmd)
-                self.running = False
-                for line in result.split("\n"):
-                    self.output.append(line)
-                self.input_buf = ""
-            elif key == 27:  # Escape
-                self.input_mode = False
-                self.input_buf = ""
-            elif key in (curses.KEY_BACKSPACE, 127, 8):
-                self.input_buf = self.input_buf[:-1]
-            elif 32 <= key < 127:
-                self.input_buf += chr(key)
+            for i,k in enumerate(["fg","acc","ttl","sf","brd","dim","hdr"],1):
+                curses.init_pair(i,T.get(k,7),T["bg"])
+            curses.init_pair(8,T["sf"],T["sel"])
+            curses.init_pair(9,T["hf"],T["hdr"])
+        except: pass
+        s.C=lambda n:curses.color_pair(n)
+        s.menu=[
+            "Chat","Ask","Ask Web","Ask Think","Agent","Web Search",
+            "Models","Recommended","Status","Health","Test",
+            "Canvas","Notebook","Write","Node Editor",
+            "Audio","Video","Vision","Imagine",
+            "Memory","Snapshots","Templates","RAG","Batch",
+            "Plugins","Presets","Profiles","Analytics",
+            "Perf","Compare","Export","Cleanup","Security",
+            "Git AI","Learn","Quiz","Interview",
+            "Shell","JSON","SQL","Docker","Regex",
+            "API Server","Firefox Ext","Settings","Help","Quit",
+        ]
+        s.cmds={
+            "Chat":"chat","Ask":"ask","Ask Web":"ask-web","Ask Think":"ask-think",
+            "Agent":"agent","Web Search":"websearch","Models":"models",
+            "Recommended":"recommended","Status":"status","Health":"health",
+            "Test":"test -A","Canvas":"canvas","Notebook":"notebook",
+            "Write":"write","Node Editor":"node","Audio":"audio","Video":"video",
+            "Vision":"vision","Imagine":"imagine","Memory":"memory list",
+            "Snapshots":"snap list","Templates":"template list","RAG":"rag list",
+            "Batch":"batch list","Plugins":"plugin list","Presets":"preset list",
+            "Profiles":"profile list","Analytics":"analytics","Perf":"perf",
+            "Compare":"compare","Export":"export","Cleanup":"cleanup --dry-run",
+            "Security":"security","Git AI":"git","Learn":"learn",
+            "Quiz":"quiz","Interview":"interview","Shell":"shell",
+            "JSON":"json","SQL":"sql","Docker":"docker","Regex":"regex",
+            "API Server":"api","Firefox Ext":"install-firefox-ext",
+            "Settings":"config","Help":"help",
+        }
+        s.sel=0;s.scroll_top=0;s.out_scroll=0
+        s.output=["AI CLI v3.1 — GUI v7.1","","Arrow keys navigate, Enter selects","PgUp/PgDn scroll output","q to quit, / to search, t to cycle theme"]
+        s.input_mode=False;s.input_buf="";s.input_label="";s.input_cmd=""
+        s.running=False;s.search=""
+    def filtered(s):
+        if not s.search: return list(enumerate(s.menu))
+        return [(i,m) for i,m in enumerate(s.menu) if s.search.lower() in m.lower()]
+    def draw(s):
+        s.s.erase();H,W=s.s.getmaxyx()
+        sw=min(30,W//3);cx=sw+1;cw=W-cx-1
+        # Title bar
+        title=f" AI CLI v3.1 — GUI v7.1 [{THEME}] "
+        try: s.s.addstr(0,0," "*W,s.C(9));s.s.addstr(0,max(0,(W-len(title))//2),title,s.C(9)|curses.A_BOLD)
+        except: pass
+        # Sidebar header
+        try: s.s.addstr(1,0," COMMANDS".ljust(sw),s.C(9)|curses.A_BOLD)
+        except: pass
+        # Sidebar items
+        items=s.filtered()
+        vis=H-4
+        if s.sel>=s.scroll_top+vis: s.scroll_top=s.sel-vis+1
+        if s.sel<s.scroll_top: s.scroll_top=s.sel
+        for idx,(orig_i,label) in enumerate(items[s.scroll_top:s.scroll_top+vis]):
+            y=idx+2
+            if y>=H-1: break
+            if orig_i==s.sel:
+                try: s.s.addstr(y,0,f" {label}".ljust(sw),s.C(8)|curses.A_BOLD)
+                except: pass
+            else:
+                try: s.s.addstr(y,1,label[:sw-2],s.C(2))
+                except: pass
+        # Vertical border
+        for y in range(1,H-1):
+            try: s.s.addch(y,sw,curses.ACS_VLINE,s.C(5))
+            except: pass
+        # Content header
+        try: s.s.addstr(1,cx," OUTPUT".ljust(cw),s.C(9)|curses.A_BOLD)
+        except: pass
+        # Content area with scrolling
+        content_h=H-4
+        total=len(s.output)
+        max_scroll=max(0,total-content_h)
+        s.out_scroll=min(s.out_scroll,max_scroll)
+        vis_lines=s.output[s.out_scroll:s.out_scroll+content_h]
+        for i,line in enumerate(vis_lines):
+            y=i+2
+            if y>=H-1: break
+            try: s.s.addstr(y,cx+1,line[:cw-1],s.C(1))
+            except: pass
+        # Scrollbar indicator
+        if total>content_h and cw>2:
+            sb_y=2+int(s.out_scroll/max(1,max_scroll)*(content_h-1)) if max_scroll>0 else 2
+            try: s.s.addch(min(sb_y,H-2),W-1,curses.ACS_BLOCK,s.C(5))
+            except: pass
+        # Status bar
+        if s.running: status=" Running... "
+        elif s.input_mode: status=f" {s.input_label}: {s.input_buf}_ "
+        elif s.search: status=f" Search: {s.search}_ | ESC to clear "
+        else: status=f" q:quit Enter:select /:search t:theme PgUp/Dn:scroll | {s.menu[s.sel]} "
+        try: s.s.addstr(H-1,0,status[:W-1].ljust(W-1),s.C(9)|curses.A_BOLD)
+        except: pass
+        s.s.refresh()
+    def handle(s):
+        k=s.s.getch()
+        if s.input_mode:
+            if k in(10,13):
+                s.input_mode=False;cmd=s.input_cmd.replace("{}",s.input_buf)
+                s.output.append(f"> ai {cmd}");s.running=True;s.draw()
+                r=run_ai(cmd);s.running=False
+                for l in r.split("\n"): s.output.append(l)
+                s.out_scroll=max(0,len(s.output)-(curses.LINES-4))
+                s.input_buf=""
+            elif k==27: s.input_mode=False;s.input_buf=""
+            elif k in(curses.KEY_BACKSPACE,127,8): s.input_buf=s.input_buf[:-1]
+            elif 32<=k<127: s.input_buf+=chr(k)
             return True
-
-        if key == ord('q') or key == ord('Q'):
-            return False
-        elif key == curses.KEY_UP or key == ord('k'):
-            self.sel = max(0, self.sel - 1)
-        elif key == curses.KEY_DOWN or key == ord('j'):
-            self.sel = min(len(self.menu_items) - 1, self.sel + 1)
-        elif key in (10, 13):  # Enter
-            label, cmd = self.menu_items[self.sel]
-            if cmd == "QUIT":
-                return False
-            if cmd in ("ask", "websearch", "imagine", "learn", "write", "compare", "agent"):
-                self.input_mode = True
-                self.input_label = f"{label} prompt"
-                self.input_cmd = f"{cmd} {{}}"
+        if s.search and k!=27 and k!=10 and k!=curses.KEY_UP and k!=curses.KEY_DOWN:
+            if k in(curses.KEY_BACKSPACE,127,8): s.search=s.search[:-1]
+            elif 32<=k<127: s.search+=chr(k)
+            s.sel=0;s.scroll_top=0
+            return True
+        if k==ord('q') or k==ord('Q'): return False
+        elif k==curses.KEY_UP or k==ord('k'): s.sel=max(0,s.sel-1)
+        elif k==curses.KEY_DOWN or k==ord('j'): s.sel=min(len(s.menu)-1,s.sel+1)
+        elif k==curses.KEY_PPAGE: s.out_scroll=max(0,s.out_scroll-10)
+        elif k==curses.KEY_NPAGE: s.out_scroll+=10
+        elif k==curses.KEY_HOME: s.out_scroll=0
+        elif k==curses.KEY_END: s.out_scroll=max(0,len(s.output)-(curses.LINES-4))
+        elif k==ord('/'): s.search="";s.sel=0
+        elif k==27: s.search=""
+        elif k==ord('t'):
+            themes=["dark","light","hacker","nord","dracula","gruvbox"]
+            global THEME;ci=themes.index(THEME) if THEME in themes else 0
+            THEME=themes[(ci+1)%len(themes)]
+            s.output.append(f"Theme: {THEME} (restart to apply)")
+        elif k in(10,13):
+            if s.search:
+                items=s.filtered()
+                if items: s.sel=items[0][0]
+                s.search=""
+            label=s.menu[s.sel]
+            if label=="Quit": return False
+            if label in("Chat","Learn","Interview"):
+                curses.endwin();os.system(f"{CLI} {s.cmds[label]}");s.s=curses.initscr();curses.curs_set(0);return True
+            if label in("Ask","Ask Web","Ask Think","Agent","Web Search","Imagine","Write","Quiz","Compare","Shell","JSON","SQL","Docker","Regex"):
+                s.input_mode=True;s.input_label=label;s.input_cmd=f"{s.cmds[label]} {{}}"
                 return True
-            if cmd == "chat":
-                curses.endwin()
-                os.system(f"{CLI} chat")
-                self.s = curses.initscr()
-                curses.curs_set(0)
-                return True
-            self.output.append(f"> ai {cmd}")
-            self.running = True
-            self.draw()
-            result = run_ai(cmd)
-            self.running = False
-            for line in result.split("\n"):
-                self.output.append(line)
-        elif key == ord('t'):
-            names = list(THEMES.keys())
-            idx = names.index(THEME) if THEME in names else 0
-            idx = (idx + 1) % len(names)
-            self.output.append(f"Theme: {names[idx]} (restart to apply)")
-        elif key == ord('/'):
-            self.input_mode = True
-            self.input_label = "Search"
-            self.input_cmd = "search-history {}"
+            cmd=s.cmds.get(label,"help")
+            s.output.append(f"> ai {cmd}");s.running=True;s.draw()
+            r=run_ai(cmd);s.running=False
+            for l in r.split("\n"): s.output.append(l)
+            s.out_scroll=max(0,len(s.output)-(curses.LINES-4))
         return True
-
-    def run(self):
+    def run(s):
         while True:
-            self.draw()
-            if not self.handle_input():
-                break
-
-def main(stdscr):
-    app = App(stdscr)
-    app.run()
-
-if __name__ == "__main__":
-    curses.wrapper(main)
+            s.draw()
+            if not s.handle(): break
+def main(scr): App(scr).run()
+if __name__=="__main__": curses.wrapper(main)
 GUIEOF
   info "Launching GUI v7 (split-pane, structured settings, v2.9 features)..."
   "$PYTHON" "$gui_script" "$cli_bin" "$theme" "$ext_dir"
@@ -15816,10 +15785,29 @@ cmd_change() {
     latest|-L)
       hdr "AI CLI v${VERSION} — Latest Changes"
       echo ""
-      echo -e "  ${B}${BCYAN}v2.9.5${R}"
+      echo -e "  ${B}${BCYAN}v3.1.2${R}"
+      echo ""
+      echo -e "  ${B}New:${R}"
+      echo "    + GUI v7.1 — scrolling output, search, scrollbar, 46 items"
+      echo "    + GUI+ v3.1 — memory tab, API chat tab"
+      echo "    + ai ask-think — chain-of-thought reasoning"
+      echo "    + ai ask-w-t — thinking + web search combined"
+      echo "    + ai ask-web now shows source URLs"
+      echo "    + ai mem list/add/clear/search — memory management"
+      echo "    + ai api start with /chat endpoint"
+      echo "    + 10 thinking/reasoning models added"
+      echo "    + Modular lib/ architecture with 9 modules"
       echo ""
       echo -e "  ${B}Fixes:${R}"
-      echo "    + GPU: fixed stale cache + GPU_LAYERS=0 bug (GTX 1080)"
+      echo "    + All syntax errors fixed — passes bash -n clean"
+      echo "    + Removed all duplicate functions"
+      echo "    + Fixed unmatched quotes in prompt strings"
+      echo "    + GPU detection stale cache fix"
+      echo "    + macOS bash 3.2 auto-switch to bash 4+"
+      echo "    + rclick v3.2 — Windows, macOS, Mint support"
+      echo "    + Canvas v2 keybinds fixed"
+      echo "    + No more AI fallthrough on unknown commands"
+      echo ""
       echo "    + Silenced all llama.cpp warnings and logs"
       echo "    + Unknown commands no longer auto-pass to AI"
       echo "    + Canvas v2 keybinds fully fixed"
