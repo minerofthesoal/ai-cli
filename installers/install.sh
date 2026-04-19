@@ -179,10 +179,12 @@ check_deps() {
                 $SUDO xbps-install -Sy $MISSING ;;
             *)
                 if [ "$PLATFORM" = "macos" ]; then
-                    if command -v brew >/dev/null 2>&1; then
+                    if command -v nanobrew >/dev/null 2>&1; then
+                        nanobrew install $MISSING
+                    elif command -v brew >/dev/null 2>&1; then
                         brew install $MISSING
                     else
-                        die "Install Homebrew first: https://brew.sh"
+                        die "Install nanobrew or Homebrew first"
                     fi
                 else
                     die "Cannot auto-install on ${DISTRO}. Please install:${MISSING}"

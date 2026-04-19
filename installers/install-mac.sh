@@ -141,7 +141,7 @@ install_deps() {
     done
 
     for pkg in $OPT_DEPS; do
-        brew install "$pkg" 2>/dev/null || true
+        $PKG_CMD install "$pkg" 2>/dev/null || true
     done
 
     ok "Dependencies installed"

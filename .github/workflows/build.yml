@@ -398,11 +398,12 @@ jobs:
           echo ""; echo "AI CLI v${VER} Installer"; echo ""
           PREFIX="/usr/local"
           DIR="\$(cd "\$(dirname "\$0")" && pwd)"
-          if ! /opt/homebrew/bin/bash --version &>/dev/null 2>&1; then
-            echo "Installing Homebrew bash..."
-            command -v brew &>/dev/null || /bin/bash -c "\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-            eval "\$(/opt/homebrew/bin/brew shellenv 2>/dev/null)" || true
-            brew install bash 2>/dev/null || true
+          if ! /opt/nanobrew/bin/bash --version &>/dev/null 2>&1 && ! /opt/homebrew/bin/bash --version &>/dev/null 2>&1; then
+            echo "Installing bash 4+ ..."
+            if command -v nanobrew &>/dev/null; then nanobrew install bash 2>/dev/null || true
+            elif command -v brew &>/dev/null; then brew install bash 2>/dev/null || true
+            else /bin/bash -c "\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && brew install bash 2>/dev/null || true
+            fi
           fi
           echo "Installing to \${PREFIX}/bin/ai..."
           sudo mkdir -p "\${PREFIX}/bin" "\${PREFIX}/share/ai-cli"
@@ -689,15 +690,17 @@ jobs:
             **macOS (Intel & Apple Silicon):**
             ```bash
             curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/installers/install-mac.sh | sh
+            # Requires nanobrew or Homebrew. Install bash 4+:
+            nanobrew install bash    # or: brew install bash
             ```
+
+            **macOS (.dmg — Intel & Apple Silicon):**
+            Download the `.dmg`, open it, double-click "AI CLI Installer"
 
             **Python installer:**
             ```bash
             python3 <(curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/installers/install.py)
             ```
-
-            **macOS (.dmg — Intel & Apple Silicon):**
-            Download the `.dmg` for your Mac, open it, then run `sh install.sh`
 
             **Windows 10 21H2+ (.exe installer):**
             Download `ai-cli-${{ steps.ver.outputs.version }}-windows-setup.exe` and run it.
