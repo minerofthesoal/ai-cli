@@ -6119,7 +6119,7 @@ User: ${prompt}"
       -c "${CONTEXT_SIZE:-4096}" \
       --n-gpu-layers "${GPU_LAYERS:--1}" \
       --threads "${THREADS:-4}" -s 0 --no-display-prompt --log-disable 2>/dev/null | \
-      grep -v "^llama_\|^ggml_\|^llm_load\|^system_info\|^main:\|^sampling:\|^build info\|^CUDA\|^Metal\|warning:" || true
+      grep -v "^llama\|^ggml\|^llm_load\|^system_info\|^main:\|^sampling\|^build info\|^CUDA\|^Metal\|warning:\|n_ctx_per_seq\|will not be utilized\|^$" || true
   else
     err "llama.cpp not found. Run: ai install-deps"
     info "Or install manually: pip install llama-cpp-python"
@@ -6483,7 +6483,7 @@ dispatch_ask() {
       ;;
   esac
 
-  if [[ $rc -ne 0 || -z "$response" ]]; then
+  if [[ $rc -ne 0 ]]; then
     err "No response from backend '$backend'."
     [[ -z "${ACTIVE_MODEL:-}" ]] && echo "  Hint: no model set. Run: ai recommended"
     [[ "$backend" == "pytorch" && ! -d "${ACTIVE_MODEL:-x}" ]] && \
@@ -14179,7 +14179,7 @@ Question: ${_aw_prompt}"
       fi
       dispatch_ask "$_aw_prompt" ;;
 
-    ask-think|think)
+    ask-think|think|ask-t)
       local _at_prompt="$*"
       if [[ -z "$_at_prompt" ]]; then
         read -rp "$(echo -e "${BCYAN}Think: ${R}")" _at_prompt
