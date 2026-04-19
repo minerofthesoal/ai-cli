@@ -2949,7 +2949,7 @@ RCLICK_SCRIPT
   command -v attr &>/dev/null && \
     sudo attr -s "user.nautilus-trusted" -V "" "$script_path" 2>/dev/null || true
   rm -f /tmp/ai_rclick_v3.1.sh
-  ok "Installed: $script_path (rclick v3.1, trust flags set)"
+  ok "Installed: $script_path (rclick v3.2, trust flags set)"
 }
 
 _rclick_download_vl() {
@@ -3422,6 +3422,120 @@ _rclick_install_xbindkeys() {
   fi
 }
 
+# v3.2: Linux Mint / Cinnamon — Nemo file manager actions
+_rclick_install_cinnamon() {
+  info "Installing Cinnamon/Nemo right-click actions..."
+  local nemo_dir="$HOME/.local/share/nemo/actions"
+  mkdir -p "$nemo_dir"
+  for action in "Ask AI" "Summarize" "Explain" "Fix Code" "Rewrite"; do
+    local safe_name; safe_name=$(echo "$action" | tr ' ' '_' | tr '[:upper:]' '[:lower:]')
+    cat > "$nemo_dir/ai-${safe_name}.nemo_action" <<NEMOEOF
+[Nemo Action]
+Name=$action
+Comment=Send to AI CLI
+Exec=bash -c 'ai-rclick "$action" %F'
+Selection=any
+Extensions=any;
+Icon-Name=dialog-information
+NEMOEOF
+  done
+  ok "Cinnamon/Nemo: ${#actions[@]} actions installed in $nemo_dir"
+  info "Restart Nemo: nemo -q && nemo &"
+}
+
+# v3.2: macOS — Services menu + keyboard shortcut
+_rclick_install_macos() {
+  info "Installing macOS Services integration..."
+  local workflow_dir="$HOME/Library/Services"
+  mkdir -p "$workflow_dir"
+
+  local wf_dir="$workflow_dir/Ask AI.workflow/Contents"
+  mkdir -p "$wf_dir"
+  cat > "$wf_dir/Info.plist" <<'MACPLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSServices</key>
+  <array>
+    <dict>
+      <key>NSMenuItem</key>
+      <dict><key>default</key><string>Ask AI</string></dict>
+      <key>NSMessage</key><string>runWorkflowAsService</string>
+      <key>NSSendTypes</key><array><string>NSStringPboardType</string></array>
+    </dict>
+  </array>
+</dict>
+</plist>
+MACPLIST
+  cat > "$wf_dir/document.wflow" <<'MACWFLOW'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>actions</key>
+  <array>
+    <dict>
+      <key>action</key>
+      <dict>
+        <key>ActionBundlePath</key><string>/System/Library/Automator/Run Shell Script.action</string>
+        <key>ActionName</key><string>Run Shell Script</string>
+        <key>ActionParameters</key>
+        <dict>
+          <key>COMMAND_STRING</key><string>/usr/local/bin/ai ask "$@" | pbcopy &amp;&amp; osascript -e 'display notification "AI response copied to clipboard" with title "AI CLI"'</string>
+          <key>CheckedForUserDefaultShell</key><true/>
+          <key>inputMethod</key><integer>1</integer>
+          <key>shell</key><string>/bin/bash</string>
+        </dict>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>
+MACWFLOW
+  ok "macOS: 'Ask AI' service installed"
+  info "Access: Select text → right-click → Services → Ask AI"
+  info "Or set a keyboard shortcut in: System Settings → Keyboard → Shortcuts → Services"
+}
+
+# v3.2: Windows — PowerShell context menu (registry-based)
+_rclick_install_windows() {
+  info "Installing Windows right-click menu..."
+  local ps_script="$CONFIG_DIR/rclick_install.ps1"
+  cat > "$ps_script" <<'WINEOF'
+# AI CLI Right-Click Menu Installer for Windows
+$ErrorActionPreference = "Stop"
+
+# Add "Ask AI" to right-click context menu for all files
+$regPath = "Registry::HKEY_CURRENT_USER\Software\Classes\*\shell\AskAI"
+$cmdPath = "$regPath\command"
+New-Item -Path $regPath -Force | Out-Null
+Set-ItemProperty -Path $regPath -Name "(Default)" -Value "Ask AI"
+Set-ItemProperty -Path $regPath -Name "Icon" -Value "cmd.exe"
+New-Item -Path $cmdPath -Force | Out-Null
+Set-ItemProperty -Path $cmdPath -Name "(Default)" -Value 'cmd /k bash -c "ai ask \"$(cat \"%1\")\" "'
+
+# Add "Ask AI" for selected text (background)
+$bgPath = "Registry::HKEY_CURRENT_USER\Software\Classes\Directory\Background\shell\AskAI"
+$bgCmd = "$bgPath\command"
+New-Item -Path $bgPath -Force | Out-Null
+Set-ItemProperty -Path $bgPath -Name "(Default)" -Value "Ask AI (clipboard)"
+New-Item -Path $bgCmd -Force | Out-Null
+Set-ItemProperty -Path $bgCmd -Name "(Default)" -Value 'cmd /k bash -c "ai ask \"$(powershell.exe -c Get-Clipboard)\" "'
+
+Write-Host "AI CLI right-click menu installed!" -ForegroundColor Green
+Write-Host "Right-click any file or desktop background to use."
+WINEOF
+  ok "Windows: PowerShell installer created at $ps_script"
+  if [[ $IS_WINDOWS -eq 1 ]]; then
+    info "Running installer..."
+    powershell.exe -ExecutionPolicy Bypass -File "$(cygpath -w "$ps_script")" 2>/dev/null || \
+      warn "Auto-install failed. Run manually: powershell -File $ps_script"
+  else
+    info "Copy to Windows and run: powershell -ExecutionPolicy Bypass -File rclick_install.ps1"
+  fi
+}
+
 cmd_rclick() {
   local sub="${1:-help}"; shift || true
   case "$sub" in
@@ -3469,6 +3583,18 @@ cmd_rclick() {
       # Openbox (standalone)
       if command -v openbox &>/dev/null && [[ ! " ${installed[*]} " =~ "LXDE" ]]; then
         _rclick_install_openbox && installed+=("Openbox")
+      fi
+      # v3.2: Cinnamon / Linux Mint (Nemo)
+      if [[ "$de" =~ (Cinnamon|X-Cinnamon) ]] || command -v cinnamon &>/dev/null || command -v nemo &>/dev/null; then
+        _rclick_install_cinnamon && installed+=("Cinnamon/Mint")
+      fi
+      # v3.2: macOS
+      if [[ $IS_MACOS -eq 1 ]]; then
+        _rclick_install_macos && installed+=("macOS")
+      fi
+      # v3.2: Windows
+      if [[ $IS_WINDOWS -eq 1 ]] || [[ $IS_WSL -eq 1 ]]; then
+        _rclick_install_windows && installed+=("Windows")
       fi
 
       # If nothing matched or as extra fallback, install xbindkeys
@@ -3631,7 +3757,8 @@ cmd_rclick() {
       echo "  ${B}ai rclick status${R}               — Show full status"
       echo ""
       echo "  ${B}Supported DEs/WMs (all auto-detected):${R}"
-      echo "    GNOME · KDE Plasma 5+6 · XFCE · MATE · Cinnamon"
+      echo "    GNOME · KDE Plasma 5+6 · XFCE · MATE · Cinnamon/Mint"
+      echo "    Hyprland · sway · i3 · Openbox · LXDE · macOS · Windows"
       echo "    Openbox · LXDE/LXQt · i3 · sway · Hyprland"
       echo "    X11 universal: xbindkeys fallback"
       echo ""
