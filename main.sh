@@ -4132,56 +4132,6 @@ Be systematic. Use web_search for current information. Never make up facts."
 # ════════════════════════════════════════════════════════════════════════════════
 #  ENHANCED WEB SEARCH (no rate limiting, multiple backends)
 # ════════════════════════════════════════════════════════════════════════════════
-cmd_websearch() {
-  local query="$*"; local backend="${SEARCH_ENGINE:-ddg}"
-  [[ -z "$query" ]] && { read -rp "Search: " query; }
-  [[ -z "$query" ]] && return
-
-  hdr "🌐 Web Search: $query"
-  echo ""
-
-  local results_json
-  results_json=$(_agent_web_search "$query")
-
-  # Display results
-  echo "$results_json" | python3 - "$query" <<'PYEOF'
-import json, sys
-try:
-    results = json.loads(sys.stdin.read())
-    if not results:
-        print("  No results found")
-        sys.exit(0)
-    for i, r in enumerate(results, 1):
-        print(f"  {i}. {r.get('title','')[:70]}")
-        snippet = r.get('snippet','')
-        if snippet and snippet != r.get('title',''):
-            print(f"     {snippet[:120]}")
-        url = r.get('url','')
-        if url: print(f"     {url[:80]}")
-        print()
-except Exception as e:
-    print(f"Parse error: {e}")
-PYEOF
-
-  echo ""
-  # Use AI to summarize if model available
-  if [[ -n "$ACTIVE_MODEL" || -n "${OPENAI_API_KEY:-}" || -n "${ANTHROPIC_API_KEY:-}" || -n "${GEMINI_API_KEY:-}" ]]; then
-    local context
-    context=$(echo "$results_json" | python3 -c "
-import json,sys
-results=json.load(sys.stdin)
-lines=[]
-for r in results:
-    lines.append(f\"Title: {r.get('title','')}\nSnippet: {r.get('snippet','')}\nURL: {r.get('url','')}\")
-print('\n'.join(lines))")
-    hdr "AI Summary"
-    dispatch_ask "Based on these search results, answer: $query
-
-$context
-
-Be factual, cite the sources." 2>/dev/null
-  fi
-}
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  MODEL LOADING PERSISTENCE (save/restore between install/update)
@@ -5857,95 +5807,10 @@ GPCEOF
 BUILTIN_TOOLS=("web_search" "read_file" "write_file" "run_code" "list_dir"
                "get_time" "get_sysinfo" "calc" "download_file" "image_info")
 
-run_tool() {
-  local name="$1"; local args_json="${2:-{}}"
-  case "$name" in
-    web_search)
-      local q; q=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('query',''))" 2>/dev/null)
-      web_search "$q" 5 ;;
-    read_file)
-      local p; p=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('path',''))" 2>/dev/null)
-      [[ -f "$p" ]] && cat "$p" || echo "File not found: $p" ;;
-    write_file)
-      local p c
-      p=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('path',''))" 2>/dev/null)
-      c=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('content',''))" 2>/dev/null)
-      echo "$c" > "$p" && echo "Written: $p" ;;
-    run_code)
-      local lang code
-      lang=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('language','python'))" 2>/dev/null)
-      code=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('code',''))" 2>/dev/null)
-      case "$lang" in
-        python|py) echo "$code" | python3 2>&1 ;;
-        bash|sh)   echo "$code" | bash 2>&1 ;;
-        js|node)   echo "$code" | node 2>&1 ;;
-        *) echo "Unsupported language: $lang" ;;
-      esac ;;
-    list_dir)
-      local p; p=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('path','.'))" 2>/dev/null)
-      ls -la "$p" 2>&1 ;;
-    get_time) date ;;
-    get_sysinfo)
-      echo "OS: $(uname -s -r)"
-      echo "CPU: $(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | xargs || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo '?')"
-      echo "RAM: $(free -h 2>/dev/null | awk '/^Mem/{print $2}' || echo '?')"
-      [[ -n "$PYTHON" ]] && echo "Python: $($PYTHON --version 2>&1)"
-      command -v nvidia-smi &>/dev/null && nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo "GPU: none/unknown"
-      ;;
-    calc)
-      local expr; expr=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('expression',''))" 2>/dev/null)
-      python3 -c "import math; print(eval('$expr'))" 2>&1 ;;
-    download_file)
-      local url sp
-      url=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('url',''))" 2>/dev/null)
-      sp=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('save_path','/tmp/download'))" 2>/dev/null)
-      curl -sL "$url" -o "$sp" && echo "Saved: $sp" ;;
-    image_info)
-      local p; p=$(echo "$args_json" | python3 -c "import json,sys;d=json.loads(sys.stdin.read());print(d.get('path',''))" 2>/dev/null)
-      [[ -n "$PYTHON" ]] && "$PYTHON" -c "from PIL import Image; im=Image.open('$p'); print(f'Size: {im.size}, Mode: {im.mode}')" 2>/dev/null || file "$p" ;;
-    *) echo "Unknown tool: $name" ;;
-  esac
-}
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  WEB SEARCH
 # ════════════════════════════════════════════════════════════════════════════════
-web_search() {
-  local query="$1"; local max="${2:-5}"
-  local encoded; encoded=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$query" 2>/dev/null || echo "$query")
-
-  if [[ "${SEARCH_ENGINE:-ddg}" == "brave" ]] && [[ -n "${BRAVE_API_KEY:-}" ]]; then
-    curl -sS "https://api.search.brave.com/res/v1/web/search?q=${encoded}&count=${max}" \
-      -H "Accept: application/json" \
-      -H "X-Subscription-Token: $BRAVE_API_KEY" 2>/dev/null | \
-      python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-for r in d.get('web',{}).get('results',[])[:int('$max')]:
-    print(f\"Title: {r.get('title','')}\")
-    print(f\"URL: {r.get('url','')}\")
-    print(f\"Snippet: {r.get('description','')[:200]}\")
-    print()
-" 2>/dev/null
-  else
-    curl -sS "https://api.duckduckgo.com/?q=${encoded}&format=json&no_redirect=1&no_html=1" 2>/dev/null | \
-      python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-results=[]
-if d.get('AbstractText'):
-    results.append({'title': d.get('Heading',''), 'url': d.get('AbstractURL',''), 'snippet': d.get('AbstractText','')})
-for r in d.get('RelatedTopics',[])[:int('$max')]:
-    if isinstance(r,dict) and r.get('Text'):
-        results.append({'title': r.get('Text','')[:80], 'url': r.get('FirstURL',''), 'snippet': r.get('Text','')[:200]})
-for r in results[:int('$max')]:
-    print(f\"Title: {r['title']}\")
-    print(f\"URL: {r['url']}\")
-    print(f\"Snippet: {r['snippet']}\")
-    print()
-" 2>/dev/null
-  fi
-}
 
 BUILTIN_TOOLS=("web_search" "read_file" "write_file" "run_code" "list_dir"
                "get_time" "get_sysinfo" "calc" "download_file" "image_info")
@@ -6166,20 +6031,24 @@ _inject_session_history() {
 }
 
 _save_session_turn() {
-  local user_msg="$1"; local ai_msg="$2"
+  local user_msg="$1" ai_msg="$2"
   local session="${ACTIVE_SESSION:-default}"
   local sess_file="$SESSIONS_DIR/${session}.json"
   [[ ! -f "$sess_file" ]] && echo "[]" > "$sess_file"
-  python3 -c "
-import json,sys
-f='$sess_file'
-hist=json.load(open(f))
-hist.append({'role':'user','content':$(echo "$user_msg" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))')})
-hist.append({'role':'assistant','content':$(echo "$ai_msg" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))')})
-# Keep last 20 turns
-if len(hist)>40: hist=hist[-40:]
-json.dump(hist,open(f,'w'),indent=2)
-" 2>/dev/null || true
+  SESSION_FILE="$sess_file" USER_MSG="$user_msg" AI_MSG="$ai_msg" \
+    "$PYTHON" -c '
+import json, os
+f = os.environ["SESSION_FILE"]
+try:
+    hist = json.load(open(f))
+except (json.JSONDecodeError, FileNotFoundError):
+    hist = []
+hist.append({"role": "user", "content": os.environ["USER_MSG"]})
+hist.append({"role": "assistant", "content": os.environ["AI_MSG"]})
+if len(hist) > 40:
+    hist = hist[-40:]
+json.dump(hist, open(f, "w"), indent=2)
+' 2>/dev/null || true
 }
 
 ask_gguf() {
@@ -6653,128 +6522,6 @@ dispatch_ask() {
 # ════════════════════════════════════════════════════════════════════════════════
 #  FINE-TUNING PIPELINE
 # ════════════════════════════════════════════════════════════════════════════════
-cmd_finetune() {
-  local sub="${1:-help}"; shift || true
-  case "$sub" in
-    prepare)
-      local data="${1:-}"; [[ -z "$data" ]] && { err "Data file required"; return 1; }
-      [[ ! -f "$data" ]] && { err "Not found: $data"; return 1; }
-      local out="$FINETUNE_DIR/dataset.jsonl"
-      info "Preparing dataset from $data..."
-      "$PYTHON" - <<PYEOF
-import json, re
-data_file = "$data"
-out_file = "$out"
-records = []
-with open(data_file) as f:
-    content = f.read()
-# Try JSONL
-try:
-    for line in content.splitlines():
-        line = line.strip()
-        if not line: continue
-        obj = json.loads(line)
-        if isinstance(obj, dict):
-            txt = obj.get('text') or (obj.get('instruction','') + '\n' + obj.get('output',''))
-            records.append({'text': txt})
-    print(f"Loaded {len(records)} JSONL records")
-except:
-    # Try Q&A format
-    pairs = re.split(r'### Human:', content)
-    for p in pairs:
-        if '### Assistant:' in p:
-            parts = p.split('### Assistant:', 1)
-            q = parts[0].strip(); a = parts[1].strip()
-            if q and a:
-                records.append({'text': f'### Human: {q}\n### Assistant: {a}'})
-    if not records:
-        # Plain text: split into chunks
-        chunks = [content[i:i+512] for i in range(0,len(content),512)]
-        records = [{'text': c} for c in chunks if c.strip()]
-    print(f"Prepared {len(records)} records from plain text/QA")
-
-with open(out_file, 'w') as f:
-    for r in records:
-        f.write(json.dumps(r) + '\n')
-print(f"Saved: {out_file}")
-PYEOF
-      ;;
-    start)
-      local base="${1:-}"; local data="${2:-$FINETUNE_DIR/dataset.jsonl}"; local out="${3:-$FINETUNE_DIR/finetuned_$(date +%Y%m%d_%H%M%S)}"
-      [[ -z "$base" ]] && { err "Base model required"; return 1; }
-      [[ ! -f "$data" ]] && { err "Dataset not found: $data. Run: ai finetune prepare <data>"; return 1; }
-      info "Starting LoRA fine-tune: $base → $out"
-      mkdir -p "$out"
-      BASE_MODEL="$base" DATA_FILE="$data" OUT_DIR="$out" "$PYTHON" - <<'PYEOF'
-import os, json, sys
-try:
-    import torch
-    from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, Trainer, DataCollatorForLanguageModeling
-    from peft import LoraConfig, get_peft_model, TaskType
-    from datasets import Dataset
-    from trl import SFTTrainer
-except ImportError as e:
-    print(f"Missing: {e}\nRun: ai install-deps"); sys.exit(1)
-base = os.environ['BASE_MODEL']
-data_file = os.environ['DATA_FILE']
-out_dir   = os.environ['OUT_DIR']
-tokenizer = AutoTokenizer.from_pretrained(base)
-tokenizer.pad_token = tokenizer.eos_token
-model = AutoModelForCausalLM.from_pretrained(base, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32)
-lora = LoraConfig(task_type=TaskType.CAUSAL_LM,r=16,lora_alpha=32,lora_dropout=0.05,target_modules=["q_proj","k_proj","v_proj","o_proj"])
-model = get_peft_model(model, lora)
-records=[]
-with open(data_file) as f:
-    for line in f:
-        obj=json.loads(line); txt=obj.get('text','')
-        if txt: records.append({'text':txt})
-ds = Dataset.from_list(records)
-device='cuda' if torch.cuda.is_available() else 'cpu'
-model=model.to(device)
-args=TrainingArguments(output_dir=out_dir,num_train_epochs=3,per_device_train_batch_size=1,gradient_accumulation_steps=4,learning_rate=2e-4,fp16=(device=='cuda'),logging_steps=20,save_steps=200,save_total_limit=2,report_to='none')
-trainer=SFTTrainer(model=model,args=args,train_dataset=ds,tokenizer=tokenizer,dataset_text_field='text',max_seq_length=512)
-trainer.train()
-model.save_pretrained(out_dir)
-tokenizer.save_pretrained(out_dir)
-print(f"Saved: {out_dir}")
-PYEOF
-      ;;
-    merge)
-      local adapter="${1:-}"; local base="${2:-}"; local out="${3:-${1}_merged}"
-      [[ -z "$adapter" || -z "$base" ]] && { err "Usage: ai finetune merge <adapter> <base> [out]"; return 1; }
-      info "Merging adapter into base model..."
-      ADAPTER="$adapter" BASE="$base" OUT="$out" "$PYTHON" - <<'PYEOF'
-import os,torch
-from transformers import AutoTokenizer
-from peft import PeftModel, AutoPeftModelForCausalLM
-base=os.environ['BASE']; adapter=os.environ['ADAPTER']; out=os.environ['OUT']
-model=AutoPeftModelForCausalLM.from_pretrained(adapter,torch_dtype=torch.float16)
-merged=model.merge_and_unload()
-merged.save_pretrained(out)
-tok=AutoTokenizer.from_pretrained(base)
-tok.save_pretrained(out)
-print(f"Merged: {out}")
-PYEOF
-      ;;
-    quantize)
-      local model="${1:-}"; local quant="${2:-Q4_K_M}"
-      [[ -z "$model" ]] && { err "Model path required"; return 1; }
-      local script="$HOME/llama.cpp/convert_hf_to_gguf.py"
-      [[ ! -f "$script" ]] && { err "llama.cpp not found at $HOME/llama.cpp"; return 1; }
-      local out="${model}_${quant}.gguf"
-      info "Quantizing to $quant..."
-      "$PYTHON" "$script" "$model" --outfile "$out" --outtype "${quant,,}" && ok "GGUF: $out"
-      ;;
-    status)
-      hdr "Fine-tune Status"
-      [[ -f "$FINETUNE_DIR/dataset.jsonl" ]] && echo "  Dataset: $(wc -l < "$FINETUNE_DIR/dataset.jsonl") records" || echo "  Dataset: none"
-      ls -td "$FINETUNE_DIR"/finetuned_*/ 2>/dev/null | head -5 | while read -r d; do
-        echo "  Model: $(basename "$d") ($(du -sh "$d" 2>/dev/null | cut -f1))"
-      done
-      ;;
-    *) echo "Usage: ai finetune prepare|start|merge|quantize|status" ;;
-  esac
-}
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  IMAGE GENERATION
@@ -6787,31 +6534,6 @@ PYEOF
 # ════════════════════════════════════════════════════════════════════════════════
 #  FINE-TUNING PIPELINE
 # ════════════════════════════════════════════════════════════════════════════════
-_save_session_turn() {
-  local user_msg="$1"; local ai_msg="$2"
-  local session="${ACTIVE_SESSION:-default}"
-  local sess_file="$SESSIONS_DIR/${session}.json"
-  [[ ! -f "$sess_file" ]] && echo "[]" > "$sess_file"
-  python3 -c "
-import json,sys
-f='$sess_file'
-hist=json.load(open(f))
-hist.append({'role':'user','content':$(echo "$user_msg" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))')})
-hist.append({'role':'assistant','content':$(echo "$ai_msg" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))')})
-# Keep last 20 turns
-if len(hist)>40: hist=hist[-40:]
-json.dump(hist,open(f,'w'),indent=2)
-" 2>/dev/null || true
-  # v2.6: Also append to project history (persistent multi-chat memory)
-  if [[ -n "${ACTIVE_PROJECT:-}" && -d "$PROJECTS_DIR/$ACTIVE_PROJECT" ]]; then
-    local proj_hist="$PROJECTS_DIR/$ACTIVE_PROJECT/history.jsonl"
-    local ts; ts=$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)
-    printf '%s\n%s\n' \
-      "{\"role\":\"user\",\"content\":$(echo "$user_msg" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))' 2>/dev/null || echo '""'),\"ts\":\"$ts\"}" \
-      "{\"role\":\"assistant\",\"content\":$(echo "$ai_msg" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read().strip()))' 2>/dev/null || echo '""'),\"ts\":\"$ts\"}" \
-      >> "$proj_hist" 2>/dev/null || true
-  fi
-}
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -7932,69 +7654,6 @@ cmd_status() {
 # ════════════════════════════════════════════════════════════════════════════════
 #  HELP
 # ════════════════════════════════════════════════════════════════════════════════
-show_help() {
-  echo -e "${B}${BWHITE}AI CLI v${VERSION}${R} — Chat · Vision · Audio · Video · Canvas · TTM · MTM · Mtm"
-  echo ""
-  echo -e "${B}${BCYAN}ASKING & CHAT${R}"
-  echo "  ai ask <prompt>                    — Ask a question"
-  echo "  ai chat                            — Interactive chat"
-  echo "  ai -C [name|auto] ask <prompt>     — Named chat (saved as JSONL)"
-  echo "  ai chat-list / chat-show / chat-delete"
-  echo "  ai code <prompt> [--run]           — Generate & optionally run code"
-  echo "  ai pipe / review / explain / summarize / translate"
-  echo ""
-  echo -e "${B}${BCYAN}MEDIA${R}"
-  echo "  ai audio transcribe/tts/analyze/convert/extract/ask/play/info"
-  echo "  ai video analyze/transcribe/caption/extract/trim/convert/ask/summary"
-  echo "  ai vision ask/ocr/caption/compare"
-  echo "  ai imagine <prompt>"
-  echo ""
-  echo -e "${B}${BCYAN}TRAINED MODELS${R}"
-  echo "  ${B}TTM${R}  (~179.35M — any GPU/CPU)      ai ttm <cmd>"
-  echo "  ${B}MTM${R}  (~0.61B  — GTX 1080 fp16)     ai mtm <cmd>"
-  echo "  ${B}Mtm${R}  (~1.075B — RTX 2080+ bf16)    ai Mtm <cmd>   (case sensitive!)"
-  echo ""
-  echo "  Commands: pretrain [c1] [c2]  enable  disable  train-now"
-  echo "            upload [v]  create-repo  status  load [v]"
-  echo "            set-custom1 <hf-id>   set-custom2 <hf-id>"
-  echo ""
-  echo "  Load shortcuts:"
-  echo "    ai -TTM / ai -MTM / ai -Mtm"
-  echo ""
-  echo "  Pretraining datasets (6 standard + 2 custom):"
-  echo "    1. TinyStories (6k)   2. CodeAlpaca (4k)   3. OpenOrca (3k)"
-  echo "    4. The Stack Smol (3k) 5. FineWeb-Edu (4k) 6. Wikipedia-en (4k)"
-  echo "    7. Custom 1 (user-defined HF id or local path)"
-  echo "    8. Custom 2 (user-defined HF id or local path)"
-  echo ""
-  echo -e "${B}${BCYAN}CANVAS${R}"
-  echo "  ai canvas new/open/ask/show/run/edit/diff/save/list/close"
-  echo ""
-  echo -e "${B}${BCYAN}MODELS${R}"
-  echo "  ai model <name>  models  download  recommended  search-models  upload  model-info"
-  echo "  ai model-create new/train/list/edit/info/delete/presets"
-  echo ""
-  echo -e "${B}${BCYAN}FINE-TUNING${R}"
-  echo "  ai finetune prepare/start/merge/quantize/status"
-  echo ""
-  echo -e "${B}${BCYAN}SETTINGS${R}"
-  echo "  ai config [key value]     ai keys [set KEY val]"
-  echo "  ai session list/new/load  ai persona list/set/create"
-  echo "  ai history [--search x]   ai status"
-  echo "  ai install-deps [--cpu-only]"
-  echo "  sudo ai uninstall       (v2.7.3: also works without dash)"
-  echo "  ai alias set/list/del   (v2.7.3: user-defined command aliases)"
-  echo "  ai error-codes          (v2.7.3: structured error code reference)"
-  echo ""
-  echo -e "${B}${BCYAN}GUI${R}"
-  echo "  ai -gui / ai gui   — Python curses GUI (click or keyboard)"
-  echo "  Themes: dark (default) · light · hacker · matrix"
-  echo "  ai config gui_theme <theme>"
-  echo ""
-  echo -e "${B}${BCYAN}HF DATASET SYNC${R}"
-  echo "  ai config hf_dataset_sync 1   — Enable chat sync to $HF_DATASET_REPO"
-  echo "  ai config dataset_key <key>   — Set write-only HF key"
-}
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  MISC HELPERS (personas, sessions, config, history, etc.)
