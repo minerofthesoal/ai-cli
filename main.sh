@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.1.4.0.3"
+VERSION="3.1.5"
 
 # macOS ships bash 3.2 which lacks associative arrays (declare -A).
 # Require bash 4+ or auto-switch to nb/Homebrew bash if available.
@@ -36,15 +36,6 @@ if (( BASH_VERSINFO[0] < 4 )); then
   exit 1
 fi
 
-# ── v3.1.0: Source modular lib files if available ─────────────────────────────
-_AI_LIB="${AI_CLI_LIB:-$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/lib}"
-[[ ! -d "$_AI_LIB" ]] && _AI_LIB="/usr/share/ai-cli/lib"
-[[ ! -d "$_AI_LIB" ]] && _AI_LIB="/usr/local/share/ai-cli/lib"
-if [[ -d "$_AI_LIB" ]]; then
-  for _mod in "$_AI_LIB"/*.sh; do
-    [[ -f "$_mod" ]] && source "$_mod"
-  done
-fi
 # ════════════════════════════════════════════════════════════════════════════════
 #  ENVIRONMENT DETECTION
 # ════════════════════════════════════════════════════════════════════════════════
@@ -245,6 +236,7 @@ touch "$ALIASES_FILE" 2>/dev/null || true
 
 [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
 [[ -f "$KEYS_FILE"   ]] && source "$KEYS_FILE"
+
 
 # Runtime vars
 ACTIVE_MODEL="${ACTIVE_MODEL:-}"
@@ -16113,16 +16105,13 @@ cmd_system_update() {
     return 1
   fi
 
-  # Download lib/ modules
-  local lib_dir="/usr/local/share/ai-cli/lib"
-  local _sudo=""
-  [[ ! -w "/usr/local/share" ]] && _sudo="sudo"
-  $_sudo mkdir -p "$lib_dir" 2>/dev/null || true
-  local _base="https://raw.githubusercontent.com/minerofthesoal/ai-cli/main/lib"
-  for _mod in core.sh backends.sh models.sh chat.sh tools.sh workspace.sh utilities.sh api_server.sh firefox_ext.sh; do
-    $_sudo curl -fsSL "$_base/$_mod" -o "$lib_dir/$_mod" 2>/dev/null || true
+  # Clean up old lib/ files that may conflict
+  for _old_lib in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
+    if [[ -d "$_old_lib" ]]; then
+      $_sudo rm -rf "$_old_lib" 2>/dev/null || true
+      info "Removed old lib/ files from $_old_lib"
+    fi
   done
-  info "Updated lib/ modules"
 
   rm -f "$tmp"
   ok "Updated to v${remote_ver}!"
