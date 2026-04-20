@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.1.5.6"
+VERSION="3.1.6"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -19113,6 +19113,68 @@ def run_cmd(cmd):
     except Exception as e:
         return f"Error: {e}"
 
+# ── Memory & Context ─────────────────────────────────────────────────
+MEM_FILE = os.path.expanduser("~/.config/ai-cli/memory.jsonl")
+CTX_FILE = os.path.expanduser("~/.config/ai-cli/api_context.json")
+MAX_CTX_TOKENS = 3000
+
+def load_mem():
+    try:
+        return [l.strip() for l in open(MEM_FILE) if l.strip()]
+    except:
+        return []
+
+def save_mem(items):
+    with open(MEM_FILE, "w") as f:
+        for item in items:
+            f.write(item + "\n")
+
+def load_ctx():
+    try:
+        return json.load(open(CTX_FILE))
+    except:
+        return {"messages": [], "compressed": ""}
+
+def save_ctx(ctx):
+    json.dump(ctx, open(CTX_FILE, "w"), indent=2)
+
+def estimate_tokens(text):
+    return len(text) // 4
+
+def ctx_is_full(ctx):
+    total = sum(estimate_tokens(m.get("content", "")) for m in ctx.get("messages", []))
+    total += estimate_tokens(ctx.get("compressed", ""))
+    return total > MAX_CTX_TOKENS
+
+def compress_ctx(ctx):
+    msgs = ctx.get("messages", [])
+    if len(msgs) < 4:
+        return ctx
+    old_msgs = msgs[:-2]
+    keep_msgs = msgs[-2:]
+    summary_text = " | ".join(m.get("content", "")[:100] for m in old_msgs)
+    compressed = ai_ask(f"Summarize this conversation in 2-3 sentences: {summary_text}")
+    prev = ctx.get("compressed", "")
+    if prev:
+        compressed = prev + " " + compressed
+    ctx["messages"] = keep_msgs
+    ctx["compressed"] = compressed
+    save_ctx(ctx)
+    return ctx
+
+def auto_update_mem(user_msg, ai_msg):
+    facts = []
+    for trigger in ["my name is", "i am", "i live in", "i work", "i use", "i prefer", "remember that", "i like", "i have"]:
+        if trigger in user_msg.lower():
+            facts.append(user_msg)
+            break
+    if facts:
+        existing = load_mem()
+        for f in facts:
+            if f not in existing:
+                existing.append(f)
+        save_mem(existing)
+
 CHAT_HTML = """<!DOCTYPE html><html><head><title>AI CLI Chat</title>
 <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;height:100vh;display:flex;flex-direction:column}
 #m{flex:1;overflow-y:auto;padding:16px}.u{background:#313244;margin:8px 0 8px 40px;padding:10px;border-radius:8px}
@@ -19189,6 +19251,8 @@ class H(http.server.BaseHTTPRequestHandler):
         elif self.path == "/v1/models": self._j(200, {"data":[{"id":MODEL}]})
         elif self.path == "/chat": self._h(200, CHAT_HTML)
         elif self.path == "/v3/site": self._h(200, DASH_HTML)
+        elif self.path == "/v3/mem": self._j(200, {"memory": load_mem()})
+        elif self.path == "/v3/context": self._j(200, load_ctx())
         else: self._j(404, {"error":"not found"})
     def do_POST(self):
         l = int(self.headers.get("Content-Length", 0))
@@ -19196,8 +19260,62 @@ class H(http.server.BaseHTTPRequestHandler):
         if self.path in ("/v1/chat/completions", "/v1/completions"):
             msgs = b.get("messages", [])
             p = msgs[-1]["content"] if msgs else b.get("prompt", "")
-            r = run_cmd(p[5:]) if p.startswith("/cmd ") else ai_ask(p)
+            if p.startswith("/cmd "):
+                r = run_cmd(p[5:])
+            else:
+                mem = load_mem()
+                ctx = load_ctx()
+                full_prompt = ""
+                if ctx.get("compressed"):
+                    full_prompt += "Previous conversation summary: " + ctx["compressed"] + "\n\n"
+                if mem:
+                    full_prompt += "Known facts about the user: " + "; ".join(mem) + "\n\n"
+                full_prompt += p
+                r = ai_ask(full_prompt)
+                ctx["messages"].append({"role": "user", "content": p})
+                ctx["messages"].append({"role": "assistant", "content": r})
+                if ctx_is_full(ctx):
+                    ctx = compress_ctx(ctx)
+                save_ctx(ctx)
+                auto_update_mem(p, r)
             self._j(200, {"id":f"c-{secrets.token_hex(6)}","object":"chat.completion","model":MODEL,"choices":[{"index":0,"message":{"role":"assistant","content":r},"finish_reason":"stop"}]})
+        elif self.path == "/v3/mem":
+            action = b.get("action", "list")
+            if action == "add":
+                items = load_mem()
+                items.append(b.get("fact", ""))
+                save_mem(items)
+                self._j(200, {"ok": True, "count": len(items)})
+            elif action == "delete":
+                items = load_mem()
+                idx = b.get("index", -1)
+                if 0 <= idx < len(items):
+                    items.pop(idx)
+                    save_mem(items)
+                self._j(200, {"ok": True, "memory": items})
+            elif action == "clear":
+                save_mem([])
+                self._j(200, {"ok": True})
+            else:
+                self._j(200, {"memory": load_mem()})
+        elif self.path == "/v3/context":
+            action = b.get("action", "get")
+            if action == "add":
+                ctx = load_ctx()
+                ctx["messages"].append({"role": b.get("role", "user"), "content": b.get("content", "")})
+                if ctx_is_full(ctx):
+                    ctx = compress_ctx(ctx)
+                save_ctx(ctx)
+                self._j(200, {"ok": True, "full": ctx_is_full(ctx), "msg_count": len(ctx["messages"])})
+            elif action == "clear":
+                save_ctx({"messages": [], "compressed": ""})
+                self._j(200, {"ok": True})
+            else:
+                self._j(200, load_ctx())
+        elif self.path == "/v3/comp/context":
+            ctx = load_ctx()
+            ctx = compress_ctx(ctx)
+            self._j(200, {"ok": True, "compressed": ctx.get("compressed", ""), "remaining_msgs": len(ctx["messages"])})
         elif self.path == "/v3/terminal/auth":
             pw = get_term_pw()
             if not pw:
