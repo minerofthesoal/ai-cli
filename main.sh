@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -euo pipefail
-VERSION="3.1.3.1"
+VERSION="3.1.4"
 
 # macOS ships bash 3.2 which lacks associative arrays (declare -A).
 # Require bash 4+ or auto-switch to nb/Homebrew bash if available.
@@ -14280,8 +14280,14 @@ Lets reason through this step by step:"
 
     # ── ask-n: use all CPU cores for faster local inference ──────────
     ask-n|a-n)
-      local _old_threads="$THREADS"
+      local _old_threads="$THREADS" _old_gpu="$GPU_LAYERS"
       THREADS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8)
+      GPU_LAYERS=0
+      local _an_prompt="$*"
+      if [[ -z "$_an_prompt" ]]; then
+        read -rp "$(echo -e "${BCYAN}Ask CPU: ${R}")" _an_prompt
+        [[ -z "$_an_prompt" ]] && { err "Usage: ai ask-n \"question\""; THREADS="$_old_threads"; GPU_LAYERS="$_old_gpu"; return 1; }
+      fi
       if [[ -z "$LLAMA_BIN" && -n "$PYTHON" ]]; then
         if ! "$PYTHON" -c "import llama_cpp" 2>/dev/null; then
           info "Installing CPU-optimized llama-cpp-python..."
@@ -14291,10 +14297,9 @@ Lets reason through this step by step:"
           LLAMA_BIN="llama_cpp_python"
         fi
       fi
-      GPU_LAYERS=0
-      info "CPU mode — all $THREADS cores, GPU disabled"
-      dispatch_ask "$*"
-      THREADS="$_old_threads" ;;
+      info "CPU mode — $THREADS cores"
+      dispatch_ask "$_an_prompt"
+      THREADS="$_old_threads"; GPU_LAYERS="$_old_gpu" ;;
 
     # ── ask-n with web: all CPU + web search ─────────────────────────
     ask-n-w|a-n-w|ask-n-web|a-n-w-t|ask-n-w-t)
@@ -14527,7 +14532,7 @@ $(cat)" ;;
       ;;
     *)
       # v2.9.0: Try extended dispatcher first (all new commands)
-      if _dispatch_v29_final "$cmd" "$@" 2>/dev/null; then
+      if _dispatch_v29_final "$cmd" "$@"; then
         return 0
       fi
       # v2.7.3: Check user-defined aliases
@@ -15905,6 +15910,17 @@ cmd_change() {
   case "$sub" in
     latest|-L)
       hdr "AI CLI v${VERSION} — Latest Changes"
+      echo ""
+      echo -e "  ${B}${BCYAN}v3.1.3.1${R}"
+      echo ""
+      echo -e "  ${B}Latest:${R}"
+      echo "    + ai ask-n / a-n — CPU-only mode with all cores"
+      echo "    + ai a-w, a-t, a-wt, a-n-t, a-n-w, a-n-w-t shortcuts"
+      echo "    + Canvas v3 — AI insert, delete, rename keybinds"
+      echo "    + nb package manager support for macOS"
+      echo "    + Fixed Bad CPU type on Intel Mac"
+      echo "    + Fixed parentheses syntax errors"
+      echo "    + API /chat web UI endpoint"
       echo ""
       echo -e "  ${B}${BCYAN}v3.1.3${R}"
       echo ""
