@@ -19053,4 +19053,677 @@ cmd_test() {
 }
 
 
+#!/usr/bin/env bash
+# AI CLI v3.1.0 — API Server v3
+# OpenAI-compatible REST API server with key management
+
+API_HOST="${API_HOST:-0.0.0.0}"
+API_PORT="${API_PORT:-8080}"
+API_PID_FILE="$CONFIG_DIR/api.pid"
+API_KEYS_FILE="$CONFIG_DIR/api_keys.json"
+
+cmd_api_v3() {
+  local sub="${1:-help}"; shift 2>/dev/null || true
+  case "$sub" in
+    start)
+      local port="${1:-$API_PORT}"
+      local host="${2:-$API_HOST}"
+      local use_tailscale=0
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --port) port="$2"; shift 2 ;;
+          --host) host="$2"; shift 2 ;;
+          --tailscale|--ts) use_tailscale=1; shift ;;
+          --public) host="0.0.0.0"; shift ;;
+          *) shift ;;
+        esac
+      done
+      [[ -z "$PYTHON" ]] && { err "Python required for API server"; return 1; }
+      # Tailscale: get tailscale IP if available
+      if [[ $use_tailscale -eq 1 ]]; then
+        local ts_ip
+        ts_ip=$(tailscale ip -4 2>/dev/null || echo "")
+        if [[ -n "$ts_ip" ]]; then
+          host="$ts_ip"
+          info "Tailscale IP: $ts_ip"
+        else
+          warn "Tailscale not found or not connected. Using $host"
+        fi
+      fi
+
+      # Check if already running
+      if [[ -f "$API_PID_FILE" ]] && kill -0 "$(cat "$API_PID_FILE" 2>/dev/null)" 2>/dev/null; then
+        warn "API server already running (PID $(cat "$API_PID_FILE"))"
+        return 0
+      fi
+
+      info "Starting API server v3 on ${host}:${port}..."
+      API_HOST="$host" API_PORT="$port" \
+      AI_CLI_BIN="$(command -v ai 2>/dev/null || echo "$0")" \
+      AI_MODEL="${ACTIVE_MODEL:-}" AI_BACKEND="${ACTIVE_BACKEND:-}" \
+      "$PYTHON" -c '
+import http.server, json, os, subprocess, sys, threading, time, hashlib, secrets
+
+HOST = os.environ.get("API_HOST", "0.0.0.0")
+PORT = int(os.environ.get("API_PORT", "8080"))
+CLI = os.environ.get("AI_CLI_BIN", "ai")
+MODEL = os.environ.get("AI_MODEL", "auto")
+BACKEND = os.environ.get("AI_BACKEND", "auto")
+KEYS_FILE = os.environ.get("API_KEYS_FILE", os.path.expanduser("~/.config/ai-cli/api_keys.json"))
+
+# Load API keys
+def load_keys():
+    try: return json.load(open(KEYS_FILE))
+    except: return {"keys": []}
+
+def save_keys(data):
+    json.dump(data, open(KEYS_FILE, "w"), indent=2)
+
+def check_key(key):
+    if not key: return True  # No auth if no keys configured
+    data = load_keys()
+    if not data.get("keys"): return True
+    return any(k["key"] == key and k.get("active", True) for k in data["keys"])
+
+def run_cmd(cmd):
+    try:
+        r = subprocess.run(f"{CLI} {cmd}", shell=True, capture_output=True, text=True, timeout=120,
+                          env={**os.environ, "NO_COLOR": "1"})
+        import re
+        out = re.sub(r'\x1b\[[0-9;]*m', '', (r.stdout + r.stderr).strip())
+        return out or "Done"
+    except Exception as e:
+        return f"Error: {e}"
+
+def ai_ask(prompt):
+    try:
+        r = subprocess.run([CLI, "ask", prompt], capture_output=True, text=True, timeout=120)
+        return r.stdout.strip() or r.stderr.strip() or "No response"
+    except Exception as e:
+        return f"Error: {e}"
+
+SITE_HTML = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI CLI Dashboard</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,sans-serif;background:#1e1e2e;color:#cdd6f4;min-height:100vh}
+nav{background:#181825;padding:12px 20px;display:flex;gap:12px;border-bottom:1px solid #313244;align-items:center;flex-wrap:wrap}
+nav h2{color:#89b4fa;margin-right:auto}nav button{background:#313244;color:#cdd6f4;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px}
+nav button:hover{background:#45475a}nav button.active{background:#89b4fa;color:#1e1e2e}
+.panel{display:none;padding:20px;max-width:900px;margin:0 auto}.panel.active{display:block}
+textarea,input[type=text]{background:#313244;border:1px solid #45475a;color:#cdd6f4;padding:10px;border-radius:6px;font-family:monospace;font-size:14px;width:100%}
+textarea:focus,input:focus{outline:none;border-color:#89b4fa}
+.btn{background:#89b4fa;color:#1e1e2e;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-weight:600;margin:4px}
+.btn:hover{background:#74c7ec}.btn-sm{padding:6px 12px;font-size:12px}.btn-red{background:#f38ba8}.btn-green{background:#a6e3a1}
+.card{background:#181825;border:1px solid #313244;border-radius:8px;padding:16px;margin:10px 0}
+.output{background:#181825;border:1px solid #313244;border-radius:8px;padding:16px;margin:10px 0;white-space:pre-wrap;max-height:400px;overflow-y:auto;font-family:monospace;font-size:13px}
+h3{color:#89b4fa;margin-bottom:10px}label{color:#a6adc8;font-size:13px;display:block;margin:8px 0 4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.stat{background:#313244;padding:12px;border-radius:6px;text-align:center}.stat h4{color:#89b4fa;font-size:12px}.stat p{font-size:20px;font-weight:600}
+.chat-msg{margin:8px 0;padding:10px;border-radius:8px}.chat-user{background:#313244;margin-left:40px}.chat-ai{background:#181825;border:1px solid #313244;margin-right:40px}
+</style></head><body>
+<nav><h2>AI CLI Dashboard</h2>
+<button class="active" onclick="show('chat')">Chat</button>
+<button onclick="show('models')">Models</button>
+<button onclick="show('settings')">Settings</button>
+<button onclick="show('keys')">API Keys</button>
+<button onclick="show('tools')">Tools</button>
+</nav>
+<div id="chat" class="panel active">
+<h3>Chat</h3>
+<div id="msgs" class="output" style="min-height:200px"></div>
+<div style="display:flex;gap:8px;margin-top:8px"><textarea id="prompt" rows="2" placeholder="Type a message..."></textarea><button class="btn" onclick="sendChat()">Send</button></div>
+</div>
+<div id="models" class="panel">
+<h3>Models</h3><button class="btn btn-sm" onclick="runCmd('models')">Refresh</button> <button class="btn btn-sm" onclick="runCmd('recommended')">Browse All</button>
+<div id="models-out" class="output">Loading...</div>
+</div>
+<div id="settings" class="panel">
+<h3>Settings</h3><button class="btn btn-sm" onclick="runCmd('status')">Status</button> <button class="btn btn-sm" onclick="runCmd('health')">Health</button> <button class="btn btn-sm" onclick="runCmd('sysinfo')">System Info</button>
+<div id="settings-out" class="output">Click a button above</div>
+</div>
+<div id="keys" class="panel">
+<h3>API Key Management</h3>
+<div class="card"><label>Create new API key</label><input type="text" id="key-label" placeholder="Key label"><button class="btn btn-sm" onclick="genKey()" style="margin-top:8px">Generate Key</button></div>
+<button class="btn btn-sm" onclick="listKeys()">List Keys</button>
+<div id="keys-out" class="output"></div>
+</div>
+<div id="tools" class="panel">
+<h3>Quick Tools</h3>
+<div class="grid">
+<button class="btn btn-sm" onclick="runCmd('test -S')">Speed Test</button>
+<button class="btn btn-sm" onclick="runCmd('test -N')">Network Test</button>
+<button class="btn btn-sm" onclick="runCmd('analytics')">Analytics</button>
+<button class="btn btn-sm" onclick="runCmd('security')">Security</button>
+<button class="btn btn-sm" onclick="runCmd('cleanup --dry-run')">Cleanup</button>
+<button class="btn btn-sm" onclick="runCmd('memory list')">Memory</button>
+<button class="btn btn-sm" onclick="runCmd('snap list')">Snapshots</button>
+<button class="btn btn-sm" onclick="runCmd('plugin list')">Plugins</button>
+</div>
+<div id="tools-out" class="output" style="margin-top:12px"></div>
+</div>
+<script>
+const API=location.origin;
+function show(id){document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));document.getElementById(id).classList.add('active');document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));event.target.classList.add('active')}
+function addMsg(r,t){const d=document.createElement('div');d.className='chat-msg chat-'+r;d.textContent=t;document.getElementById('msgs').appendChild(d);document.getElementById('msgs').scrollTop=9e9}
+async function sendChat(){const p=document.getElementById('prompt');const t=p.value.trim();if(!t)return;p.value='';addMsg('user',t);try{const r=await fetch(API+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:t}]})});const d=await r.json();addMsg('ai',d.choices?.[0]?.message?.content||'No response')}catch(e){addMsg('ai','Error: '+e.message)}}
+async function runCmd(c){const out=document.querySelector('.panel.active .output')||document.getElementById('tools-out');out.textContent='Running...';try{const r=await fetch(API+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:'/cmd '+c}]})});const d=await r.json();out.textContent=d.choices?.[0]?.message?.content||'No output'}catch(e){out.textContent='Error: '+e.message}}
+async function genKey(){const l=document.getElementById('key-label').value||'default';const r=await fetch(API+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:'/cmd api key-gen '+l}]})});const d=await r.json();document.getElementById('keys-out').textContent=d.choices?.[0]?.message?.content||'Error'}
+async function listKeys(){const r=await fetch(API+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:'/cmd api keys'}]})});const d=await r.json();document.getElementById('keys-out').textContent=d.choices?.[0]?.message?.content||'No keys'}
+document.getElementById('prompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}});
+</script></body></html>"""
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+
+    def _serve_site(self):
+        self._send_html(200, SITE_HTML)
+
+    def _send(self, code, data):
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "*")
+        self.send_header("Access-Control-Allow-Methods", "*")
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+
+    def do_OPTIONS(self):
+        self._send(200, {})
+
+    def _send_html(self, code, html):
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html")
+        self.end_headers()
+        self.wfile.write(html.encode())
+
+    def do_GET(self):
+        if self.path == "/health": self._send(200, {"status": "ok", "version": "3.1"})
+        elif self.path == "/v1/models": self._send(200, {"data": [{"id": MODEL, "object": "model"}]})
+        elif self.path == "/v3/site": self._serve_site()
+        elif self.path == "/chat":
+            self._send_html(200, """<!DOCTYPE html><html><head><title>AI CLI Chat</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;height:100vh;display:flex;flex-direction:column}
+#msgs{flex:1;overflow-y:auto;padding:16px}.u{background:#313244;margin:8px 0 8px 40px;padding:10px;border-radius:8px}
+.a{background:#181825;border:1px solid #313244;margin:8px 40px 8px 0;padding:10px;border-radius:8px;white-space:pre-wrap}
+#bar{background:#181825;padding:10px;display:flex;gap:8px;border-top:1px solid #313244}
+#p{flex:1;background:#313244;border:1px solid #45475a;color:#cdd6f4;padding:10px;border-radius:6px;font-size:14px;resize:none}
+#p:focus{outline:none;border-color:#89b4fa}button{background:#89b4fa;color:#1e1e2e;border:none;padding:10px 18px;border-radius:6px;cursor:pointer;font-weight:600}
+button:hover{background:#74c7ec}h3{padding:10px 16px;background:#181825;border-bottom:1px solid #313244;color:#89b4fa}</style></head>
+<body><h3>AI CLI Chat</h3><div id="msgs"></div><div id="bar"><textarea id="p" rows="1" placeholder="Type a message..."></textarea><button onclick="send()">Send</button></div>
+<script>const m=document.getElementById("msgs"),p=document.getElementById("p");
+function add(r,t){const d=document.createElement("div");d.className=r;d.textContent=t;m.appendChild(d);m.scrollTop=m.scrollHeight}
+async function send(){const t=p.value.trim();if(!t)return;p.value="";add("u",t);
+try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},
+body:JSON.stringify({messages:[{role:"user",content:t}]})});const d=await r.json();
+add("a",d.choices?.[0]?.message?.content||"No response")}catch(e){add("a","Error: "+e.message)}}
+p.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}})</script></body></html>""")
+        else: self._send(404, {"error": "not found"})
+
+    def do_POST(self):
+        auth = self.headers.get("Authorization", "").replace("Bearer ", "")
+        if not check_key(auth):
+            self._send(401, {"error": {"message": "Invalid API key"}}); return
+
+        length = int(self.headers.get("Content-Length", 0))
+        body = json.loads(self.rfile.read(length)) if length else {}
+
+        if self.path in ("/v1/chat/completions", "/v1/completions"):
+            messages = body.get("messages", [])
+            prompt = messages[-1]["content"] if messages else body.get("prompt", "")
+            if prompt.startswith("/cmd "):
+                cmd = prompt[5:]
+                response = run_cmd(cmd)
+            else:
+                response = ai_ask(prompt)
+            self._send(200, {
+                "id": f"chatcmpl-{secrets.token_hex(12)}",
+                "object": "chat.completion",
+                "model": body.get("model", MODEL),
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": response}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": len(prompt.split()), "completion_tokens": len(response.split()), "total_tokens": len(prompt.split()) + len(response.split())}
+            })
+        else:
+            self._send(404, {"error": {"message": f"Unknown endpoint: {self.path}"}})
+
+print(f"AI CLI API Server v3 — http://{HOST}:{PORT}")
+print(f"Model: {MODEL} | Backend: {BACKEND}")
+print(f"Endpoints: POST /v1/chat/completions, GET /v1/models, GET /health, GET /chat")
+print("Press Ctrl+C to stop")
+server = http.server.HTTPServer((HOST, PORT), Handler)
+try: server.serve_forever()
+except KeyboardInterrupt: print("\nStopped")
+' &
+      local pid=$!
+      echo "$pid" > "$API_PID_FILE"
+      sleep 1
+      if kill -0 "$pid" 2>/dev/null; then
+        ok "API server v3 running on http://${host}:${port}"
+        info "Dashboard: http://${host}:${port}/v3/site"
+        info "Chat UI:   http://${host}:${port}/chat"
+        info "Health:    http://${host}:${port}/health"
+        info "Send:     curl -X POST http://localhost:${port}/v1/chat/completions -H 'Content-Type: application/json' -d '{\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}'"
+      else
+        err "Server failed to start"
+        rm -f "$API_PID_FILE"
+      fi
+      ;;
+    stop)
+      if [[ -f "$API_PID_FILE" ]]; then
+        local pid; pid=$(cat "$API_PID_FILE")
+        kill "$pid" 2>/dev/null && ok "Stopped (PID $pid)" || warn "Process not running"
+        rm -f "$API_PID_FILE"
+      else
+        info "Not running"
+      fi
+      ;;
+    status)
+      if [[ -f "$API_PID_FILE" ]] && kill -0 "$(cat "$API_PID_FILE" 2>/dev/null)" 2>/dev/null; then
+        ok "Running (PID $(cat "$API_PID_FILE")) on ${API_HOST}:${API_PORT}"
+      else
+        info "Not running"
+      fi
+      ;;
+    key-gen)
+      local label="${1:-default}"
+      local key="aicli-$(openssl rand -hex 16 2>/dev/null || head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)"
+      local data; data=$(cat "$API_KEYS_FILE" 2>/dev/null || echo '{"keys":[]}')
+      echo "$data" | "$PYTHON" -c "
+import json,sys
+d=json.load(sys.stdin)
+d['keys'].append({'key':'$key','label':'$label','active':True,'created':'$(date -Iseconds)'})
+json.dump(d,open('$API_KEYS_FILE','w'),indent=2)
+" 2>/dev/null
+      ok "API key generated"
+      echo "  Key:   $key"
+      echo "  Label: $label"
+      echo "  Use:   curl -H 'Authorization: Bearer $key' ..."
+      ;;
+    keys)
+      hdr "API Keys"
+      [[ ! -f "$API_KEYS_FILE" ]] && { info "No keys. Generate: ai api key-gen"; return; }
+      "$PYTHON" -c "
+import json
+d=json.load(open('$API_KEYS_FILE'))
+for k in d.get('keys',[]):
+    status='active' if k.get('active',True) else 'revoked'
+    print(f\"  {k['key'][:8]}...  {k.get('label','?'):15s}  {status}  {k.get('created','?')}\")
+" 2>/dev/null
+      ;;
+    test)
+      local port="${1:-$API_PORT}"
+      info "Testing API on port $port..."
+      local resp; resp=$(curl -sS "http://localhost:${port}/health" 2>/dev/null)
+      [[ "$resp" == *"ok"* ]] && ok "Server healthy" || err "Server not responding"
+      ;;
+    *)
+      echo "Usage: ai api <start|stop|status|key-gen|keys|test>"
+      echo ""
+      echo "  start [--port N] [--tailscale] [--public]"
+      echo "                  Start API server with dashboard"
+      echo "  Endpoints:"
+      echo "    /v3/site      Full web dashboard"
+      echo "    /chat         Simple chat UI"
+      echo "    /v1/chat/completions   OpenAI-compatible API"
+      echo "    /health       Health check"
+      echo ""
+      echo "  start           Start on localhost:8080"
+      echo "  stop            Stop the server"
+      echo "  status          Check if running"
+      echo "  key-gen [label] Generate an API key"
+      echo "  keys            List API keys"
+      echo "  test [port]     Test the server"
+      ;;
+  esac
+}
+
+#!/usr/bin/env bash
+# AI CLI v3.1.0 — Workspace module
+# Snap, templates, RAG, batch, branch, export, notebook, plan, memory, presets, plugins
+
+cmd_snap() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    save) local n="${1:?Usage: ai snap save <name>}"; cp "$CONFIG_FILE" "$SNAPSHOTS_DIR/${n}.snap" 2>/dev/null; ok "Saved: $n" ;;
+    load) local n="${1:?Usage: ai snap load <name>}"; [[ -f "$SNAPSHOTS_DIR/${n}.snap" ]] && { source "$SNAPSHOTS_DIR/${n}.snap"; save_config; ok "Loaded: $n"; } || err "Not found: $n" ;;
+    list) hdr "Snapshots"; for f in "$SNAPSHOTS_DIR"/*.snap; do [[ -f "$f" ]] && echo "  $(basename "$f" .snap)"; done ;;
+    delete) rm -f "$SNAPSHOTS_DIR/${1}.snap"; ok "Deleted" ;;
+    *) echo "Usage: ai snap <save|load|list|delete> <name>" ;;
+  esac
+}
+
+cmd_template() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    create) local n="${1:?name}"; echo '# Template: {{input}}' > "$TEMPLATES_DIR/${n}.tpl"; ok "Created: $n" ;;
+    use) local n="${1:?name}"; shift; local c; c=$(cat "$TEMPLATES_DIR/${n}.tpl" 2>/dev/null) || { err "Not found"; return 1; }; c="${c//\{\{input\}\}/$*}"; dispatch_ask "$c" ;;
+    list) hdr "Templates"; for f in "$TEMPLATES_DIR"/*.tpl; do [[ -f "$f" ]] && echo "  $(basename "$f" .tpl)"; done ;;
+    delete) rm -f "$TEMPLATES_DIR/${1}.tpl"; ok "Deleted" ;;
+    *) echo "Usage: ai template <create|use|list|delete>" ;;
+  esac
+}
+
+cmd_rag() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    create) local n="${1:?name}" d="${2:?directory}"; mkdir -p "$RAG_DIR/$n"
+      find "$d" -type f -size -1M \( -name "*.txt" -o -name "*.md" -o -name "*.py" -o -name "*.js" -o -name "*.sh" \) -exec cat {} + 2>/dev/null | head -50000 > "$RAG_DIR/$n/index.txt"
+      ok "Indexed: $n ($(wc -l < "$RAG_DIR/$n/index.txt") lines)" ;;
+    query) local n="${1:?name}" q="${2:?question}"; [[ -f "$RAG_DIR/$n/index.txt" ]] || { err "Not found: $n"; return 1; }
+      local ctx; ctx=$(grep -i "${q%% *}" "$RAG_DIR/$n/index.txt" 2>/dev/null | head -20)
+      dispatch_ask "Context from knowledge base '$n':
+$ctx
+
+Question: $q" ;;
+    list) hdr "RAG Bases"; for d in "$RAG_DIR"/*/; do [[ -d "$d" ]] && echo "  $(basename "$d")"; done ;;
+    delete) rm -rf "$RAG_DIR/$1"; ok "Deleted" ;;
+    *) echo "Usage: ai rag <create|query|list|delete>" ;;
+  esac
+}
+
+cmd_batch() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    add) local p="${*:?prompt}"; local id=$(date +%s%N | tail -c 8); echo "$p" > "$BATCH_DIR/${id}.prompt"; ok "Queued: #$id" ;;
+    run) for f in "$BATCH_DIR"/*.prompt; do [[ -f "$f" ]] || continue; local id=$(basename "$f" .prompt); info "#$id..."; dispatch_ask "$(cat "$f")" > "$BATCH_DIR/${id}.out" 2>&1; ok "#$id done"; done ;;
+    list) for f in "$BATCH_DIR"/*.prompt; do [[ -f "$f" ]] || continue; echo "  #$(basename "$f" .prompt): $(head -c 60 "$f")"; done ;;
+    results) for f in "$BATCH_DIR"/*.out; do [[ -f "$f" ]] && { echo "--- #$(basename "$f" .out) ---"; cat "$f"; echo ""; }; done ;;
+    clear) rm -f "$BATCH_DIR"/*.prompt "$BATCH_DIR"/*.out; ok "Cleared" ;;
+    *) echo "Usage: ai batch <add|run|list|results|clear>" ;;
+  esac
+}
+
+cmd_branch() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    create) local n="${1:?name}"; mkdir -p "$BRANCHES_DIR/$n"; cp "$SESSIONS_DIR/${ACTIVE_SESSION}.json" "$BRANCHES_DIR/$n/history.json" 2>/dev/null; ok "Branch: $n" ;;
+    use) local n="${1:?name}"; [[ -d "$BRANCHES_DIR/$n" ]] || { err "Not found"; return 1; }; cp "$BRANCHES_DIR/$n/history.json" "$SESSIONS_DIR/${ACTIVE_SESSION}.json" 2>/dev/null; ok "Switched to: $n" ;;
+    list) hdr "Branches"; for d in "$BRANCHES_DIR"/*/; do [[ -d "$d" ]] && echo "  $(basename "$d")"; done ;;
+    delete) rm -rf "$BRANCHES_DIR/$1"; ok "Deleted" ;;
+    *) echo "Usage: ai branch <create|use|list|delete>" ;;
+  esac
+}
+
+cmd_export() {
+  local sub="${1:-all}"; local out="$EXPORTS_DIR/$(date +%Y%m%d_%H%M%S)"; mkdir -p "$out"
+  case "$sub" in
+    chat) cp "$SESSIONS_DIR"/*.json "$out/" 2>/dev/null; ok "Exported chats to $out" ;;
+    config) cp "$CONFIG_FILE" "$out/" 2>/dev/null; ok "Exported config to $out" ;;
+    all) cp "$SESSIONS_DIR"/*.json "$CONFIG_FILE" "$out/" 2>/dev/null; ok "Exported all to $out" ;;
+    *) echo "Usage: ai export <all|chat|config>" ;;
+  esac
+}
+
+cmd_import() { local s="${1:?path}"; [[ -f "$s" ]] && cp "$s" "$CONFIG_DIR/" && ok "Imported" || { [[ -d "$s" ]] && cp "$s"/* "$CONFIG_DIR/" 2>/dev/null && ok "Imported"; } || err "Not found"; }
+
+cmd_notebook() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    new) local n="${1:?name}"; printf "# Notebook: %s\n\n--- [text]\nWelcome\n\n--- [ai]\nHello!\n\n--- [code]\necho hello\n" "$n" > "$NOTEBOOKS_DIR/${n}.ainb"; ok "Created: $n" ;;
+    run) local n="${1:?name}"; [[ -f "$NOTEBOOKS_DIR/${n}.ainb" ]] || { err "Not found"; return 1; }
+      local type="" content=""
+      while IFS= read -r line; do
+        if [[ "$line" =~ ^---\ \[(code|ai|text)\] ]]; then
+          [[ -n "$content" && -n "$type" ]] && { case "$type" in code) bash -c "$content" 2>&1 ;; ai) _silent_generate "$content" ;; text) echo "$content" ;; esac; }
+          type="${BASH_REMATCH[1]}"; content=""
+        else content+="$line"$'\n'
+        fi
+      done < "$NOTEBOOKS_DIR/${n}.ainb"
+      [[ -n "$content" && -n "$type" ]] && { case "$type" in code) bash -c "$content" 2>&1 ;; ai) _silent_generate "$content" ;; text) echo "$content" ;; esac; } ;;
+    list) for f in "$NOTEBOOKS_DIR"/*.ainb; do [[ -f "$f" ]] && echo "  $(basename "$f" .ainb)"; done ;;
+    edit) ${EDITOR:-nano} "$NOTEBOOKS_DIR/${1:?name}.ainb" ;;
+    *) echo "Usage: ai notebook <new|run|list|edit>" ;;
+  esac
+}
+
+cmd_plan() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    create) local g="${*:?goal}"; info "Planning..."; _silent_generate "Break into 5-10 numbered tasks: $g" >> "$TASKS_FILE"; ok "Plan created" ;;
+    list) hdr "Tasks"; cat "$TASKS_FILE" 2>/dev/null || info "Empty" ;;
+    clear) > "$TASKS_FILE"; ok "Cleared" ;;
+    *) echo "Usage: ai plan <create|list|clear>" ;;
+  esac
+}
+
+cmd_memory() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    add|remember) echo "${*:?Usage: ai mem add FACT}" >> "$MEMORY_FILE"; ok "Remembered: $*" ;;
+    list|show|ls)
+      hdr "AI Memory"
+      if [[ ! -s "$MEMORY_FILE" ]]; then
+        info "No memories yet. Add one: ai mem add \"your name is John\""
+        return
+      fi
+      local n=0
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        (( n++ ))
+        printf "  ${BCYAN}%3d${R}  %s\n" "$n" "$line"
+      done < "$MEMORY_FILE"
+      echo ""
+      info "$n memories | Edit: ai mem edit | Clear: ai mem clear" ;;
+    edit) ${EDITOR:-nano} "$MEMORY_FILE"; ok "Memory file saved" ;;
+    delete|rm)
+      local n="${1:?Usage: ai mem delete NUMBER}"
+      sed -i "${n}d" "$MEMORY_FILE" 2>/dev/null || sed -i '' "${n}d" "$MEMORY_FILE" 2>/dev/null
+      ok "Memory #$n deleted" ;;
+    context) cat "$MEMORY_FILE" 2>/dev/null ;;
+    clear) > "$MEMORY_FILE"; ok "Memory cleared" ;;
+    search) grep -in "${1:?keyword}" "$MEMORY_FILE" 2>/dev/null || info "No matches" ;;
+    *)
+      echo "Usage: ai mem <add|list|edit|delete|clear|search>"
+      echo ""
+      echo "  add \"fact\"     Remember a fact"
+      echo "  list           Show all memories with numbers"
+      echo "  edit           Open memory file in editor"
+      echo "  delete N       Delete memory by number"
+      echo "  search WORD    Search memories"
+      echo "  clear          Delete all memories"
+      echo "  context        Output raw for prompt injection"
+      ;;
+  esac
+}
+
+cmd_preset() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    save) local n="${1:?name}"; cp "$CONFIG_FILE" "$PRESETS_DIR/${n}.preset"; ok "Saved: $n" ;;
+    load) local n="${1:?name}"; [[ -f "$PRESETS_DIR/${n}.preset" ]] && { source "$PRESETS_DIR/${n}.preset"; save_config; ok "Loaded: $n"; } || err "Not found" ;;
+    list) for f in "$PRESETS_DIR"/*.preset; do [[ -f "$f" ]] && echo "  $(basename "$f" .preset)"; done ;;
+    delete) rm -f "$PRESETS_DIR/${1}.preset"; ok "Deleted" ;;
+    *) echo "Usage: ai preset <save|load|list|delete>" ;;
+  esac
+}
+
+cmd_plugin() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    list) hdr "Plugins"; for f in "$PLUGINS_DIR"/*.sh; do [[ -f "$f" ]] && echo "  $(basename "$f" .sh)"; done ;;
+    install) local u="${1:?url/path}"; [[ -f "$u" ]] && cp "$u" "$PLUGINS_DIR/" || curl -fsSL "$u" -o "$PLUGINS_DIR/$(basename "$u")" 2>/dev/null; ok "Installed" ;;
+    remove) rm -f "$PLUGINS_DIR/${1:?name}.sh"; ok "Removed" ;;
+    reload) for f in "$PLUGINS_DIR"/*.sh; do [[ -f "$f" ]] && source "$f"; done; ok "Reloaded" ;;
+    *) echo "Usage: ai plugin <list|install|remove|reload>" ;;
+  esac
+}
+
+cmd_favorite() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    add) echo "${*:?prompt}" >> "$FAVORITES_FILE"; ok "Saved" ;;
+    list) hdr "Favorites"; nl -ba "$FAVORITES_FILE" 2>/dev/null || info "Empty" ;;
+    run) local n="${1:?number}"; local p; p=$(sed -n "${n}p" "$FAVORITES_FILE" 2>/dev/null); [[ -n "$p" ]] && dispatch_ask "$p" || err "Not found" ;;
+    delete) sed -i "${1:?number}d" "$FAVORITES_FILE" 2>/dev/null; ok "Deleted" ;;
+    *) echo "Usage: ai fav <add|list|run|delete>" ;;
+  esac
+}
+
+cmd_schedule() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    add) local cron="${1:?cron}" prompt="${2:?prompt}"; local id=$(date +%s); echo "$cron ai ask \"$prompt\"" > "$SCHEDULE_DIR/${id}.sched"; ok "Scheduled: #$id" ;;
+    list) for f in "$SCHEDULE_DIR"/*.sched; do [[ -f "$f" ]] && echo "  #$(basename "$f" .sched): $(cat "$f")"; done ;;
+    install) local tmp=$(mktemp); crontab -l 2>/dev/null | grep -v 'ai-cli-sched' > "$tmp"; for f in "$SCHEDULE_DIR"/*.sched; do [[ -f "$f" ]] && echo "$(cat "$f") # ai-cli-sched" >> "$tmp"; done; crontab "$tmp"; rm "$tmp"; ok "Installed" ;;
+    remove) rm -f "$SCHEDULE_DIR/${1}.sched"; ok "Removed" ;;
+    *) echo "Usage: ai schedule <add|list|install|remove>" ;;
+  esac
+}
+
+cmd_profile() {
+  local sub="${1:-}"; shift 2>/dev/null || true
+  case "$sub" in
+    create) local n="${1:?name}"; mkdir -p "$PROFILES_DIR/$n"; cp "$CONFIG_FILE" "$KEYS_FILE" "$PROFILES_DIR/$n/" 2>/dev/null; ok "Created: $n" ;;
+    switch) local n="${1:?name}"; [[ -d "$PROFILES_DIR/$n" ]] || { err "Not found"; return 1; }; cp "$PROFILES_DIR/$n"/* "$CONFIG_DIR/" 2>/dev/null; source "$CONFIG_FILE"; ok "Switched: $n" ;;
+    list) for d in "$PROFILES_DIR"/*/; do [[ -d "$d" ]] && echo "  $(basename "$d")"; done ;;
+    *) echo "Usage: ai profile <create|switch|list>" ;;
+  esac
+}
+
+#!/usr/bin/env bash
+# AI CLI v3.1.0 — Tools module
+# test, health, perf, cost, tokens, analytics, cleanup, security
+
+cmd_test() {
+  local mode="${1:--A}"
+  case "$mode" in
+    -S|speed)
+      hdr "Speed Test"
+      [[ -z "$ACTIVE_MODEL" && -z "$ACTIVE_BACKEND" ]] && { err "No model set"; return 1; }
+      local start=$(date +%s%3N) out=$(_silent_generate "Count from 1 to 50" 64 2>/dev/null) end=$(date +%s%3N)
+      local ms=$(( end - start )) words=$(echo "$out" | wc -w)
+      (( ms > 0 && words > 0 )) && printf "  ${GREEN}%.1f tok/s${R} (%d ms)\n" "$(awk "BEGIN{print $words/($ms/1000.0)}")" "$ms" || err "No output" ;;
+    -N|network)
+      hdr "Network Test"
+      local ping_ms; ping_ms=$(ping -c 3 8.8.8.8 2>/dev/null | tail -1 | awk -F'/' '{print $5}' || echo "?")
+      printf "  Latency:  %s ms\n" "$ping_ms"
+      local s=$(date +%s%N); curl -fsSL "https://speed.cloudflare.com/__down?bytes=5000000" -o /dev/null 2>/dev/null; local e=$(date +%s%N)
+      local ms=$(( (e - s) / 1000000 )); (( ms > 0 )) && printf "  Download: %.1f Mbps\n" "$(awk "BEGIN{print 5*8/($ms/1000.0)}")" ;;
+    -A|all) cmd_test -S; echo ""; cmd_test -N ;;
+    *) echo "Usage: ai test <-S|-N|-A>" ;;
+  esac
+}
+
+cmd_health() {
+  hdr "Health Check"
+  local issues=0
+  (( BASH_VERSINFO[0] >= 4 )) && printf "  ${GREEN}[OK]${R}  Bash %s\n" "$BASH_VERSION" || { printf "  ${RED}[!!]${R}  Bash %s (need 4+)\n" "$BASH_VERSION"; (( issues++ )); }
+  [[ -n "$PYTHON" ]] && printf "  ${GREEN}[OK]${R}  %s\n" "$($PYTHON --version 2>&1)" || { printf "  ${RED}[!!]${R}  Python not found\n"; (( issues++ )); }
+  command -v curl &>/dev/null && printf "  ${GREEN}[OK]${R}  curl\n" || { printf "  ${RED}[!!]${R}  curl missing\n"; (( issues++ )); }
+  command -v git &>/dev/null && printf "  ${GREEN}[OK]${R}  git\n" || printf "  ${YELLOW}[--]${R}  git missing\n"
+  echo ""
+  [[ "$CUDA_ARCH" == "metal" ]] && printf "  ${GREEN}[OK]${R}  Metal GPU\n"
+  [[ "$CUDA_ARCH" != "0" && "$CUDA_ARCH" != "metal" && -n "$CUDA_ARCH" ]] && printf "  ${GREEN}[OK]${R}  CUDA sm_%s\n" "$CUDA_ARCH"
+  [[ "$CUDA_ARCH" == "0" || -z "$CUDA_ARCH" ]] && printf "  ${YELLOW}[--]${R}  CPU-only\n"
+  [[ -n "$LLAMA_BIN" ]] && printf "  ${GREEN}[OK]${R}  llama.cpp\n" || printf "  ${YELLOW}[--]${R}  llama.cpp missing\n"
+  echo ""
+  for k in OPENAI_API_KEY ANTHROPIC_API_KEY GEMINI_API_KEY GROQ_API_KEY MISTRAL_API_KEY TOGETHER_API_KEY; do
+    local v; v=$(eval "echo \"\${$k:-}\"")
+    [[ -n "$v" ]] && printf "  ${GREEN}[OK]${R}  %s\n" "$k" || printf "  ${DIM}[--]${R}  %s\n" "$k"
+  done
+  echo ""; (( issues > 0 )) && warn "$issues issue(s)" || ok "All checks passed"
+}
+
+cmd_count_tokens() {
+  local input="${*:-}"
+  [[ -z "$input" && -f "${1:-}" ]] && input=$(cat "$1")
+  [[ -z "$input" && ! -t 0 ]] && input=$(cat)
+  [[ -z "$input" ]] && { echo "Usage: ai tokens \"text\" | ai tokens <file>"; return 1; }
+  local chars=${#input} words=$(echo "$input" | wc -w)
+  local est=$(( chars * 100 / 400 ))
+  printf "  Chars: %s | Words: %s | ~%s tokens\n" "$chars" "$words" "$est"
+  (( est > CONTEXT_SIZE )) && warn "Exceeds context ($CONTEXT_SIZE)" || ok "Fits ($est/$CONTEXT_SIZE)"
+}
+
+cmd_cost() {
+  local in_tok="${1:-1000}" out_tok="${2:-$MAX_TOKENS}"
+  hdr "Cost Estimate (${in_tok} in + ${out_tok} out tokens)"
+  printf "  %-20s %10s\n" "Model" "Cost"
+  for m in "gpt-4o:2.5:10" "gpt-4o-mini:0.15:0.6" "claude-sonnet:3:15" "claude-opus:15:75" "gemini-flash:0.075:0.3" "groq-llama:0.59:0.79" "mistral-large:4:12"; do
+    IFS=: read -r name inp outp <<< "$m"
+    local cost=$(awk "BEGIN{printf \"%.6f\", ($in_tok*$inp + $out_tok*$outp)/1000000}")
+    printf "  %-20s \$%s\n" "$name" "$cost"
+  done
+  echo ""; info "Local GGUF: \$0.00"
+}
+
+cmd_analytics() {
+  local sub="${1:-summary}"
+  case "$sub" in
+    summary)
+      hdr "Usage Analytics"
+      [[ ! -s "$ANALYTICS_FILE" ]] && { info "No data yet"; return; }
+      local total=$(wc -l < "$ANALYTICS_FILE")
+      printf "  Total requests: %s\n" "$total" ;;
+    clear) > "$ANALYTICS_FILE"; ok "Cleared" ;;
+    *) echo "Usage: ai analytics <summary|clear>" ;;
+  esac
+}
+
+cmd_cleanup() {
+  hdr "Cleanup"
+  local dry=0; [[ "${1:-}" == "--dry-run" ]] && dry=1
+  local tmp_count=$(find /tmp -name "ai-cli-*" -o -name "ai_gui_*" 2>/dev/null | wc -l)
+  (( tmp_count > 0 )) && { printf "  Temp files: %d\n" "$tmp_count"; (( dry == 0 )) && rm -rf /tmp/ai-cli-* /tmp/ai_gui_* 2>/dev/null; }
+  local old_batch=$(find "$BATCH_DIR" -name "*.out" -mtime +7 2>/dev/null | wc -l)
+  (( old_batch > 0 )) && { printf "  Old batch: %d\n" "$old_batch"; (( dry == 0 )) && find "$BATCH_DIR" -name "*.out" -mtime +7 -delete 2>/dev/null; }
+  (( dry == 1 )) && info "[dry-run]" || ok "Done"
+}
+
+cmd_security() {
+  hdr "Security Audit"
+  local issues=0
+  if [[ -f "$KEYS_FILE" ]]; then
+    local perms; perms=$(stat -c%a "$KEYS_FILE" 2>/dev/null || stat -f%Lp "$KEYS_FILE" 2>/dev/null || echo "?")
+    [[ "$perms" == "600" ]] && printf "  ${GREEN}[OK]${R}  keys.env: %s\n" "$perms" || { printf "  ${RED}[!!]${R}  keys.env: %s (should be 600)\n" "$perms"; (( issues++ )); }
+  fi
+  local hist="${HISTFILE:-$HOME/.bash_history}"
+  if [[ -f "$hist" ]]; then
+    local exposed=$(grep -ciE 'sk-[a-zA-Z0-9]{20,}' "$hist" 2>/dev/null || echo 0)
+    (( exposed > 0 )) && { printf "  ${RED}[!!]${R}  %d key(s) in shell history\n" "$exposed"; (( issues++ )); } || printf "  ${GREEN}[OK]${R}  No keys in history\n"
+  fi
+  (( issues > 0 )) && warn "$issues issue(s)" || ok "All clear"
+}
+
+#!/usr/bin/env bash
+# AI CLI v3.1.0 — Chat module
+# Interactive chat, ask, ask-web
+
+cmd_chat_interactive() {
+  hdr "AI Chat v3.1 — Session: $ACTIVE_SESSION"
+  info "Backend: ${ACTIVE_BACKEND:-auto} | Model: ${ACTIVE_MODEL:-auto}"
+  echo -e "  ${DIM}Type /help for commands${R}"
+  echo ""
+
+  local last_prompt="" msg_count=0 multiline=0
+  while true; do
+    if [[ $multiline -eq 1 ]]; then
+      printf "${BCYAN}${B}You (multi): ${R}"
+      local lines=""
+      while IFS= read -r line; do [[ -z "$line" ]] && break; lines+="$line"$'\n'; done
+      local input="${lines%$'\n'}"
+    else
+      printf "${BCYAN}${B}You: ${R}"
+      local input; read -r input || break
+    fi
+    [[ -z "$input" ]] && continue
+
+    case "$input" in
+      /quit|/exit|/q) info "Chat ended ($msg_count messages)"; break ;;
+      /clear) echo "[]" > "$SESSIONS_DIR/${ACTIVE_SESSION}.json"; msg_count=0; ok "Cleared" ;;
+      /retry) [[ -n "$last_prompt" ]] && { printf "${BGREEN}AI: ${R}"; dispatch_ask "$last_prompt"; echo ""; } || warn "Nothing to retry" ;;
+      /model*) local m="${input#/model }"; [[ -n "$m" && "$m" != "/model" ]] && { ACTIVE_MODEL="$m"; save_config; ok "Model: $m"; } || info "Model: ${ACTIVE_MODEL:-auto}" ;;
+      /persona*) local p="${input#/persona }"; [[ -n "$p" && "$p" != "/persona" ]] && { ACTIVE_PERSONA="$p"; save_config; ok "Persona: $p"; } || info "Persona: ${ACTIVE_PERSONA:-default}" ;;
+      /system*) local s="${input#/system }"; [[ -n "$s" && "$s" != "/system" ]] && { CUSTOM_SYSTEM_PROMPT="$s"; save_config; ok "System prompt set"; } || info "System: $(_get_effective_system | head -c 80)" ;;
+      /multiline) multiline=$(( 1 - multiline )); if [[ $multiline -eq 1 ]]; then ok "Multiline ON"; else ok "Multiline OFF"; fi ;;
+      /temp*) local t="${input#/temp }"; [[ "$t" =~ ^[0-9.]+$ ]] && { TEMPERATURE="$t"; save_config; ok "Temp: $t"; } || info "Temp: $TEMPERATURE" ;;
+      /export) mkdir -p "$EXPORTS_DIR"; cp "$SESSIONS_DIR/${ACTIVE_SESSION}.json" "$EXPORTS_DIR/chat_$(date +%Y%m%d%H%M%S).json" 2>/dev/null; ok "Exported" ;;
+      /web*) local q="${input#/web }"; info "Web search..."; dispatch_ask "$(web_search "$q" 3 2>/dev/null || echo "")
+
+$q" ;;
+      /help|/h) echo "  /quit /clear /retry /model <m> /persona <p> /system <s>"
+                echo "  /temp <n> /multiline /export /web <query> /help" ;;
+      /*) warn "Unknown: $input (try /help)" ;;
+      *) last_prompt="$input"; printf "${BGREEN}AI: ${R}"; dispatch_ask "$input"; echo ""; (( msg_count++ )) ;;
+    esac
+  done
+}
+
 main "$@"
