@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.1.7"
+VERSION="3.1.7.1"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -19221,7 +19221,8 @@ def get_dash_html():
     html += "<button class=\"nb a\" onclick=\"switchTab(this,0)\">Chat</button>"
     html += "<button class=nb onclick=\"switchTab(this,1)\">Models</button>"
     html += "<button class=nb onclick=\"switchTab(this,2)\">Settings</button>"
-    html += "<button class=nb onclick=\"switchTab(this,3)\">Tools</button></nav>"
+    html += "<button class=nb onclick=\"switchTab(this,3)\">Tools</button>"
+    html += "<button class=nb onclick=\"switchTab(this,4)\">Terminal</button></nav>"
     html += "<div id=p0 class=p style=display:block><h3>Chat</h3><div id=ms class=o style=min-height:200px></div>"
     html += "<div style=display:flex;gap:8px;margin-top:8px><textarea id=pr rows=2 placeholder=Message...></textarea>"
     html += "<button class=b onclick=sc()>Send</button></div></div>"
@@ -19236,6 +19237,22 @@ def get_dash_html():
     html += "<button class=\"b bs\" onclick=\"rc(\x27analytics\x27)\">Analytics</button>"
     html += "<button class=\"b bs\" onclick=\"rc(\x27security\x27)\">Security</button>"
     html += "</div><div class=o></div></div>"
+    html += "<div id=p4 class=p><h3>Terminal (Protected)</h3>"
+    html += "<div id=tauth style=text-align:center;padding:40px>"
+    html += "<p style=color:#6c7086;margin-bottom:12px>Enter terminal password</p>"
+    html += "<input type=password id=tpw placeholder=Password style=max-width:200px;text-align:center maxlength=8>"
+    html += "<br><button class=b onclick=tlogin() style=margin-top:8px>Unlock</button></div>"
+    html += "<div id=tterm style=display:none>"
+    html += "<div id=tout class=o style=min-height:300px;background:#0d0d0d;color:#00ff41;font-family:monospace></div>"
+    html += "<div style=display:flex;gap:8px;margin-top:8px>"
+    html += "<span style=color:#00ff41;padding:10px>$</span>"
+    html += "<input type=text id=tcmd placeholder=Command... style=font-family:monospace>"
+    html += "<button class=b onclick=texec()>Run</button></div></div></div>"
+    js += "var _ta=false;"
+    js += "function tlogin(){var pw=document.getElementById(\\"tpw\\").value;fetch(\\"/v3/terminal/auth\\",{method:\\"POST\\",headers:{\\"Content-Type\\":\\"application/json\\"},body:JSON.stringify({password:pw})}).then(function(r){return r.json()}).then(function(d){if(d.ok){_ta=true;document.getElementById(\\"tauth\\").style.display=\\"none\\";document.getElementById(\\"tterm\\").style.display=\\"block\\";tadd(\\"Terminal unlocked.\\")}else{alert(\\"Wrong password\\")}}).catch(function(e){alert(\\"Error: \\"+e.message)})}"
+    js += "function tadd(t){var o=document.getElementById(\\"tout\\");o.textContent+=t+String.fromCharCode(10);o.scrollTop=o.scrollHeight}"
+    js += "function texec(){if(!_ta)return;var c=document.getElementById(\\"tcmd\\");var cmd=c.value;if(!cmd)return;c.value=\\"\\";tadd(\\"$ \\"+cmd);fetch(\\"/v3/terminal/exec\\",{method:\\"POST\\",headers:{\\"Content-Type\\":\\"application/json\\"},body:JSON.stringify({cmd:cmd,password:document.getElementById(\\"tpw\\").value})}).then(function(r){return r.json()}).then(function(d){tadd(d.output||d.error||\\"Done\\")}).catch(function(e){tadd(\\"Error: \\"+e.message)})}"
+    js += "document.getElementById(\\"tcmd\\").addEventListener(\\"keydown\\",function(e){if(e.key===\\"Enter\\")texec()});"
     html += "<script>" + js + "</script></body></html>"
     return html
 
