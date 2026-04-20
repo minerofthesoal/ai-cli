@@ -6,7 +6,7 @@
 # ║  rclick v3.2 (Win+Mac+Linux) · iSH · bash 4+ auto-switch · Canvas v3     ║
 # ║  v3.0.0: major core rewrite — removed all duplicate functions, fixed GPU   ║
 # ║          detection, silenced llama warnings, bash 3.2 compat, ask-web     ║
-# ║          ai test (-S/-N/-A), 60+ commands with ai -h <cmd> help           ║
+# ║          ai test (-S/-N/-A), 60+ commands with ai -h CMD help           ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 # Linux/Mac:   chmod +x ai.sh && sudo cp ai.sh /usr/local/bin/ai
 # Arch Linux:  pacman -S python python-pip git ffmpeg && ai install-deps
@@ -1365,15 +1365,15 @@ _tm_cmd() {
       echo "  GPU target: $TM_GPU_OPT | Dtype: $TM_DTYPE | Repo: $TM_HF_REPO"
       echo ""
       echo "  ${B}ai $id pretrain [custom1] [custom2]${R} — Pretrain 6 standard + 2 optional"
-      echo "  ${B}ai $id finetune <dataset> [epochs] [lr]${R} — Fine-tune on custom dataset "
+      echo "  ${B}ai $id finetune DATASET [epochs] [lr]${R} — Fine-tune on custom dataset "
       echo "  ${B}ai $id enable / disable${R}              — Toggle auto-training"
       echo "  ${B}ai $id train-now${R}                     — Force one batch"
       echo "  ${B}ai $id upload [version]${R}              — Upload to $TM_HF_REPO"
       echo "  ${B}ai $id create-repo${R}                   — Create HF repo"
       echo "  ${B}ai $id status${R}                        — Show status"
       echo "  ${B}ai $id load [version]${R}                — Set as active model"
-      echo "  ${B}ai $id set-custom1 <hf-id-or-path>${R}   — Set custom dataset 1"
-      echo "  ${B}ai $id set-custom2 <hf-id-or-path>${R}   — Set custom dataset 2"
+      echo "  ${B}ai $id set-custom1 HF_ID${R}   — Set custom dataset 1"
+      echo "  ${B}ai $id set-custom2 HF_ID${R}   — Set custom dataset 2"
       echo ""
       echo "  ${B}ai -TTM${R} / ${B}ai -MTM${R} / ${B}ai -Mtm${R}            — Load respective model"
       ;;
@@ -1417,7 +1417,7 @@ _tm_finetune() {
   local n_pairs; n_pairs=$(wc -l < "$ds_path" 2>/dev/null || echo 0)
   if (( n_pairs < 10 )); then
     err "Dataset too small: $n_pairs pairs (need at least 10)"
-    echo "  Add more pairs: ai dataset add $dataset \"<prompt>\" \"<response>\""
+    echo "  Add more pairs: ai dataset add $dataset \"PROMPT\" \"RESPONSE\""
     return 1
   fi
 
@@ -2248,8 +2248,8 @@ cmd_rlhf() {
       echo ""
       echo "  ${B}HF RLHF Datasets v2.4.5${R}  — curated preference datasets"
       echo "  ai rlhf datasets             — List available HF preset datasets"
-      echo "  ai rlhf add-dataset <id>     — Import a HF dataset into RLHF pairs"
-      echo "  ai rlhf use-dataset <id>     — Set as active RLHF training source"
+      echo "  ai rlhf add-dataset ID     — Import a HF dataset into RLHF pairs"
+      echo "  ai rlhf use-dataset ID     — Set as active RLHF training source"
       echo "  ai rlhf my-datasets          — Show imported datasets + counts"
       echo ""
       echo "  ${B}Alignment${R}  Qwen3 anti-hallucination"
@@ -2299,7 +2299,7 @@ _rlhf_hf_list_presets() {
     printf "  %-18s  %-45s  %s\n" "$key" "$hf_id" "$desc"
   done | sort
   echo ""
-  echo "  Add any preset: ai rlhf add-dataset <name>"
+  echo "  Add any preset: ai rlhf add-dataset NAME"
   echo "  Or any HF id:   ai rlhf add-dataset Anthropic/hh-rlhf"
   echo "  Limit sample:   ai rlhf add-dataset hh-rlhf 'train[:2000]'"
 }
@@ -2518,7 +2518,7 @@ RCLICK_VL_MODELS=(
   [custom]="custom||Custom model (set RCLICK_CUSTOM_MODEL)"
 )
 
-# Default keybind — user can change via: ai rclick keybind <combo>
+# Default keybind — user can change via: ai rclick keybind COMBO
 RCLICK_KEYBIND="${RCLICK_KEYBIND:-Super+Shift+a}"
 
 _rclick_install_deps() {
@@ -3479,13 +3479,13 @@ _rclick_install_macos() {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>NSServices</key>
+  KEYNSServices</key>
   <array>
     <dict>
-      <key>NSMenuItem</key>
-      <dict><key>default</key><string>Ask AI</string></dict>
-      <key>NSMessage</key><string>runWorkflowAsService</string>
-      <key>NSSendTypes</key><array><string>NSStringPboardType</string></array>
+      KEYNSMenuItem</key>
+      <dict>KEYdefault</key><string>Ask AI</string></dict>
+      KEYNSMessage</key><string>runWorkflowAsService</string>
+      KEYNSSendTypes</key><array><string>NSStringPboardType</string></array>
     </dict>
   </array>
 </dict>
@@ -3496,19 +3496,19 @@ MACPLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>actions</key>
+  KEYactions</key>
   <array>
     <dict>
-      <key>action</key>
+      KEYaction</key>
       <dict>
-        <key>ActionBundlePath</key><string>/System/Library/Automator/Run Shell Script.action</string>
-        <key>ActionName</key><string>Run Shell Script</string>
-        <key>ActionParameters</key>
+        KEYActionBundlePath</key><string>/System/Library/Automator/Run Shell Script.action</string>
+        KEYActionName</key><string>Run Shell Script</string>
+        KEYActionParameters</key>
         <dict>
-          <key>COMMAND_STRING</key><string>/usr/local/bin/ai ask "$@" | pbcopy &amp;&amp; osascript -e 'display notification "AI response copied to clipboard" with title "AI CLI"'</string>
-          <key>CheckedForUserDefaultShell</key><true/>
-          <key>inputMethod</key><integer>1</integer>
-          <key>shell</key><string>/bin/bash</string>
+          KEYCOMMAND_STRING</key><string>/usr/local/bin/ai ask "$@" | pbcopy &amp;&amp; osascript -e 'display notification "AI response copied to clipboard" with title "AI CLI"'</string>
+          KEYCheckedForUserDefaultShell</key><true/>
+          KEYinputMethod</key><integer>1</integer>
+          KEYshell</key><string>/bin/bash</string>
         </dict>
       </dict>
     </dict>
@@ -3639,7 +3639,7 @@ cmd_rclick() {
       [[ ${#installed[@]} -gt 0 ]] && info "  DEs configured: ${installed[*]}"
       info "  Shortcut: $RCLICK_KEYBIND   (select text first, then press)"
       info "  Or right-click in file manager → Ask AI"
-      info "  Change shortcut: ai rclick keybind <combo>  e.g. Ctrl+Shift+a"
+      info "  Change shortcut: ai rclick keybind COMBO  e.g. Ctrl+Shift+a"
       ;;
 
     keybind)
@@ -3647,7 +3647,7 @@ cmd_rclick() {
       if [[ -z "$kb" ]]; then
         echo "  Current keybind: ${RCLICK_KEYBIND}"
         echo ""
-        echo "  Usage: ai rclick keybind <combo>"
+        echo "  Usage: ai rclick keybind COMBO"
         echo "  Examples:"
         echo "    ai rclick keybind Super+Shift+a    "
         echo "    ai rclick keybind Ctrl+Shift+a"
@@ -3772,9 +3772,9 @@ cmd_rclick() {
       echo ""
       echo "  ${B}ai rclick install${R}             — Install for all detected DEs/WMs"
       echo "  ${B}ai rclick fix-auth${R}            — Fix 'not authorized' error "
-      echo "  ${B}ai rclick keybind <combo>${R}      — Change keyboard shortcut"
+      echo "  ${B}ai rclick keybind COMBO${R}      — Change keyboard shortcut"
       echo "  ${B}ai rclick uninstall${R}           — Remove all integrations"
-      echo "  ${B}ai rclick model <name>${R}         — Set VL model"
+      echo "  ${B}ai rclick model NAME${R}         — Set VL model"
       echo "  ${B}ai rclick download-model${R}       — Download VL model"
       echo "  ${B}ai rclick test${R}                 — Test with clipboard content"
       echo "  ${B}ai rclick status${R}               — Show full status"
@@ -4196,12 +4196,12 @@ cmd_model_create() {
       echo -e "${B}${BCYAN}Custom Model Creator${R}"
       echo ""
       echo "  ${B}ai model-create presets${R}         — List built-in architecture presets"
-      echo "  ${B}ai model-create new <name> [preset|custom]${R} — Create new model config"
-      echo "  ${B}ai model-create edit <name>${R}     — Edit model config JSON"
+      echo "  ${B}ai model-create new NAME [preset|custom]${R} — Create new model config"
+      echo "  ${B}ai model-create edit NAME${R}     — Edit model config JSON"
       echo "  ${B}ai model-create list${R}            — List custom models"
-      echo "  ${B}ai model-create train <name> [data.jsonl]${R} — Train from scratch"
-      echo "  ${B}ai model-create info <name>${R}     — Show model info"
-      echo "  ${B}ai model-create delete <name>${R}   — Delete custom model"
+      echo "  ${B}ai model-create train NAME [data.jsonl]${R} — Train from scratch"
+      echo "  ${B}ai model-create info NAME${R}     — Show model info"
+      echo "  ${B}ai model-create delete NAME${R}   — Delete custom model"
       echo ""
       echo -e "  ${DIM}Minimum: 0.125B params (nano preset)${R}"
       ;;
@@ -4283,7 +4283,7 @@ JSON
 META
   ok "Created custom model '$name' in $mdir"
   echo "  Config: $mdir/config.json"
-  echo "  Train:  ai model-create train $name <data.jsonl>"
+  echo "  Train:  ai model-create train $name DATA"
 }
 
 _model_edit() {
@@ -4542,7 +4542,7 @@ cmd_chat_list() {
 
 cmd_chat_show() {
   local name="${1:-}"
-  [[ -z "$name" ]] && { err "Usage: ai chat-show <name>"; return 1; }
+  [[ -z "$name" ]] && { err "Usage: ai chat-show NAME"; return 1; }
   local f="$CHAT_LOGS_DIR/${name}.jsonl"
   [[ ! -f "$f" ]] && { err "Chat '$name' not found"; return 1; }
   hdr "Chat: $name"
@@ -4583,14 +4583,14 @@ cmd_audio() {
     info)       _audio_info "$@" ;;
     *)
       echo -e "${B}${BCYAN}Audio Commands${R}"
-      echo "  ${B}ai audio transcribe <file> [--lang en] [--model base]${R}"
-      echo "  ${B}ai audio tts <text> [--voice nova] [--out file.mp3]${R}"
-      echo "  ${B}ai audio analyze <file>${R}      — Analyze audio with AI"
-      echo "  ${B}ai audio convert <in> <out>${R}  — Convert format "
-      echo "  ${B}ai audio extract <video>${R}     — Extract audio from video"
-      echo "  ${B}ai audio ask <file> <question>${R} — Ask about audio content"
-      echo "  ${B}ai audio play <file>${R}          — Play audio file"
-      echo "  ${B}ai audio info <file>${R}          — Show audio metadata"
+      echo "  ${B}ai audio transcribe FILE [--lang en] [--model base]${R}"
+      echo "  ${B}ai audio tts TEXT [--voice nova] [--out file.mp3]${R}"
+      echo "  ${B}ai audio analyze FILE${R}      — Analyze audio with AI"
+      echo "  ${B}ai audio convert IN OUT${R}  — Convert format "
+      echo "  ${B}ai audio extract VIDEO${R}     — Extract audio from video"
+      echo "  ${B}ai audio ask FILE QUESTION${R} — Ask about audio content"
+      echo "  ${B}ai audio play FILE${R}          — Play audio file"
+      echo "  ${B}ai audio info FILE${R}          — Show audio metadata"
       ;;
   esac
 }
@@ -4605,7 +4605,7 @@ _audio_transcribe() {
       *)       file="$1"; shift ;;
     esac
   done
-  [[ -z "$file" ]] && { err "Usage: ai audio transcribe <file>"; return 1; }
+  [[ -z "$file" ]] && { err "Usage: ai audio transcribe FILE"; return 1; }
   [[ ! -f "$file" ]] && { err "File not found: $file"; return 1; }
 
   # Try OpenAI Whisper API first
@@ -4702,7 +4702,7 @@ PYEOF
 }
 
 _audio_analyze() {
-  local file="${1:-}"; [[ -z "$file" ]] && { err "Usage: ai audio analyze <file>"; return 1; }
+  local file="${1:-}"; [[ -z "$file" ]] && { err "Usage: ai audio analyze FILE"; return 1; }
   [[ ! -f "$file" ]] && { err "File not found: $file"; return 1; }
 
   # First transcribe, then analyze with AI
@@ -4726,7 +4726,7 @@ _audio_convert() {
 
 _audio_extract_from_video() {
   local video="${1:-}"; local out="${2:-}"
-  [[ -z "$video" ]] && { err "Usage: ai audio extract <video> [output.mp3]"; return 1; }
+  [[ -z "$video" ]] && { err "Usage: ai audio extract VIDEO [output.mp3]"; return 1; }
   [[ ! -f "$video" ]] && { err "File not found: $video"; return 1; }
   command -v ffmpeg &>/dev/null || { err "ffmpeg required"; return 1; }
   [[ -z "$out" ]] && out="$AUDIO_DIR/$(basename "$video" | sed 's/\.[^.]*$//').mp3"
@@ -4737,7 +4737,7 @@ _audio_extract_from_video() {
 _audio_ask() {
   local file="${1:-}"; shift
   local question="$*"
-  [[ -z "$file" || -z "$question" ]] && { err "Usage: ai audio ask <file> <question>"; return 1; }
+  [[ -z "$file" || -z "$question" ]] && { err "Usage: ai audio ask FILE QUESTION"; return 1; }
   [[ ! -f "$file" ]] && { err "File not found: $file"; return 1; }
   info "Transcribing..."
   local transcript; transcript=$(_audio_transcribe "$file" 2>/dev/null)
@@ -4794,15 +4794,15 @@ cmd_video() {
     summary)   _video_summary "$@" ;;
     *)
       echo -e "${B}${BCYAN}Video Commands${R}"
-      echo "  ${B}ai video analyze <file>${R}          — Analyze video content with AI"
-      echo "  ${B}ai video transcribe <file>${R}       — Transcribe video audio"
-      echo "  ${B}ai video caption <file>${R}          — Generate captions/subtitles .srt"
-      echo "  ${B}ai video convert <in> <out>${R}      — Convert video format"
-      echo "  ${B}ai video extract <file> [fps]${R}    — Extract frames"
-      echo "  ${B}ai video ask <file> <question>${R}   — Ask about video"
-      echo "  ${B}ai video trim <in> <start> <end> <out>${R}"
-      echo "  ${B}ai video info <file>${R}             — Show video metadata"
-      echo "  ${B}ai video summary <file>${R}          — AI summary of video"
+      echo "  ${B}ai video analyze FILE${R}          — Analyze video content with AI"
+      echo "  ${B}ai video transcribe FILE${R}       — Transcribe video audio"
+      echo "  ${B}ai video caption FILE${R}          — Generate captions/subtitles .srt"
+      echo "  ${B}ai video convert IN OUT${R}      — Convert video format"
+      echo "  ${B}ai video extract FILE [fps]${R}    — Extract frames"
+      echo "  ${B}ai video ask FILE QUESTION${R}   — Ask about video"
+      echo "  ${B}ai video trim IN START END OUT${R}"
+      echo "  ${B}ai video info FILE${R}             — Show video metadata"
+      echo "  ${B}ai video summary FILE${R}          — AI summary of video"
       ;;
   esac
 }
@@ -4874,7 +4874,7 @@ _video_extract_frames() {
 _video_trim() {
   local input="${1:-}"; local start="${2:-}"; local end="${3:-}"; local output="${4:-}"
   [[ -z "$input" || -z "$start" || -z "$end" ]] && {
-    err "Usage: ai video trim <input> <start> <end> [output]"
+    err "Usage: ai video trim <input> START END [output]"
     err "Example: ai video trim video.mp4 00:01:00 00:02:30 clip.mp4"
     return 1
   }
@@ -4933,7 +4933,7 @@ $transcript
 _video_ask() {
   local file="${1:-}"; shift
   local question="$*"
-  [[ -z "$file" || -z "$question" ]] && { err "Usage: ai video ask <file> <question>"; return 1; }
+  [[ -z "$file" || -z "$question" ]] && { err "Usage: ai video ask FILE QUESTION"; return 1; }
   [[ ! -f "$file" ]] && { err "File not found: $file"; return 1; }
   info "Processing video for question answering..."
   local transcript; transcript=$(_video_transcribe "$file" 2>/dev/null)
@@ -4963,10 +4963,10 @@ cmd_vision() {
     compare) _vision_compare "$@" ;;
     *)
       echo -e "${B}${BCYAN}Vision (Image-Text-to-Text)${R}"
-      echo "  ${B}ai vision ask <image> <question>${R}   — Ask about an image"
-      echo "  ${B}ai vision ocr <image>${R}              — Extract text from image"
-      echo "  ${B}ai vision caption <image>${R}          — Generate image caption"
-      echo "  ${B}ai vision compare <img1> <img2>${R}    — Compare two images"
+      echo "  ${B}ai vision ask IMAGE QUESTION${R}   — Ask about an image"
+      echo "  ${B}ai vision ocr IMAGE${R}              — Extract text from image"
+      echo "  ${B}ai vision caption IMAGE${R}          — Generate image caption"
+      echo "  ${B}ai vision compare IMG1 IMG2${R}    — Compare two images"
       echo ""
       echo "  Supports: jpg, png, gif, webp, bmp"
       echo "  Backends: OpenAI GPT-4o best, Claude 3, Gemini 1.5, LLaVA local"
@@ -4982,7 +4982,7 @@ _encode_image_b64() {
 _vision_ask() {
   local image="${1:-}"; shift
   local question="${*:-Describe this image in detail.}"
-  [[ -z "$image" ]] && { err "Usage: ai vision ask <image> <question>"; return 1; }
+  [[ -z "$image" ]] && { err "Usage: ai vision ask IMAGE QUESTION"; return 1; }
   [[ ! -f "$image" ]] && { err "Image not found: $image"; return 1; }
 
   local ext="${image##*.}"; ext="${ext,,}"
@@ -5045,7 +5045,7 @@ _vision_caption() {
 
 _vision_compare() {
   local img1="${1:-}"; local img2="${2:-}"; local question="${3:-What are the differences between these images?}"
-  [[ -z "$img1" || -z "$img2" ]] && { err "Usage: ai vision compare <img1> <img2> [question]"; return 1; }
+  [[ -z "$img1" || -z "$img2" ]] && { err "Usage: ai vision compare IMG1 IMG2 [question]"; return 1; }
   [[ ! -f "$img1" ]] && { err "Not found: $img1"; return 1; }
   [[ ! -f "$img2" ]] && { err "Not found: $img2"; return 1; }
 
@@ -5926,8 +5926,8 @@ _get_effective_system() {
 
 # v2.5.5: Custom system prompt management
 # ai system set "..."       — set session-wide custom system prompt
-# ai system save <name> "." — save a named system prompt to library
-# ai system load <name>     — load a saved system prompt
+# ai system save NAME "." — save a named system prompt to library
+# ai system load NAME     — load a saved system prompt
 # ai system list            — list saved system prompts
 # ai system show            — show current effective system prompt
 # ai system clear           — clear custom (fall back to persona)
@@ -5944,14 +5944,14 @@ cmd_system() {
       dim "Clear with: ai system clear"
       ;;
     save)
-      local name="${1:?Usage: ai system save <name> <prompt>}"; shift
+      local name="${1:?Usage: ai system save NAME PROMPT}"; shift
       local prompt="${*}"
       [[ -z "$prompt" ]] && { read -rp "System prompt to save as '$name': " prompt; }
       echo "$prompt" > "$SYSTEM_PROMPTS_DIR/$name"
       ok "Saved system prompt: $name"
       ;;
     load)
-      local name="${1:?Usage: ai system load <name>}"
+      local name="${1:?Usage: ai system load NAME}"
       local f="$SYSTEM_PROMPTS_DIR/$name"
       [[ ! -f "$f" ]] && { err "Not found: $name  (run: ai system list)"; return 1; }
       CUSTOM_SYSTEM_PROMPT="$(cat "$f")"
@@ -5971,9 +5971,9 @@ cmd_system() {
         [[ "$CUSTOM_SYSTEM_PROMPT" == "$(cat "$f")" ]] && active=" ${BGREEN}◀ active${R}"
         printf "  ${B}%-18s${R}  %s…%b\n" "$nm" "$preview" "$active"
       done
-      [[ $found -eq 0 ]] && dim "No saved prompts — use: ai system save <name> <prompt>"
+      [[ $found -eq 0 ]] && dim "No saved prompts — use: ai system save NAME PROMPT"
       echo ""
-      hdr "Built-in Personas (usable with: ai persona set <name>)"
+      hdr "Built-in Personas (usable with: ai persona set NAME)"
       for k in "${!BUILTIN_PERSONAS[@]}"; do
         local a=""; [[ "$k" == "${ACTIVE_PERSONA:-default}" ]] && a=" ${BGREEN}◀${R}"
         printf "  ${B}%-12s${R}%b\n" "$k" "$a"
@@ -5997,7 +5997,7 @@ cmd_system() {
       ok "Custom system prompt cleared — using persona '${ACTIVE_PERSONA:-default}'"
       ;;
     delete|rm)
-      local name="${1:?Usage: ai system delete <name>}"
+      local name="${1:?Usage: ai system delete NAME}"
       [[ ! -f "$SYSTEM_PROMPTS_DIR/$name" ]] && { err "Not found: $name"; return 1; }
       rm -f "$SYSTEM_PROMPTS_DIR/$name"
       ok "Deleted: $name"
@@ -6005,13 +6005,13 @@ cmd_system() {
     *)
       echo "Usage: ai system <set|save|load|list|show|clear|delete>"
       echo ""
-      echo "  ai system set \"<prompt>\"         Set custom system prompt "
-      echo "  ai system save <name> \"<prompt>\"  Save to named library"
-      echo "  ai system load <name>             Activate a saved prompt"
+      echo "  ai system set \"PROMPT\"         Set custom system prompt "
+      echo "  ai system save NAME \"PROMPT\"  Save to named library"
+      echo "  ai system load NAME             Activate a saved prompt"
       echo "  ai system list                    List saved + built-in personas"
       echo "  ai system show                    Show the current active system prompt"
       echo "  ai system clear                   Remove custom prompt "
-      echo "  ai system delete <name>           Delete a saved prompt"
+      echo "  ai system delete NAME           Delete a saved prompt"
       ;;
   esac
 }
@@ -6067,7 +6067,7 @@ ask_gguf() {
       else
         err ERR202 "GGUF model not found: $model"
         echo "  Hint: Run 'ai models' to list downloaded models."
-        echo "  Hint: Run 'ai recommended download <N>' to download a model."
+        echo "  Hint: Run 'ai recommended download N' to download a model."
         return 1
       fi
     fi
@@ -6135,7 +6135,7 @@ User: ${prompt}"
 ask_pytorch() {
   local prompt="$1"
   local model="${ACTIVE_MODEL:-}"
-  if [[ -z "$model" ]]; then err "No model set. Run: ai model <path>  OR  ai ttm load"; return 1; fi
+  if [[ -z "$model" ]]; then err "No model set. Run: ai model PATH  OR  ai ttm load"; return 1; fi
   if [[ -z "$PYTHON" ]]; then err "Python not found. Run: ai install-deps"; return 1; fi
   if [[ ! -d "$model" ]]; then err "Model directory not found: $model"; return 1; fi
 
@@ -6740,7 +6740,7 @@ PYEOF
     any|universal|lora-any)
       # Fine-tune ANY HuggingFace model with LoRA
       local any_model="${1:-}"; shift || true
-      [[ -z "$any_model" ]] && { err "Usage: ai finetune any <model> [--data <file>] [--epochs N] [--merge] [--quantize]"; return 1; }
+      [[ -z "$any_model" ]] && { err "Usage: ai finetune any MODEL [--data FILE] [--epochs N] [--merge] [--quantize]"; return 1; }
       local any_data="$FINETUNE_DIR/dataset.jsonl"
       local any_epochs=3
       local any_merge=0
@@ -6754,7 +6754,7 @@ PYEOF
           *) shift ;;
         esac
       done
-      [[ ! -f "$any_data" ]] && { err "Dataset not found: $any_data\nRun: ai finetune prepare <data>  or  ai dataset generate <name> <topic>"; return 1; }
+      [[ ! -f "$any_data" ]] && { err "Dataset not found: $any_data\nRun: ai finetune prepare <data>  or  ai dataset generate NAME TOPIC"; return 1; }
       local any_out="$FINETUNE_DIR/finetuned_any_$(date +%Y%m%d_%H%M%S)"
       info "Fine-tuning $any_model → $any_out (LoRA, epochs=$any_epochs)"
       mkdir -p "$any_out"
@@ -6936,8 +6936,8 @@ cmd_chat_interactive() {
   info "Backend: ${ACTIVE_BACKEND:-auto} | Model: ${ACTIVE_MODEL:-auto-detect}"
   [[ -n "$chat_name" ]] && info "Chat log: $CURRENT_CHAT_FILE"
   echo ""
-  echo -e "  ${DIM}Commands: /quit /clear /undo /retry /model <m> /persona <n>${R}"
-  echo -e "  ${DIM}          /session <n> /save /export /system <prompt>${R}"
+  echo -e "  ${DIM}Commands: /quit /clear /undo /retry /model MODEL /persona N${R}"
+  echo -e "  ${DIM}          /session N /save /export /system PROMPT${R}"
   echo -e "  ${DIM}          /tokens /cost /context /multiline /help${R}"
   echo ""
 
@@ -7047,17 +7047,17 @@ cmd_chat_interactive() {
         echo "  /clear         Clear history"
         echo "  /undo          Remove last exchange"
         echo "  /retry         Retry last prompt"
-        echo "  /model <m>     Switch model"
-        echo "  /persona <n>   Switch persona"
-        echo "  /session <n>   Switch session"
-        echo "  /system <p>    Set system prompt"
+        echo "  /model MODEL     Switch model"
+        echo "  /persona N   Switch persona"
+        echo "  /session N   Switch session"
+        echo "  /system PROMPT    Set system prompt"
         echo "  /save          Show save locations"
         echo "  /export        Export chat to markdown"
         echo "  /tokens        Count tokens in last message"
         echo "  /cost          Show API cost estimate"
         echo "  /context       Show context window usage"
         echo "  /multiline     Toggle multi-line input"
-        echo "  /temp <n>      Set temperature"
+        echo "  /temp N      Set temperature"
         ;;
       /*)
         warn "Unknown command: $input (try /help)" ;;
@@ -7123,7 +7123,7 @@ cmd_list_models() {
   echo ""
   [[ $found -eq 0 ]] && dim "  No models downloaded yet."
   echo -e "  ${BGREEN}▶${R} = active model   ${DIM}[rec #N]${R} = recommended entry number"
-  echo -e "  Download: ${B}ai recommended download <N>${R}  |  ${B}ai download <hf-repo>${R}"
+  echo -e "  Download: ${B}ai recommended download N${R}  |  ${B}ai download HF_REPO${R}"
   [[ -n "${ACTIVE_MODEL:-}" ]] && echo -e "  Active:   ${BGREEN}${ACTIVE_MODEL}${R} (backend: ${ACTIVE_BACKEND:-auto})"
 }
 
@@ -7290,8 +7290,8 @@ cmd_recommended() {
 
       echo -e "  ${BGREEN}✓${R} = downloaded   ${BGREEN}▶${R} = active   ${DIM}(cloud = key configured)${R}"
       echo ""
-      echo -e "  Download: ${B}ai recommended download <N>${R}"
-      echo -e "  Use:      ${B}ai recommended use <N>${R}"
+      echo -e "  Download: ${B}ai recommended download N${R}"
+      echo -e "  Use:      ${B}ai recommended use N${R}"
       ;;
   esac
 }
@@ -7310,7 +7310,7 @@ for i,m in enumerate(json.load(sys.stdin),1):
 
 cmd_upload() {
   local path="${1:-}"; local repo="${2:-}"; local msg="${3:-upload via ai-cli}"
-  [[ -z "$path" || -z "$repo" ]] && { err "Usage: ai upload <path> <user/repo>"; return 1; }
+  [[ -z "$path" || -z "$repo" ]] && { err "Usage: ai upload PATH <user/repo>"; return 1; }
   [[ ! -e "$path" ]] && { err "Not found: $path"; return 1; }
   local hf_key="${HF_TOKEN:-}"; [[ -z "$hf_key" ]] && { err "HF_TOKEN not set"; return 1; }
   HF_TOKEN_VAL="$hf_key" P="$path" REPO="$repo" MSG="$msg" "$PYTHON" - <<'PYEOF'
@@ -7755,7 +7755,7 @@ META
         printf "  ${B}%-28s${R} %3s msgs  %s%b\n" "$n" "$msgs" "$desc" "$a"
         found=1
       done
-      [[ $found -eq 0 ]] && info "No projects yet. Run: ai project new <name>" ;;
+      [[ $found -eq 0 ]] && info "No projects yet. Run: ai project new NAME" ;;
 
     switch|load|use)
       local name="${1:-}"; [[ -z "$name" ]] && { err "Name required"; return 1; }
@@ -7844,12 +7844,12 @@ PYEOF
     *)
       echo "Usage: ai project <subcommand> [args]"
       echo ""
-      echo "  new <name> [desc]    Create a new project (persistent chat memory)"
+      echo "  new NAME [desc]    Create a new project (persistent chat memory)"
       echo "  list                 List all projects"
-      echo "  switch <name>        Switch to a project"
+      echo "  switch NAME        Switch to a project"
       echo "  show [name]          Show project info and recent messages"
       echo "  memory [name]        Show memory summary"
-      echo "  delete <name>        Delete a project"
+      echo "  delete NAME        Delete a project"
       echo "  export [name] [out]  Export history to JSONL"
       echo "  clear-memory [name]  Wipe project memory"
       echo ""
@@ -7965,7 +7965,7 @@ cmd_alias() {
       echo ""
       if [[ ! -s "$ALIASES_FILE" ]]; then
         dim "  No aliases defined."
-        echo "  Create: ai alias set <name> <command...>"
+        echo "  Create: ai alias set NAME COMMAND"
         echo "  Example: ai alias set q ask"
         echo "           ai alias set mycode \"code --lang python\""
         return 0
@@ -7982,8 +7982,8 @@ cmd_alias() {
     set|add|create)
       local name="${1:-}"; shift || true
       local cmd_str="$*"
-      [[ -z "$name" ]] && { err "Alias name required.  Usage: ai alias set <name> <command>"; return 1; }
-      [[ -z "$cmd_str" ]] && { err "Command required.  Usage: ai alias set <name> <command>"; return 1; }
+      [[ -z "$name" ]] && { err "Alias name required.  Usage: ai alias set NAME <command>"; return 1; }
+      [[ -z "$cmd_str" ]] && { err "Command required.  Usage: ai alias set NAME <command>"; return 1; }
       # Validate name: no spaces, no special chars
       if [[ "$name" =~ [[:space:]] || "$name" =~ [^a-zA-Z0-9_-] ]]; then
         err "Alias name can only contain letters, digits, hyphens, and underscores."
@@ -8023,9 +8023,9 @@ cmd_alias() {
       hdr "ai alias — User-defined command aliases"
       echo ""
       echo -e "  ${B}ai alias list${R}                  List all aliases"
-      echo -e "  ${B}ai alias set <name> <cmd...>${R}   Create or update alias"
-      echo -e "  ${B}ai alias del <name>${R}            Delete alias"
-      echo -e "  ${B}ai alias show <name>${R}           Show single alias"
+      echo -e "  ${B}ai alias set NAME COMMAND${R}   Create or update alias"
+      echo -e "  ${B}ai alias del NAME${R}            Delete alias"
+      echo -e "  ${B}ai alias show NAME${R}           Show single alias"
       echo ""
       echo -e "  Examples:"
       echo -e "    ai alias set q ask"
@@ -8064,15 +8064,15 @@ cmd_bench() {
 }
 # ════════════════════════════════════════════════════════════════════════════════
 #  CUSTOM DATASET CREATION  
-#  ai dataset create <name>               — Create a new dataset
-#  ai dataset add <name> <prompt> <resp>  — Add a prompt/response pair
-#  ai dataset add-file <name> <jsonl>     — Import from JSONL file
-#  ai dataset import-csv <name> <csv>     — Import from CSV (prompt,response)
+#  ai dataset create NAME               — Create a new dataset
+#  ai dataset add NAME PROMPT RESPONSE  — Add a prompt/response pair
+#  ai dataset add-file NAME <jsonl>     — Import from JSONL file
+#  ai dataset import-csv NAME <csv>     — Import from CSV (prompt,response)
 #  ai dataset list                        — List all datasets
-#  ai dataset show <name> [N]             — Show last N entries
-#  ai dataset delete <name>              — Delete dataset
-#  ai dataset export <name> [path]        — Export to JSONL file
-#  ai dataset push <name> <hf-repo>       — Push to HuggingFace
+#  ai dataset show NAME [N]             — Show last N entries
+#  ai dataset delete NAME              — Delete dataset
+#  ai dataset export NAME [path]        — Export to JSONL file
+#  ai dataset push NAME HF_REPO       — Push to HuggingFace
 #  ai dataset from-chat [session]         — Convert chat session to dataset
 #  ai dataset from-rlhf                   — Convert RLHF ratings to dataset
 # ════════════════════════════════════════════════════════════════════════════════
@@ -8080,18 +8080,18 @@ cmd_dataset() {
   local sub="${1:-help}"; shift || true
   case "$sub" in
     create)
-      local name="${1:?Usage: ai dataset create <name>}"
+      local name="${1:?Usage: ai dataset create NAME}"
       local ds_dir="$DATASETS_DIR/$name"
       if [[ -d "$ds_dir" ]]; then warn "Dataset '$name' already exists"; return 1; fi
       mkdir -p "$ds_dir"
       echo '{"name":"'"$name"'","created":"'"$(date -Iseconds)"'","count":0}' > "$ds_dir/meta.json"
       touch "$ds_dir/data.jsonl"
       ok "Dataset '$name' created at $ds_dir"
-      echo "  Add pairs:  ai dataset add $name \"<prompt>\" \"<response>\""
-      echo "  Import:     ai dataset add-file $name <file.jsonl>"
+      echo "  Add pairs:  ai dataset add $name \"PROMPT\" \"RESPONSE\""
+      echo "  Import:     ai dataset add-file $name FILE"
       ;;
     add)
-      local name="${1:?Usage: ai dataset add <name> <prompt> <response>}"
+      local name="${1:?Usage: ai dataset add NAME PROMPT RESPONSE}"
       local prompt="${2:?Provide a prompt}"; local response="${3:?Provide a response}"
       local ds_dir="$DATASETS_DIR/$name"
       [[ ! -d "$ds_dir" ]] && { err "Dataset '$name' not found. Create it first: ai dataset create $name"; return 1; }
@@ -8107,7 +8107,7 @@ json.dump(m,open('$ds_dir/meta.json','w'))
       ok "Added pair #$cnt to '$name'"
       ;;
     add-file)
-      local name="${1:?Usage: ai dataset add-file <name> <file.jsonl>}"
+      local name="${1:?Usage: ai dataset add-file NAME FILE}"
       local src="${2:?Provide source JSONL file}"
       local ds_dir="$DATASETS_DIR/$name"
       [[ ! -d "$ds_dir" ]] && { err "Dataset '$name' not found"; return 1; }
@@ -8120,7 +8120,7 @@ json.dump(m,open('$ds_dir/meta.json','w'))
       ok "Imported $added entries from $src into '$name' (total: $after)"
       ;;
     import-csv)
-      local name="${1:?Usage: ai dataset import-csv <name> <file.csv>}"
+      local name="${1:?Usage: ai dataset import-csv NAME <file.csv>}"
       local src="${2:?Provide source CSV file}"
       local ds_dir="$DATASETS_DIR/$name"
       [[ ! -d "$ds_dir" ]] && { mkdir -p "$ds_dir"; echo '{"name":"'"$name"'","created":"'"$(date -Iseconds)"'","count":0}' > "$ds_dir/meta.json"; touch "$ds_dir/data.jsonl"; }
@@ -8157,10 +8157,10 @@ PYEOF
         local up; up=$(echo "$meta" | python3 -c "import sys,json;m=json.load(sys.stdin);print(m.get('updated',m.get('created','?'))[:10])" 2>/dev/null || echo "?")
         printf "  %-20s  %5s pairs  updated %s\n" "$n" "$cnt" "$up"
       done
-      [[ $found -eq 0 ]] && info "No datasets yet. Create one: ai dataset create <name>"
+      [[ $found -eq 0 ]] && info "No datasets yet. Create one: ai dataset create NAME"
       ;;
     show)
-      local name="${1:?Usage: ai dataset show <name> [N]}"; local n="${2:-10}"
+      local name="${1:?Usage: ai dataset show NAME [N]}"; local n="${2:-10}"
       local ds_dir="$DATASETS_DIR/$name"
       [[ ! -f "$ds_dir/data.jsonl" ]] && { err "Dataset '$name' not found"; return 1; }
       hdr "Dataset '$name' (last $n entries)"
@@ -8176,7 +8176,7 @@ for line in sys.stdin:
 "
       ;;
     delete)
-      local name="${1:?Usage: ai dataset delete <name>}"
+      local name="${1:?Usage: ai dataset delete NAME}"
       local ds_dir="$DATASETS_DIR/$name"
       [[ ! -d "$ds_dir" ]] && { err "Dataset '$name' not found"; return 1; }
       read -rp "Delete dataset '$name'? [y/N]: " confirm
@@ -8184,7 +8184,7 @@ for line in sys.stdin:
       rm -rf "$ds_dir"; ok "Dataset '$name' deleted"
       ;;
     export)
-      local name="${1:?Usage: ai dataset export <name> [output-path]}"
+      local name="${1:?Usage: ai dataset export NAME [output-path]}"
       local ds_dir="$DATASETS_DIR/$name"
       local out="${2:-$HOME/${name}.jsonl}"
       [[ ! -f "$ds_dir/data.jsonl" ]] && { err "Dataset '$name' not found"; return 1; }
@@ -8192,7 +8192,7 @@ for line in sys.stdin:
       ok "Exported '$name' to $out ($(wc -l < "$out") entries)"
       ;;
     push)
-      local name="${1:?Usage: ai dataset push <name> <hf-repo>}"
+      local name="${1:?Usage: ai dataset push NAME HF_REPO}"
       local repo="${2:?Provide HuggingFace repo (user/dataset-name)}"
       local ds_dir="$DATASETS_DIR/$name"
       [[ ! -f "$ds_dir/data.jsonl" ]] && { err "Dataset '$name' not found"; return 1; }
@@ -8279,7 +8279,7 @@ PYEOF
       ;;
     generate)
       # Use AI to generate synthetic training data
-      local name="${1:?Usage: ai dataset generate <name> <topic> [N]}"
+      local name="${1:?Usage: ai dataset generate NAME TOPIC [N]}"
       local topic="${2:?Provide a topic}"
       local n="${3:-50}"
       local ds_dir="$DATASETS_DIR/$name"
@@ -8313,7 +8313,7 @@ PYEOF
       ;;
     # v2.5.5: AI-generated synthetic dataset on any topic
     generate|gen|ai-gen)
-      local name="${1:?Usage: ai dataset generate <name> <topic> [--count N] [--style qa|chat|instruct] [--model <model>]}"
+      local name="${1:?Usage: ai dataset generate NAME TOPIC [--count N] [--style qa|chat|instruct] [--model MODEL]}"
       shift
       local topic="" count=50 style="qa" gen_model=""
       while [[ $# -gt 0 ]]; do
@@ -8405,7 +8405,7 @@ PYEOF
       local total; total=$(wc -l < "$ds_dir/data.jsonl" 2>/dev/null || echo 0)
       python3 -c "import json; m=json.load(open('$ds_dir/meta.json')); m['count']=$total; m['topic']='$topic'; m['style']='$style'; json.dump(m,open('$ds_dir/meta.json','w'))" 2>/dev/null || true
       ok "Dataset '$name' — $total pairs generated about: $topic"
-      info "Fine-tune: ai finetune any <model> $name"
+      info "Fine-tune: ai finetune any MODEL $name"
       info "   or:     ai ttm finetune $name"
       ;;
 
@@ -8414,28 +8414,28 @@ PYEOF
       ;;
     *)
       hdr "Dataset Commands (v2.4+2.5)"
-      echo "  ai dataset create <name>               — Create new dataset"
-      echo "  ai dataset add <name> <prompt> <resp>  — Add a prompt/response pair"
-      echo "  ai dataset add-file <name> <file.jsonl> — Import from JSONL"
-      echo "  ai dataset import-csv <name> <file.csv> — Import from CSV"
+      echo "  ai dataset create NAME               — Create new dataset"
+      echo "  ai dataset add NAME PROMPT RESPONSE  — Add a prompt/response pair"
+      echo "  ai dataset add-file NAME FILE — Import from JSONL"
+      echo "  ai dataset import-csv NAME <file.csv> — Import from CSV"
       echo "  ai dataset list                        — List all datasets"
-      echo "  ai dataset show <name> [N]             — Show last N entries"
-      echo "  ai dataset delete <name>               — Delete dataset"
-      echo "  ai dataset export <name> [path]        — Export to JSONL"
-      echo "  ai dataset push <name> <hf-repo>       — Upload to HuggingFace"
+      echo "  ai dataset show NAME [N]             — Show last N entries"
+      echo "  ai dataset delete NAME               — Delete dataset"
+      echo "  ai dataset export NAME [path]        — Export to JSONL"
+      echo "  ai dataset push NAME HF_REPO       — Upload to HuggingFace"
       echo "  ai dataset from-chat [session]         — Convert chat to dataset"
       echo "  ai dataset from-rlhf [min-score]       — Convert RLHF ratings"
-      echo "  ai dataset generate <name> <topic> [N] — AI-generated synthetic data"
+      echo "  ai dataset generate NAME TOPIC [N] — AI-generated synthetic data"
       echo ""
       echo "  v2.5 additions:"
-      echo "  ai dataset from-text <name> <text>     — Text blob → Q&A dataset"
-      echo "  ai dataset from-paper <name> <arxiv-id>— arXiv paper → dataset"
-      echo "  ai dataset from-url <name> <url>       — Webpage text → dataset"
-      echo "  ai dataset from-file <name> <file>     — Any text file → dataset"
+      echo "  ai dataset from-text NAME TEXT     — Text blob → Q&A dataset"
+      echo "  ai dataset from-paper NAME <arxiv-id>— arXiv paper → dataset"
+      echo "  ai dataset from-url NAME URL       — Webpage text → dataset"
+      echo "  ai dataset from-file NAME FILE     — Any text file → dataset"
       echo ""
       echo "  Dataset path: $DATASETS_DIR/"
       echo ""
-      echo "  Then fine-tune:  ai ttm finetune <name>"
+      echo "  Then fine-tune:  ai ttm finetune NAME"
       ;;
   esac
 }
@@ -8487,7 +8487,7 @@ PYEOF
 
 # Patch cmd_dataset to handle from-text, from-paper, from-url, from-file
 _dataset_from_text() {
-  local name="${1:?Usage: ai dataset from-text <name> <text>}"
+  local name="${1:?Usage: ai dataset from-text NAME TEXT}"
   local text="${2:?Provide text content}"
   local ds_dir="$DATASETS_DIR/$name"
   mkdir -p "$ds_dir"
@@ -8497,7 +8497,7 @@ _dataset_from_text() {
 }
 
 _dataset_from_url() {
-  local name="${1:?Usage: ai dataset from-url <name> <url>}"
+  local name="${1:?Usage: ai dataset from-url NAME URL}"
   local url="${2:?Provide URL}"
   [[ -z "$PYTHON" ]] && { err "Python required"; return 1; }
   local ds_dir="$DATASETS_DIR/$name"
@@ -8532,7 +8532,7 @@ except Exception as e:
 }
 
 _dataset_from_file() {
-  local name="${1:?Usage: ai dataset from-file <name> <file>}"
+  local name="${1:?Usage: ai dataset from-file NAME FILE}"
   local file="${2:?Provide file path}"
   [[ ! -f "$file" ]] && { err "File not found: $file"; return 1; }
   local ds_dir="$DATASETS_DIR/$name"
@@ -8545,7 +8545,7 @@ _dataset_from_file() {
 }
 
 _dataset_from_paper() {
-  local name="${1:?Usage: ai dataset from-paper <name> <arxiv-id>}"
+  local name="${1:?Usage: ai dataset from-paper NAME <arxiv-id>}"
   local paper_id="${2:?Provide arXiv ID (e.g. 2301.12345)}"
   [[ -z "$PYTHON" ]] && { err "Python required"; return 1; }
   local ds_dir="$DATASETS_DIR/$name"
@@ -9554,7 +9554,7 @@ PYEOF
         revoke) _api_keys_revoke "$@" ;;
         show)   _api_keys_show  "$@" ;;
         reset-count) _api_keys_reset_count "$@" ;;
-        *) echo "Usage: ai api keys list|revoke <id>|show <id>|reset-count <id>" ;;
+        *) echo "Usage: ai api keys list|revoke ID|show ID|reset-count ID" ;;
       esac
       ;;
     share)
@@ -9578,8 +9578,8 @@ PYEOF
       echo "  ai api key-gen [--label name] [--rate N/min]"
       echo "    Creates a unique key others can use to call YOUR running model"
       echo "  ai api keys list            — Show all generated keys + usage"
-      echo "  ai api keys revoke <id>     — Disable a key"
-      echo "  ai api keys show <id>       — Show full key value"
+      echo "  ai api keys revoke ID     — Disable a key"
+      echo "  ai api keys show ID       — Show full key value"
       echo "  ai api share [--port 8080]  — Start public multi-key server"
       echo "  ai api unshare              — Stop shared server"
       echo ""
@@ -9676,7 +9676,7 @@ PYEOF
 }
 
 _api_keys_revoke() {
-  local id="${1:?Usage: ai api keys revoke <id>}"
+  local id="${1:?Usage: ai api keys revoke ID}"
   [[ ! -f "$API_KEYS_FILE" ]] && { err "No key store found"; return 1; }
   python3 -c "
 import json
@@ -9692,7 +9692,7 @@ print('Revoked' if found else 'Key not found: $id')
 }
 
 _api_keys_show() {
-  local id="${1:?Usage: ai api keys show <id>}"
+  local id="${1:?Usage: ai api keys show ID}"
   [[ ! -f "$API_KEYS_FILE" ]] && { err "No key store found"; return 1; }
   python3 -c "
 import json
@@ -9705,7 +9705,7 @@ print('Key not found: $id')
 }
 
 _api_keys_reset_count() {
-  local id="${1:?Usage: ai api keys reset-count <id>}"
+  local id="${1:?Usage: ai api keys reset-count ID}"
   [[ ! -f "$API_KEYS_FILE" ]] && { err "No key store found"; return 1; }
   python3 -c "
 import json
@@ -9728,7 +9728,7 @@ _api_share_start() {
     kill -0 "$p" 2>/dev/null && { warn "Share server already running — PID $p)"; return 1; }
     rm -f "$share_pid_file"
   fi
-  [[ ! -f "$API_KEYS_FILE" ]] && { err "No API keys. Create one first: ai api key-gen --label <name>"; return 1; }
+  [[ ! -f "$API_KEYS_FILE" ]] && { err "No API keys. Create one first: ai api key-gen --label NAME"; return 1; }
   # v2.7.1: Pre-check port availability (prevents errno 98)
   if [[ -n "$PYTHON" ]]; then
     if ! "$PYTHON" -c "
@@ -9747,7 +9747,7 @@ except OSError:
   fi
   info "Starting public AI CLI share server on ${host}:${port}"
   info "Auth: multi-key from $API_KEYS_FILE"
-  warn "This exposes your model to key holders — revoke keys with: ai api keys revoke <id>"
+  warn "This exposes your model to key holders — revoke keys with: ai api keys revoke ID"
 
   export _SHARE_HOST="$host" _SHARE_PORT="$port" _SHARE_KEYS_FILE="$API_KEYS_FILE"
   export _SHARE_BACKEND="${ACTIVE_BACKEND:-}" _SHARE_MODEL="${ACTIVE_MODEL:-}"
@@ -9873,7 +9873,7 @@ class ShareHandler(BaseHTTPRequestHandler):
         """Returns (key_record, error_msg). key_record is None on failure."""
         auth = self.headers.get('Authorization', '')
         if not auth.startswith('Bearer '):
-            return None, "Missing Authorization: Bearer <key>"
+            return None, "Missing Authorization: Bearer KEY"
         secret = auth[7:].strip()
         api_keys = load_keys()
         rec = api_keys.get(secret)
@@ -9980,16 +9980,16 @@ _api_share_stop() {
 #  If MULTIAI_RLHF_TRAIN=1, rated exchanges update model weights automatically.
 #  Conversation is saved as a custom dataset (for later fine-tuning).
 #
-#  ai multiai "<topic>" [opts]
-#  ai multiai debate  "<topic>"    — adversarial: agents take opposing sides
-#  ai multiai collab  "<task>"     — collaborative: agents build on each other
-#  ai multiai brainstorm "<topic>" — free-form: each agent adds new ideas
+#  ai multiai "TOPIC" [opts]
+#  ai multiai debate  "TOPIC"    — adversarial: agents take opposing sides
+#  ai multiai collab  "TASK"     — collaborative: agents build on each other
+#  ai multiai brainstorm "TOPIC" — free-form: each agent adds new ideas
 #
 #  Options:
 #    --agents N          Number of agents (2-4, default 2)
 #    --rounds N          Conversation rounds (default 6)
-#    --model1 <id>       Agent 1 backend/model (default: active model/backend)
-#    --model2 <id>       Agent 2 backend/model
+#    --model1 ID       Agent 1 backend/model (default: active model/backend)
+#    --model2 ID       Agent 2 backend/model
 #    --no-save           Don't save as dataset
 #    --no-train          Don't trigger RLHF training even if enabled
 #    --quiet             Minimal output (no banners/prompts)
@@ -10101,7 +10101,7 @@ cmd_multiai() {
         "${AGENT_LABELS[$i]}" "${AGENT_PERSONAS[$i]:0:80}..."
     done
     echo ""
-    echo -e "  ${DIM}Controls: [Enter]=continue  [s <text>]=steer  [r <1-5>]=rate  [p]=pause  [q]=quit${R}"
+    echo -e "  ${DIM}Controls: [Enter]=continue  [s TEXT]=steer  [r <1-5>]=rate  [p]=pause  [q]=quit${R}"
     echo ""
   fi
 
@@ -10261,22 +10261,22 @@ cmd_multiai() {
 _multiai_help() {
   hdr "Multi-AI Chat Arena v2.4.5"
   echo ""
-  echo "  ${B}ai multiai \"<topic>\"${R}              — Two AIs discuss a topic"
-  echo "  ${B}ai multiai debate \"<topic>\"${R}        — Adversarial: AIs take opposite sides"
-  echo "  ${B}ai multiai collab \"<task>\"${R}         — Collaborative: AIs build together"
-  echo "  ${B}ai multiai brainstorm \"<topic>\"${R}    — Free-form: each AI adds ideas"
+  echo "  ${B}ai multiai \"TOPIC\"${R}              — Two AIs discuss a topic"
+  echo "  ${B}ai multiai debate \"TOPIC\"${R}        — Adversarial: AIs take opposite sides"
+  echo "  ${B}ai multiai collab \"TASK\"${R}         — Collaborative: AIs build together"
+  echo "  ${B}ai multiai brainstorm \"TOPIC\"${R}    — Free-form: each AI adds ideas"
   echo ""
   echo "  Options:"
   echo "    --agents N       Number of agents (2-4, default 2)"
   echo "    --rounds N       Conversation rounds (default $MULTIAI_ROUNDS)"
-  echo "    --model1 <id>    Agent 1 model/backend"
-  echo "    --model2 <id>    Agent 2 model/backend"
+  echo "    --model1 ID    Agent 1 model/backend"
+  echo "    --model2 ID    Agent 2 model/backend"
   echo "    --no-save        Don't save as training dataset"
   echo "    --no-train       Don't trigger RLHF even if enabled"
   echo ""
   echo "  During conversation:"
   echo "    Enter            Continue"
-  echo "    s <text>         Steer: inject guidance into next agent's prompt"
+  echo "    s TEXT         Steer: inject guidance into next agent's prompt"
   echo "    r <1-5>          Rate last exchange (feeds RLHF training)"
   echo "    p                Pause / resume"
   echo "    q                Stop and save"
@@ -10338,7 +10338,7 @@ cmd_github() {
         new)     git checkout -b "${1:-feature/new}" && ok "Created branch: ${1:-feature/new}" ;;
         switch)  git checkout "${1:-main}" ;;
         delete)  git branch -d "${1:?branch name required}" ;;
-        *) err "branch: list | new <name> | switch <name> | delete <name>" ;;
+        *) err "branch: list | new NAME | switch NAME | delete NAME" ;;
       esac
       ;;
     pr)
@@ -10396,7 +10396,7 @@ cmd_github() {
       echo "  ai github commit \"<msg>\"          Stage all + commit"
       echo "  ai github push                   Push current branch"
       echo "  ai github pull                   Pull current branch"
-      echo "  ai github clone <url> [dir]      Clone repo"
+      echo "  ai github clone URL [dir]      Clone repo"
       echo "  ai github branch list/new/switch/delete"
       echo "  ai github pr [\"title\"]            Create pull request (needs gh)"
       echo "  ai github issue list/create/view/close"
@@ -10404,7 +10404,7 @@ cmd_github() {
       echo "  ai github diff [args]            Show diff"
       echo "  ai github init [dir]             Init new repo"
       echo "  ai github token <tok>            Save personal access token"
-      echo "  ai github user <name>            Save GitHub username"
+      echo "  ai github user NAME            Save GitHub username"
       ;;
   esac
 }
@@ -10419,7 +10419,7 @@ cmd_papers() {
   local sub="${1:-help}"; shift || true
   case "$sub" in
     search)
-      [[ -z "${*}" ]] && { err "Usage: ai papers search <query> [--source arxiv|pmc|core|openalex|all]"; return 1; }
+      [[ -z "${*}" ]] && { err "Usage: ai papers search QUERY [--source arxiv|pmc|core|openalex|all]"; return 1; }
       local query="" source="all"
       while [[ $# -gt 0 ]]; do
         case "$1" in --source|-s) source="$2"; shift 2 ;; *) query="$query $1"; shift ;; esac
@@ -10609,7 +10609,7 @@ fmt = sys.argv[2].lower()
 papers_dir = sys.argv[3]
 idx_file = os.path.join(papers_dir, 'search_results.json')
 if not os.path.exists(idx_file):
-    print("No search results. Run: ai papers search <query>")
+    print("No search results. Run: ai papers search QUERY")
     sys.exit(1)
 papers = json.load(open(idx_file))
 if num < 0 or num >= len(papers):
@@ -10659,7 +10659,7 @@ PYEOF
 
     list)
       local idx="$PAPERS_DIR/search_results.json"
-      [[ ! -f "$idx" ]] && { info "No papers yet. Run: ai papers search <query>"; return 0; }
+      [[ ! -f "$idx" ]] && { info "No papers yet. Run: ai papers search QUERY"; return 0; }
       [[ -n "$PYTHON" ]] && "$PYTHON" -c "
 import json
 papers = json.load(open('$idx'))
@@ -10683,9 +10683,9 @@ for i,p in enumerate(papers,1):
       echo "  Open-access sources: arXiv, PubMed Central, CORE, OpenAlex"
       echo "  Citation formats:    APA, MLA, Chicago, BibTeX, IEEE"
       echo ""
-      echo "  ai papers search \"<query>\" [--source arxiv|pmc|core|openalex|all]"
+      echo "  ai papers search \"QUERY\" [--source arxiv|pmc|core|openalex|all]"
       echo "  ai papers download <arxiv-id|pmc-id|url>   Download PDF"
-      echo "  ai papers cite <N> [apa|mla|bibtex|ieee|chicago]  Format citation"
+      echo "  ai papers cite N [apa|mla|bibtex|ieee|chicago]  Format citation"
       echo "  ai papers list                              Show indexed papers"
       echo "  ai papers format <fmt>                     Set default citation format"
       ;;
@@ -10956,7 +10956,7 @@ PYEOF
       echo "      Train SDXL LoRA on custom concept images"
       echo "  ai train-multimodal image-to-text <dataset_dir>"
       echo "      Fine-tune image captioning / OCR model"
-      echo "  ai train-multimodal text-gen <dataset> [TTM|MTM|Mtm]"
+      echo "  ai train-multimodal text-gen DATASET [TTM|MTM|Mtm]"
       echo "      Fine-tune text generation / agent model"
       echo ""
       echo "  Config:"
@@ -11289,7 +11289,7 @@ EOF
         git -C "$ws_dir" add workspace.json && \
         git -C "$ws_dir" commit -q -m "Init canvas workspace: $ws" 2>/dev/null || true
       ok "Canvas v3 workspace: $ws_dir"
-      echo "  Add files:  ai canvas add $ws <file>"
+      echo "  Add files:  ai canvas add $ws FILE"
       echo "  Open TUI:   ai canvas open $ws"
       ;;
 
@@ -11608,13 +11608,13 @@ PYEOF
       hdr "AI CLI — Canvas v3 (v2.5)"
       echo "  Multi-file workspace with split-pane, AI assist, git, live preview"
       echo ""
-      echo "  ai canvas new <name>          Create new workspace"
-      echo "  ai canvas open <name>         Open TUI (Ctrl+Q to exit)"
-      echo "  ai canvas add <ws> <file>     Add file to workspace"
+      echo "  ai canvas new NAME          Create new workspace"
+      echo "  ai canvas open NAME         Open TUI (Ctrl+Q to exit)"
+      echo "  ai canvas add <ws> FILE     Add file to workspace"
       echo "  ai canvas list                List workspaces"
-      echo "  ai canvas delete <name>       Delete workspace"
-      echo "  ai canvas export <name> [tar] Export as tarball"
-      echo "  ai canvas gist <name>         Upload to GitHub Gist"
+      echo "  ai canvas delete NAME       Delete workspace"
+      echo "  ai canvas export NAME [tar] Export as tarball"
+      echo "  ai canvas gist NAME         Upload to GitHub Gist"
       echo ""
       echo "  TUI keys:  UP/DOWN=switch file  E=edit  A=ask-AI  S=split-pane"
       echo "             F=new-file  G=git-commit  P=preview  ?=help  Ctrl+Q=quit"
@@ -11646,7 +11646,7 @@ show_help() {
 
   # ── Quick Start ─────────────────────────────────────────────────────────────
   echo -e "${C1}┌─ QUICK START ────────────────────────────────────────────────────┐${R_}"
-  echo -e "${C2}│${R_}  ai ask \"<question>\"            Ask anything"
+  echo -e "${C2}│${R_}  ai ask \"QUESTION\"            Ask anything"
   echo -e "${C2}│${R_}  ai -gui                         Launch TUI (mouse + keyboard)"
   echo -e "${C2}│${R_}  ai gui+                         Launch GUI+ v3 (2.1x tkinter)"
   echo -e "${C2}│${R_}  ai node new                     Open AI Node Editor (125+ nodes)"
@@ -11659,14 +11659,14 @@ show_help() {
 
   # ── Conversation ────────────────────────────────────────────────────────────
   echo -e "${C1}┌─ CHAT & CONVERSATION ────────────────────────────────────────────┐${R_}"
-  echo -e "${C2}│${R_}  ai ask <prompt>                 Single-shot question"
+  echo -e "${C2}│${R_}  ai ask PROMPT                 Single-shot question"
   echo -e "${C2}│${R_}  ai chat                         Interactive chat  (Ctrl+C to exit)"
   echo -e "${C2}│${R_}  ai -C [name|auto] ask <q>       Named session, saved as JSONL"
-  echo -e "${C2}│${R_}  ai code <prompt> [--run]        Generate + optionally execute code"
-  echo -e "${C2}│${R_}  ai review <file>                Code review"
+  echo -e "${C2}│${R_}  ai code PROMPT [--run]        Generate + optionally execute code"
+  echo -e "${C2}│${R_}  ai review FILE                Code review"
   echo -e "${C2}│${R_}  ai explain <file|text>          Explain anything"
   echo -e "${C2}│${R_}  ai summarize <file|->           Summarize"
-  echo -e "${C2}│${R_}  ai translate <text> to <lang>   Translate"
+  echo -e "${C2}│${R_}  ai translate TEXT to <lang>   Translate"
   echo -e "${C2}│${R_}  ai pipe                         Pipe stdin to AI"
   echo -e "${C2}│${R_}  ai chat-list / chat-show / chat-delete"
   echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
@@ -11674,9 +11674,9 @@ show_help() {
 
   # ── Multi-AI ────────────────────────────────────────────────────────────────
   echo -e "${C1}┌─ MULTI-AI ARENA  (v2.4.5+) ─────────────────────────────────────┐${R_}"
-  echo -e "${C2}│${R_}  ai multiai \"<topic>\"            Two AIs discuss"
-  echo -e "${C2}│${R_}  ai multiai debate \"<topic>\"     Adversarial: opposing sides"
-  echo -e "${C2}│${R_}  ai multiai collab \"<task>\"      Collaborative: build together"
+  echo -e "${C2}│${R_}  ai multiai \"TOPIC\"            Two AIs discuss"
+  echo -e "${C2}│${R_}  ai multiai debate \"TOPIC\"     Adversarial: opposing sides"
+  echo -e "${C2}│${R_}  ai multiai collab \"TASK\"      Collaborative: build together"
   echo -e "${C2}│${R_}  ai multiai brainstorm \"<t>\"     Free-form idea generation"
   echo -e "${C2}│${R_}    --agents 2-4  --rounds N  --model1 X  --model2 Y"
   echo -e "${C2}│${R_}  ${DM}Controls: Enter=continue  s=steer  r 1-5=rate  p=pause  q=quit${R_}"
@@ -11686,10 +11686,10 @@ show_help() {
 
   # ── Agent + Web ─────────────────────────────────────────────────────────────
   echo -e "${C1}┌─ AGENT & WEB ────────────────────────────────────────────────────┐${R_}"
-  echo -e "${C2}│${R_}  ai agent <task>                 Multi-step autonomous agent"
+  echo -e "${C2}│${R_}  ai agent TASK                 Multi-step autonomous agent"
   echo -e "${C2}│${R_}    Tools: web_search  read_url  write_file  read_file"
   echo -e "${C2}│${R_}           run_code  run_bash  ask_user  calculate"
-  echo -e "${C2}│${R_}  ai websearch <query>            Search + AI summary (DDG/Brave)"
+  echo -e "${C2}│${R_}  ai websearch QUERY            Search + AI summary (DDG/Brave)"
   echo -e "${C2}│${R_}  ai config agent_max_steps N     Steps limit (default 10)"
   echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
   echo ""
@@ -11699,15 +11699,15 @@ show_help() {
   echo -e "${C2}│${R_}  ai audio  transcribe/tts/analyze/convert/extract/ask/play/info"
   echo -e "${C2}│${R_}  ai video  analyze/transcribe/caption/extract/trim/convert/ask"
   echo -e "${C2}│${R_}  ai vision ask/ocr/caption/compare"
-  echo -e "${C2}│${R_}  ai imagine <prompt>             Image generation"
+  echo -e "${C2}│${R_}  ai imagine PROMPT             Image generation"
   echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
   echo ""
 
   # ── Trained Models ──────────────────────────────────────────────────────────
   echo -e "${C1}┌─ TRAINED MODELS  (TTM / MTM / Mtm — case-sensitive) ────────────┐${R_}"
-  echo -e "${C2}│${R_}  ${B}TTM${R_}  ~179.35M   any GPU/CPU        ai ttm <cmd>"
-  echo -e "${C2}│${R_}  ${B}MTM${R_}  ~0.61B     GTX 1080 fp16      ai mtm <cmd>"
-  echo -e "${C2}│${R_}  ${B}Mtm${R_}  ~1.075B    RTX 2080+ bf16     ai Mtm <cmd>"
+  echo -e "${C2}│${R_}  ${B}TTM${R_}  ~179.35M   any GPU/CPU        ai ttm CMD"
+  echo -e "${C2}│${R_}  ${B}MTM${R_}  ~0.61B     GTX 1080 fp16      ai mtm CMD"
+  echo -e "${C2}│${R_}  ${B}Mtm${R_}  ~1.075B    RTX 2080+ bf16     ai Mtm CMD"
   echo -e "${C2}│${R_}"
   echo -e "${C2}│${R_}  Commands (all models):  pretrain  finetune  enable/disable"
   echo -e "${C2}│${R_}    train-now  upload  create-repo  status  load  set-custom1/2"
@@ -11724,7 +11724,7 @@ show_help() {
   echo -e "${C1}┌─ RLHF — REINFORCEMENT LEARNING FROM HUMAN FEEDBACK ─────────────┐${R_}"
   echo -e "${C2}│${R_}  ${B}Auto-RLHF${R_}  (judge scores responses → DPO training)"
   echo -e "${C2}│${R_}  ai rlhf enable/disable          Toggle auto-RLHF"
-  echo -e "${C2}│${R_}  ai rlhf judge <name>            Set judge: nix26 / qwen3+luth / qwen3+llama32"
+  echo -e "${C2}│${R_}  ai rlhf judge NAME            Set judge: nix26 / qwen3+luth / qwen3+llama32"
   echo -e "${C2}│${R_}  ai rlhf download-judges         Download judge model(s)"
   echo -e "${C2}│${R_}  ai rlhf train [TTM|MTM|Mtm]     Run DPO on collected pairs"
   echo -e "${C2}│${R_}  ai rlhf threshold 0.6           Reward cutoff (default 0.6)"
@@ -11736,9 +11736,9 @@ show_help() {
   echo -e "${C2}│${R_}"
   echo -e "${C2}│${R_}  ${B}HF RLHF Datasets${R_}  (10 curated preference datasets)"
   echo -e "${C2}│${R_}  ai rlhf datasets                List available presets"
-  echo -e "${C2}│${R_}  ai rlhf add-dataset <id>        Import: hh-rlhf / ultrafeedback /"
+  echo -e "${C2}│${R_}  ai rlhf add-dataset ID        Import: hh-rlhf / ultrafeedback /"
   echo -e "${C2}│${R_}    ${DM}orca-dpo / summarize / pku-safe / helpsteer2 / capybara / math-pref${R_}"
-  echo -e "${C2}│${R_}  ai rlhf use-dataset <name>      Set active training source"
+  echo -e "${C2}│${R_}  ai rlhf use-dataset NAME      Set active training source"
   echo -e "${C2}│${R_}  ai rlhf my-datasets             Show imported + pair counts"
   echo -e "${C2}│${R_}"
   echo -e "${C2}│${R_}  ${B}Alignment${R_}  (anti-hallucination, Qwen3-powered)"
@@ -11750,8 +11750,8 @@ show_help() {
   # ── Right-Click AI ──────────────────────────────────────────────────────────
   echo -e "${C1}┌─ RIGHT-CLICK AI  (v2.4.6 — Linux system-wide) ─────────────────┐${R_}"
   echo -e "${C2}│${R_}  ai rclick install               Install (auto-detects DE/WM)"
-  echo -e "${C2}│${R_}  ai rclick keybind <combo>       Change shortcut (default: ${RCLICK_KEYBIND})"
-  echo -e "${C2}│${R_}  ai rclick model <name>          Set VL model"
+  echo -e "${C2}│${R_}  ai rclick keybind COMBO       Change shortcut (default: ${RCLICK_KEYBIND})"
+  echo -e "${C2}│${R_}  ai rclick model NAME          Set VL model"
   echo -e "${C2}│${R_}  ai rclick download-model        Download VL model"
   echo -e "${C2}│${R_}  ai rclick test / status / uninstall"
   echo -e "${C2}│${R_}  ${DM}Supported: GNOME  KDE Plasma 5+6  XFCE  MATE  Cinnamon${R_}"
@@ -11766,7 +11766,7 @@ show_help() {
   echo -e "${C2}│${R_}  ai dataset list/show/delete/export/push"
   echo -e "${C2}│${R_}  ai dataset from-chat [session]  Chat session → dataset"
   echo -e "${C2}│${R_}  ai dataset from-rlhf            RLHF ratings → dataset"
-  echo -e "${C2}│${R_}  ai dataset generate <n> <topic> [N]  AI-generate synthetic pairs"
+  echo -e "${C2}│${R_}  ai dataset generate N TOPIC [N]  AI-generate synthetic pairs"
   echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
   echo ""
 
@@ -11785,12 +11785,12 @@ show_help() {
 
   # ── Models + GUI + Settings ─────────────────────────────────────────────────
   echo -e "${C1}┌─ MODELS ─────────────────────────────────────────────────────────┐${R_}"
-  echo -e "${C2}│${R_}  ai model <n>                  Set active model"
+  echo -e "${C2}│${R_}  ai model N                  Set active model"
   echo -e "${C2}│${R_}  ai models                     List downloaded models (synced with recommended)"
   echo -e "${C2}│${R_}  ai download <hf-id>           Download from HuggingFace"
   echo -e "${C2}│${R_}  ai recommended [download N]   ${B}56 curated picks${R_} — marks ✓ downloaded"
   echo -e "${C2}│${R_}  ai search-models <q>          Search HuggingFace"
-  echo -e "${C2}│${R_}  ai upload <path> <repo>       Upload to HuggingFace"
+  echo -e "${C2}│${R_}  ai upload PATH <repo>       Upload to HuggingFace"
   echo -e "${C2}│${R_}  ai model-create new/train/list/presets/info/delete"
   echo -e "${C2}│${R_}  ai model-state save/restore   Persist across updates"
   echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
@@ -11798,9 +11798,9 @@ show_help() {
 
   echo -e "${C1}┌─ ALIASES  (v2.7.3 — new) ────────────────────────────────────────┐${R_}"
   echo -e "${C2}│${R_}  ai alias list                  List all your aliases"
-  echo -e "${C2}│${R_}  ai alias set <name> <cmd>     Create alias (e.g. ai alias set q ask)"
-  echo -e "${C2}│${R_}  ai alias del <name>           Delete alias"
-  echo -e "${C2}│${R_}  ai alias show <name>          Show single alias definition"
+  echo -e "${C2}│${R_}  ai alias set NAME CMD     Create alias (e.g. ai alias set q ask)"
+  echo -e "${C2}│${R_}  ai alias del NAME           Delete alias"
+  echo -e "${C2}│${R_}  ai alias show NAME          Show single alias definition"
   echo -e "${C2}│${R_}  ai alias help                 Full alias help"
   echo -e "${C2}│${R_}  ${DM}After setting: ai <alias> [args]  →  runs the mapped command${R_}"
   echo -e "${C2}│${R_}  ${DM}Example: ai alias set codepy \"code --lang python\"${R_}"
@@ -11819,7 +11819,7 @@ show_help() {
   echo -e "${C2}│${R_}  ai node config                     View/edit node editor config"
   echo -e "${C2}│${R_}  Themes: dark  light  hacker  dracula  nord"
   echo -e "${C2}│${R_}  ai config gui_theme <theme>        Set default theme"
-  echo -e "${C2}│${R_}  ${B}v2.7.4 new:${R_}  GUI+ v3 · Node Editor · 125+ nodes · -h <cmd>"
+  echo -e "${C2}│${R_}  ${B}v2.7.4 new:${R_}  GUI+ v3 · Node Editor · 125+ nodes · -h CMD"
   echo -e "${C1}└──────────────────────────────────────────────────────────────────┘${R_}"
   echo ""
 
@@ -11844,15 +11844,15 @@ show_help() {
   # ── v2.5.5: New Features ────────────────────────────────────────────────────
   echo -e "${C1}┌─ v2.5.5 NEW FEATURES ────────────────────────────────────────────┐${R_}"
   echo -e "${C2}│${R_}  ${B}System Prompts:${R_}"
-  echo -e "${C2}│${R_}    ai system set \"<prompt>\"       Apply prompt to ALL backends"
-  echo -e "${C2}│${R_}    ai system save <name> \"<p>\"    Save named prompt to disk"
-  echo -e "${C2}│${R_}    ai system load <name>          Load saved prompt"
+  echo -e "${C2}│${R_}    ai system set \"PROMPT\"       Apply prompt to ALL backends"
+  echo -e "${C2}│${R_}    ai system save NAME \"PROMPT\"    Save named prompt to disk"
+  echo -e "${C2}│${R_}    ai system load NAME          Load saved prompt"
   echo -e "${C2}│${R_}    ai system list                 List saved + active info"
   echo -e "${C2}│${R_}    ai system show                 Show current effective prompt"
   echo -e "${C2}│${R_}    ai system clear                Remove custom prompt"
-  echo -e "${C2}│${R_}    ai system delete <name>        Delete saved prompt file"
+  echo -e "${C2}│${R_}    ai system delete NAME        Delete saved prompt file"
   echo -e "${C2}│${R_}  ${B}Dataset AI-gen:${R_}"
-  echo -e "${C2}│${R_}    ai dataset generate <n> <topic> [--count N] [--style qa|chat|instruct]"
+  echo -e "${C2}│${R_}    ai dataset generate N TOPIC [--count N] [--style qa|chat|instruct]"
   echo -e "${C2}│${R_}  ${B}Finetune Any:${R_}"
   echo -e "${C2}│${R_}    ai finetune any <hf-model-id>  LoRA fine-tune any model"
   echo -e "${C2}│${R_}      [--data file.jsonl] [--epochs N] [--merge] [--quantize Q4_K_M]"
@@ -11863,22 +11863,22 @@ show_help() {
   # ── v2.5: New Features ──────────────────────────────────────────────────────
   echo -e "${C1}┌─ v2.5 NEW FEATURES ──────────────────────────────────────────────┐${R_}"
   echo -e "${C2}│${R_}  ${B}GitHub:${R_}     ai github commit/push/pull/pr/issue/clone/log"
-  echo -e "${C2}│${R_}  ${B}Papers:${R_}     ai papers search \"<query>\" [--source arxiv|pmc|core]"
-  echo -e "${C2}│${R_}             ai papers cite <N> [apa|mla|bibtex|ieee|chicago]"
+  echo -e "${C2}│${R_}  ${B}Papers:${R_}     ai papers search \"QUERY\" [--source arxiv|pmc|core]"
+  echo -e "${C2}│${R_}             ai papers cite N [apa|mla|bibtex|ieee|chicago]"
   echo -e "${C2}│${R_}  ${B}Build:${R_}      ai build xz            Self-contained XZ bundle"
-  echo -e "${C2}│${R_}  ${B}Multimodal:${R_} ai train-multimodal img-text-to-text <dataset>"
+  echo -e "${C2}│${R_}  ${B}Multimodal:${R_} ai train-multimodal img-text-to-text DATASET"
   echo -e "${C2}│${R_}             ai train-multimodal text-to-image <image-dir>"
-  echo -e "${C2}│${R_}             ai train-multimodal image-to-text <dataset>"
+  echo -e "${C2}│${R_}             ai train-multimodal image-to-text DATASET"
   echo -e "${C2}│${R_}  ${B}RLHF v2:${R_}   ai rlhf-reward [model]  Train reward model"
   echo -e "${C2}│${R_}             ai rlhf-ppo [model]     PPO fine-tuning"
   echo -e "${C2}│${R_}             ai rlhf-grpo [model]    GRPO fine-tuning"
-  echo -e "${C2}│${R_}  ${B}Dataset+:${R_}  ai dataset from-text <name> \"<text>\""
-  echo -e "${C2}│${R_}             ai dataset from-url <name> <url>"
-  echo -e "${C2}│${R_}             ai dataset from-file <name> <file>"
-  echo -e "${C2}│${R_}             ai dataset from-paper <name> <arxiv-id>"
+  echo -e "${C2}│${R_}  ${B}Dataset+:${R_}  ai dataset from-text NAME \"TEXT\""
+  echo -e "${C2}│${R_}             ai dataset from-url NAME URL"
+  echo -e "${C2}│${R_}             ai dataset from-file NAME FILE"
+  echo -e "${C2}│${R_}             ai dataset from-paper NAME <arxiv-id>"
   echo -e "${C2}│${R_}  ${B}Canvas v3:${R_} ai canvas new/open/add/list/export/gist"
   echo -e "${C2}│${R_}             Multi-file · split-pane · git · AI assist · preview"
-  echo -e "${C2}│${R_}  ${B}Image v2:${R_}  ai imagine2 \"<prompt>\" [txt2img|img2img|inpaint]"
+  echo -e "${C2}│${R_}  ${B}Image v2:${R_}  ai imagine2 \"PROMPT\" [txt2img|img2img|inpaint]"
   echo -e "${C2}│${R_}  ${B}Pacman:${R_}    ai install-deps  (auto-detects pacman/apt/dnf/brew)"
   echo -e "${C2}│${R_}  ${B}Models:${R_}    28 recommended models (2x from v2.4)"
   echo -e "${C2}│${R_}  ${B}KDE6:${R_}      D-Bus + kglobalaccel6 keybind support"
@@ -11888,9 +11888,9 @@ show_help() {
   # ── v2.6: New Features ──────────────────────────────────────────────────────
   echo -e "${C1}┌─ v2.6 NEW FEATURES ──────────────────────────────────────────────┐${R_}"
   echo -e "${C2}│${R_}  ${B}Projects (multi-chat memory):${R_}"
-  echo -e "${C2}│${R_}    ai project new <name> [desc]   Create project with persistent memory"
+  echo -e "${C2}│${R_}    ai project new NAME [desc]   Create project with persistent memory"
   echo -e "${C2}│${R_}    ai project list                List all projects"
-  echo -e "${C2}│${R_}    ai project switch <name>       Switch to project"
+  echo -e "${C2}│${R_}    ai project switch NAME       Switch to project"
   echo -e "${C2}│${R_}    ai project show [name]         Info + recent messages"
   echo -e "${C2}│${R_}    ai project memory [name]       Memory summary"
   echo -e "${C2}│${R_}    ai project delete / export / clear-memory"
@@ -11999,8 +11999,8 @@ case "$cmd" in
     "$PYTHON" "$EXT_DIR/main.py" "$@"
     ;;
   help|--help|-h|"")
-    echo "Usage: ai extension run <name> [args...]"
-    echo "       ai extension help <name>"
+    echo "Usage: ai extension run NAME [args...]"
+    echo "       ai extension help NAME"
     ;;
   *)
     echo "Unknown command: $cmd"
@@ -12142,7 +12142,7 @@ except: pass
       fi
       if (( found == 0 )); then
         echo -e "  ${DIM}No extensions installed.${R}"
-        echo -e "  Use '${B}ai extension create <name>${R}' or '${B}ai extension load <file.aipack>${R}'"
+        echo -e "  Use '${B}ai extension create NAME${R}' or '${B}ai extension load <file.aipack>${R}'"
       else
         echo -e "  ${DIM}${found} extension(s) found in ${EXTENSIONS_DIR}${R}"
       fi
@@ -12225,7 +12225,7 @@ except: pass
     # ── Run ───────────────────────────────────────────────────────────────────
     run)
       local name="${1:-}"; shift || true
-      [[ -z "$name" ]] && { err "Usage: ai extension run <name> [args...]"; return 1; }
+      [[ -z "$name" ]] && { err "Usage: ai extension run NAME [args...]"; return 1; }
       local ext_path="$EXTENSIONS_DIR/$name"
       [[ ! -d "$ext_path" ]] && { err "Extension not found: $ext_path"; return 1; }
       [[ ! -f "$ext_path/ex.sh" ]] && { err "No ex.sh in $ext_path"; return 1; }
@@ -12259,13 +12259,13 @@ except: pass
       echo ""
       hdr "AI CLI v${VERSION} — Extension System"
       echo ""
-      echo -e "  ${B}ai extension create <name> [desc]${R}   Scaffold a new extension"
+      echo -e "  ${B}ai extension create NAME [desc]${R}   Scaffold a new extension"
       echo -e "  ${B}ai extension load [file.aipack]${R}     Install from .aipack file"
       echo -e "  ${B}ai extension locate${R}                 List all extensions + paths"
-      echo -e "  ${B}ai extension package <name>${R}         Package as distributable .aipack"
-      echo -e "  ${B}ai extension edit <name> [file]${R}     Edit extension files"
-      echo -e "  ${B}ai extension run <name> [args...]${R}   Execute an extension"
-      echo -e "  ${B}ai extension enable/disable <name>${R}  Toggle extension"
+      echo -e "  ${B}ai extension package NAME${R}         Package as distributable .aipack"
+      echo -e "  ${B}ai extension edit NAME [file]${R}     Edit extension files"
+      echo -e "  ${B}ai extension run NAME [args...]${R}   Execute an extension"
+      echo -e "  ${B}ai extension enable/disable NAME${R}  Toggle extension"
       echo -e "  ${B}ai extension list${R}                   Same as locate"
       echo ""
       echo -e "  ${DIM}.aipack format: gzip'd tar with manifest.json + ex.sh + main.py${R}"
@@ -13826,9 +13826,9 @@ cmd_help_detail() {
   case "$cmd" in
     ask|a)
 cat << 'HELPEOF'
-  ai ask <question>           Ask the active LLM model a question
+  ai ask QUESTION           Ask the active LLM model a question
   ai ask                      Interactive prompt if no question given
-  ai a   <question>           Short alias for 'ask'
+  ai a   QUESTION           Short alias for 'ask'
 
   Options (via config):
     model                     Which model to use
@@ -13844,11 +13844,11 @@ HELPEOF
     chat)
 cat << 'HELPEOF'
   ai chat                     Start interactive multi-turn chat session
-  ai chat -C <name>           Named chat session (persists across calls)
+  ai chat -C NAME           Named chat session (persists across calls)
 
   Keys inside chat:
-    /clear        Clear history        /model <n>  Switch model
-    /system <p>   Set system prompt    /save       Save transcript
+    /clear        Clear history        /model N  Switch model
+    /system PROMPT   Set system prompt    /save       Save transcript
     /load <f>     Load transcript      /exit       Exit chat
 
   Examples:
@@ -13912,8 +13912,8 @@ HELPEOF
     ;;
     imagine|imggen|image)
 cat << 'HELPEOF'
-  ai imagine "<prompt>"       Generate an image with Stable Diffusion / FLUX
-  ai imagine2 "<prompt>"      Image generation v2 (img2img, inpaint, LoRA)
+  ai imagine "PROMPT"       Generate an image with Stable Diffusion / FLUX
+  ai imagine2 "PROMPT"      Image generation v2 (img2img, inpaint, LoRA)
 
   Options:
     ai config sd_model        Set the SD model to use
@@ -13929,9 +13929,9 @@ HELPEOF
     model|models)
 cat << 'HELPEOF'
   ai models                   List all available models
-  ai model <name>             Switch active model to <name>
+  ai model NAME             Switch active model to NAME
   ai recommended              Show 2x recommended models (VRAM-aware)
-  ai recommended download <n> Download model #n from the recommended list
+  ai recommended download N Download model #n from the recommended list
   ai download <hf-model-id>   Download a model from HuggingFace
 
   Examples:
@@ -13958,10 +13958,10 @@ HELPEOF
 cat << 'HELPEOF'
   ai extension locate          List all installed extensions
   ai extension create          Create a new extension (interactive)
-  ai extension load <name>     Load/enable an extension
-  ai extension run <name>      Run an extension
-  ai extension edit <name>     Edit an extension in $EDITOR
-  ai extension package <name>  Package extension as .aipack
+  ai extension load NAME     Load/enable an extension
+  ai extension run NAME      Run an extension
+  ai extension edit NAME     Edit an extension in $EDITOR
+  ai extension package NAME  Package extension as .aipack
   ai extension help            Show extension help
 
   Extension directory: ~/.config/ai-cli/extensions/
@@ -13971,8 +13971,8 @@ HELPEOF
     config)
 cat << 'HELPEOF'
   ai config                    Show all configuration values
-  ai config <key>              Show value of a specific key
-  ai config <key> <value>      Set a configuration value
+  ai config KEY              Show value of a specific key
+  ai config KEY <value>      Set a configuration value
 
   Common config keys:
     model              Active LLM model name / path
@@ -13992,7 +13992,7 @@ HELPEOF
     ;;
     agent)
 cat << 'HELPEOF'
-  ai agent "<task>"            Run an autonomous AI agent on a task
+  ai agent "TASK"            Run an autonomous AI agent on a task
   ai agent -i                  Interactive step-by-step agent mode
 
   The agent uses builtin tools:
@@ -14000,7 +14000,7 @@ cat << 'HELPEOF'
     get_time     get_sysinfo calc         download_file image_info
 
   Config:
-    ai config agent_max_steps <n>   Max reasoning steps (default: 10)
+    ai config agent_max_steps N   Max reasoning steps (default: 10)
 
   Examples:
     ai agent "research recent AI papers and summarize top 3"
@@ -14010,9 +14010,9 @@ HELPEOF
     alias)
 cat << 'HELPEOF'
   ai alias list                List all defined aliases
-  ai alias add <name> <cmd>    Add a new alias
-  ai alias remove <name>       Remove an alias
-  ai alias run <name> [args]   Run an alias
+  ai alias add NAME CMD    Add a new alias
+  ai alias remove NAME       Remove an alias
+  ai alias run NAME [args]   Run an alias
 
   Aliases are stored in ~/.config/ai-cli/aliases.json
   They can expand to any 'ai' sub-command.
@@ -14047,13 +14047,13 @@ cat << 'HELPEOF'
     GET  /health                Health check
 
   Config:
-    ai config api_host <host>   Bind host (default: 0.0.0.0)
-    ai config api_port <port>   Port (default: 8080)
+    ai config api_host HOST   Bind host (default: 0.0.0.0)
+    ai config api_port PORT   Port (default: 8080)
 HELPEOF
     ;;
     websearch|web)
 cat << 'HELPEOF'
-  ai websearch "<query>"       Search the web and return results
+  ai websearch "QUERY"       Search the web and return results
   ai websearch "<q>" <count>   Return <count> results (default: 5)
 
   Examples:
@@ -14095,10 +14095,10 @@ HELPEOF
     replay) echo "  ai replay <session> [--model backend]   Replay conversation through different model" ;;
     fav|favorite) cmd_favorite 2>/dev/null ;;
     profile|profiles) cmd_profile 2>/dev/null ;;
-    watch) echo "  ai watch <file> [summarize|review|lint] [interval]   Auto-process on file change" ;;
+    watch) echo "  ai watch FILE [summarize|review|lint] [interval]   Auto-process on file change" ;;
     context|ctx) cmd_context 2>/dev/null ;;
-    chain) echo "  ai chain <file>   Run prompt chain (one per line, {{prev}} = last output)" ;;
-    tokens|count-tokens) echo "  ai tokens \"text\"   Estimate token count"; echo "  ai tokens <file>   Count tokens in file" ;;
+    chain) echo "  ai chain FILE   Run prompt chain (one per line, {{prev}} = last output)" ;;
+    tokens|count-tokens) echo "  ai tokens \"text\"   Estimate token count"; echo "  ai tokens FILE   Count tokens in file" ;;
     cost) echo "  ai cost [in_tokens] [out_tokens] [model]   Estimate API cost" ;;
     analytics|usage) echo "  ai analytics [summary|today|clear]   Usage stats" ;;
     security|sec-audit) echo "  ai security   Check API key exposure and security posture" ;;
@@ -14605,7 +14605,7 @@ fi
 # ════════════════════════════════════════════════════════════════════════════════
 
 _api_retry() {
-  # Usage: _api_retry <max_retries> <base_delay> <command...>
+  # Usage: _api_retry <max_retries> <base_delay> COMMAND
   local max_retries="${1:-$RETRY_MAX}"
   local base_delay="${2:-$RETRY_DELAY}"
   shift 2
@@ -14718,7 +14718,7 @@ _err_suggest() {
   case "$code" in
     ERR401) echo "  Tip: List snapshots with: ai snap list" ;;
     ERR402) echo "  Tip: List templates with: ai template list" ;;
-    ERR403) echo "  Tip: Create a knowledge base: ai rag create <name> <directory>" ;;
+    ERR403) echo "  Tip: Create a knowledge base: ai rag create NAME <directory>" ;;
     ERR501) echo "  Tip: Check file permissions and path" ;;
     ERR503) echo "  Tip: Free up disk space: ai cleanup" ;;
     ERR601) echo "  Tip: Try a smaller model or increase GPU layers" ;;
@@ -14731,14 +14731,14 @@ _err_suggest() {
 # ════════════════════════════════════════════════════════════════════════════════
 #  CONFIG SNAPSHOTS — v2.9.0
 #  Save and restore complete configuration states
-#  Usage: ai snap save <name> | ai snap load <name> | ai snap list | ai snap diff <a> <b>
+#  Usage: ai snap save NAME | ai snap load NAME | ai snap list | ai snap diff <a> <b>
 # ════════════════════════════════════════════════════════════════════════════════
 
 cmd_snap() {
   local sub="${1:-}"; shift 2>/dev/null || true
   case "$sub" in
     save)
-      local name="${1:?Usage: ai snap save <name>}"
+      local name="${1:?Usage: ai snap save NAME}"
       local snap_file="$SNAPSHOTS_DIR/${name}.snap"
       {
         echo "# AI CLI Config Snapshot: $name"
@@ -14763,7 +14763,7 @@ cmd_snap() {
       dim "Restore with: ai snap load $name"
       ;;
     load|restore)
-      local name="${1:?Usage: ai snap load <name>}"
+      local name="${1:?Usage: ai snap load NAME}"
       local snap_file="$SNAPSHOTS_DIR/${name}.snap"
       if [[ ! -f "$snap_file" ]]; then
         _err_v29 ERR401 "$name"
@@ -14788,7 +14788,7 @@ cmd_snap() {
     list|ls)
       hdr "Config Snapshots"
       if [[ -z "$(ls -A "$SNAPSHOTS_DIR" 2>/dev/null)" ]]; then
-        info "No snapshots saved yet. Create one with: ai snap save <name>"
+        info "No snapshots saved yet. Create one with: ai snap save NAME"
         return
       fi
       local count=0
@@ -14813,7 +14813,7 @@ cmd_snap() {
       diff --color=auto "$fa" "$fb" || true
       ;;
     delete|rm)
-      local name="${1:?Usage: ai snap delete <name>}"
+      local name="${1:?Usage: ai snap delete NAME}"
       local snap_file="$SNAPSHOTS_DIR/${name}.snap"
       [[ -f "$snap_file" ]] || { _err_v29 ERR401 "$name"; return 1; }
       rm -f "$snap_file"
@@ -14822,11 +14822,11 @@ cmd_snap() {
     *)
       echo "Usage: ai snap <save|load|list|diff|delete> [args]"
       echo ""
-      echo "  save <name>          Save current config as snapshot"
-      echo "  load <name>          Restore config from snapshot"
+      echo "  save NAME          Save current config as snapshot"
+      echo "  load NAME          Restore config from snapshot"
       echo "  list                 Show all saved snapshots"
       echo "  diff <a> <b>         Compare two snapshots"
-      echo "  delete <name>        Delete a snapshot"
+      echo "  delete NAME        Delete a snapshot"
       ;;
   esac
 }
@@ -14862,7 +14862,7 @@ cmd_perf() {
   done
 
   if [[ -z "$ACTIVE_MODEL" && -z "$ACTIVE_BACKEND" ]]; then
-    err "No active model. Set one with: ai recommended use <N>"
+    err "No active model. Set one with: ai recommended use N"
     return 1
   fi
 
@@ -15107,7 +15107,7 @@ cmd_template() {
   local sub="${1:-}"; shift 2>/dev/null || true
   case "$sub" in
     create|new)
-      local name="${1:?Usage: ai template create <name>}"
+      local name="${1:?Usage: ai template create NAME}"
       local tpl_file="$TEMPLATES_DIR/${name}.tpl"
       if [[ -f "$tpl_file" ]]; then
         warn "Template '$name' already exists. Use --force to overwrite."
@@ -15116,7 +15116,7 @@ cmd_template() {
       cat > "$tpl_file" <<'TPLEOF'
 # AI CLI Prompt Template
 # Variables: {{input}}, {{context}}, {{language}}, {{style}}
-# Usage: ai template use <name> --input "your text"
+# Usage: ai template use NAME --input "your text"
 
 You are a helpful assistant.
 
@@ -15130,7 +15130,7 @@ TPLEOF
       info "Edit it, then use: ai template use $name --input \"...\""
       ;;
     use|apply)
-      local name="${1:?Usage: ai template use <name> [--input TEXT]}"
+      local name="${1:?Usage: ai template use NAME [--input TEXT]}"
       shift
       local tpl_file="$TEMPLATES_DIR/${name}.tpl"
       [[ -f "$tpl_file" ]] || { _err_v29 ERR402 "$name"; return 1; }
@@ -15163,16 +15163,16 @@ TPLEOF
         printf "  ${CYAN}%-20s${R}  ${DIM}%s${R}\n" "$tname" "$desc"
         (( count++ ))
       done
-      (( count == 0 )) && info "No templates. Create one: ai template create <name>"
+      (( count == 0 )) && info "No templates. Create one: ai template create NAME"
       ;;
     edit)
-      local name="${1:?Usage: ai template edit <name>}"
+      local name="${1:?Usage: ai template edit NAME}"
       local tpl_file="$TEMPLATES_DIR/${name}.tpl"
       [[ -f "$tpl_file" ]] || { _err_v29 ERR402 "$name"; return 1; }
       ${EDITOR:-nano} "$tpl_file"
       ;;
     delete|rm)
-      local name="${1:?Usage: ai template delete <name>}"
+      local name="${1:?Usage: ai template delete NAME}"
       rm -f "$TEMPLATES_DIR/${name}.tpl"
       ok "Template deleted: $name"
       ;;
@@ -15191,8 +15191,8 @@ cmd_rag() {
   local sub="${1:-}"; shift 2>/dev/null || true
   case "$sub" in
     create|new)
-      local name="${1:?Usage: ai rag create <name> <directory>}"
-      local src_dir="${2:?Usage: ai rag create <name> <directory>}"
+      local name="${1:?Usage: ai rag create NAME <directory>}"
+      local src_dir="${2:?Usage: ai rag create NAME <directory>}"
       local rag_base="$RAG_DIR/$name"
       mkdir -p "$rag_base"
 
@@ -15232,8 +15232,8 @@ EOF
       ok "RAG knowledge base '$name' created: $count files indexed"
       ;;
     query|ask)
-      local name="${1:?Usage: ai rag query <name> \"question\"}"
-      local question="${2:?Usage: ai rag query <name> \"question\"}"
+      local name="${1:?Usage: ai rag query NAME \"question\"}"
+      local question="${2:?Usage: ai rag query NAME \"question\"}"
       local rag_base="$RAG_DIR/$name"
       local index_file="$rag_base/index.jsonl"
       [[ -f "$index_file" ]] || { _err_v29 ERR403 "$name"; return 1; }
@@ -15311,20 +15311,20 @@ $question"
         fi
         (( count++ ))
       done
-      (( count == 0 )) && info "No knowledge bases. Create one: ai rag create <name> <dir>"
+      (( count == 0 )) && info "No knowledge bases. Create one: ai rag create NAME <dir>"
       ;;
     delete|rm)
-      local name="${1:?Usage: ai rag delete <name>}"
+      local name="${1:?Usage: ai rag delete NAME}"
       rm -rf "$RAG_DIR/$name"
       ok "Knowledge base '$name' deleted"
       ;;
     *)
       echo "Usage: ai rag <create|query|list|delete>"
       echo ""
-      echo "  create <name> <dir>        Index documents from directory"
-      echo "  query <name> \"question\"    Ask a question with RAG context"
+      echo "  create NAME <dir>        Index documents from directory"
+      echo "  query NAME \"question\"    Ask a question with RAG context"
       echo "  list                       Show all knowledge bases"
-      echo "  delete <name>              Remove a knowledge base"
+      echo "  delete NAME              Remove a knowledge base"
       ;;
   esac
 }
@@ -15545,7 +15545,7 @@ cmd_branch() {
   local sub="${1:-}"; shift 2>/dev/null || true
   case "$sub" in
     create|new)
-      local name="${1:?Usage: ai branch create <name>}"
+      local name="${1:?Usage: ai branch create NAME}"
       local src_session="${ACTIVE_SESSION:-default}"
       local src_log="$SESSIONS_DIR/${src_session}.jsonl"
       local branch_dir="$BRANCHES_DIR/$name"
@@ -15565,7 +15565,7 @@ EOF
       info "Switch to it: ai branch use $name"
       ;;
     use|switch)
-      local name="${1:?Usage: ai branch use <name>}"
+      local name="${1:?Usage: ai branch use NAME}"
       local branch_dir="$BRANCHES_DIR/$name"
       [[ -d "$branch_dir" ]] || { _err_v29 ERR406 "$name"; return 1; }
       CONVERSATION_BRANCH="$name"
@@ -15591,10 +15591,10 @@ EOF
           "$bname" "$parent" "$msgs" "$created" "$active_mark"
         (( count++ ))
       done
-      (( count == 0 )) && info "No branches. Create one: ai branch create <name>"
+      (( count == 0 )) && info "No branches. Create one: ai branch create NAME"
       ;;
     merge)
-      local name="${1:?Usage: ai branch merge <name>}"
+      local name="${1:?Usage: ai branch merge NAME}"
       local branch_dir="$BRANCHES_DIR/$name"
       [[ -d "$branch_dir" ]] || { _err_v29 ERR406 "$name"; return 1; }
       local branch_log="$branch_dir/history.jsonl"
@@ -15606,7 +15606,7 @@ EOF
       fi
       ;;
     delete|rm)
-      local name="${1:?Usage: ai branch delete <name>}"
+      local name="${1:?Usage: ai branch delete NAME}"
       rm -rf "$BRANCHES_DIR/$name"
       [[ "$CONVERSATION_BRANCH" == "$name" ]] && CONVERSATION_BRANCH="" && save_config
       ok "Branch '$name' deleted"
@@ -15822,7 +15822,7 @@ cmd_plugin() {
       fi
       ;;
     remove|rm)
-      local name="${1:?Usage: ai plugin remove <name>}"
+      local name="${1:?Usage: ai plugin remove NAME}"
       rm -f "$PLUGINS_DIR/${name}.sh"
       ok "Plugin removed: $name"
       ;;
@@ -15849,7 +15849,7 @@ cmd_preset() {
   local sub="${1:-}"; shift 2>/dev/null || true
   case "$sub" in
     save)
-      local name="${1:?Usage: ai preset save <name>}"
+      local name="${1:?Usage: ai preset save NAME}"
       cat > "$PRESETS_DIR/${name}.preset" <<EOF
 PRESET_MODEL="$ACTIVE_MODEL"
 PRESET_BACKEND="$ACTIVE_BACKEND"
@@ -15863,7 +15863,7 @@ EOF
       ok "Preset saved: $name"
       ;;
     load|use)
-      local name="${1:?Usage: ai preset load <name>}"
+      local name="${1:?Usage: ai preset load NAME}"
       local pf="$PRESETS_DIR/${name}.preset"
       [[ -f "$pf" ]] || { err "Preset not found: $name"; return 1; }
       source "$pf"
@@ -15889,7 +15889,7 @@ EOF
       done
       ;;
     delete|rm)
-      local name="${1:?Usage: ai preset delete <name>}"
+      local name="${1:?Usage: ai preset delete NAME}"
       rm -f "$PRESETS_DIR/${name}.preset"
       ok "Preset deleted: $name"
       ;;
@@ -16022,7 +16022,7 @@ cmd_change() {
       cmd_change latest
       echo ""
       echo -e "  ${B}${BCYAN}v2.7.4${R}"
-      echo "    GUI+ v2 (tkinter) · AI Node Editor (125+ nodes) · -h <cmd>"
+      echo "    GUI+ v2 (tkinter) · AI Node Editor (125+ nodes) · -h CMD"
       echo ""
       echo -e "  ${B}${BCYAN}v2.7.3${R}"
       echo "    Aliases · Error codes · GGUF fix · Model sync"
@@ -16423,7 +16423,7 @@ $content" 256 2>/dev/null || echo "Could not generate summary")
       echo "  trim [N]        Keep last N messages (default: 20)"
       echo "  summarize       AI-summarize the conversation"
       echo "  clear           Clear current session"
-      echo "  size <N>        Set context window size"
+      echo "  size N        Set context window size"
       ;;
   esac
 }
@@ -16620,20 +16620,20 @@ EOF
       ok "Cron jobs installed"
       ;;
     remove|rm)
-      local id="${1:?Usage: ai schedule remove <id>}"
+      local id="${1:?Usage: ai schedule remove ID}"
       rm -f "$SCHEDULE_DIR/${id}.sched" "$SCHEDULE_DIR/${id}.out"
       ok "Schedule #$id removed"
       cmd_schedule install 2>/dev/null || true
       ;;
     disable)
-      local id="${1:?Usage: ai schedule disable <id>}"
+      local id="${1:?Usage: ai schedule disable ID}"
       local f="$SCHEDULE_DIR/${id}.sched"
       [[ -f "$f" ]] || { err "Schedule not found: $id"; return 1; }
       sed -i 's/SCHED_ENABLED=1/SCHED_ENABLED=0/' "$f"
       ok "Schedule #$id disabled"
       ;;
     enable)
-      local id="${1:?Usage: ai schedule enable <id>}"
+      local id="${1:?Usage: ai schedule enable ID}"
       local f="$SCHEDULE_DIR/${id}.sched"
       [[ -f "$f" ]] || { err "Schedule not found: $id"; return 1; }
       sed -i 's/SCHED_ENABLED=0/SCHED_ENABLED=1/' "$f"
@@ -16645,7 +16645,7 @@ EOF
       echo "  add \"cron\" \"prompt\"  Create scheduled prompt"
       echo "  list                 Show all schedules"
       echo "  install              Write to crontab"
-      echo "  remove <id>          Delete schedule"
+      echo "  remove ID          Delete schedule"
       echo ""
       echo "Examples:"
       echo "  ai schedule add \"0 9 * * *\" \"Give me a daily briefing\""
@@ -16762,7 +16762,7 @@ cmd_favorite() {
       dispatch_ask "$prompt"
       ;;
     delete|rm)
-      local id="${1:?Usage: ai fav delete <id>}"
+      local id="${1:?Usage: ai fav delete ID}"
       local tmp=$(mktemp)
       grep -v "\"id\":${id}" "$FAVORITES_FILE" > "$tmp" 2>/dev/null || true
       mv "$tmp" "$FAVORITES_FILE"
@@ -16773,8 +16773,8 @@ cmd_favorite() {
       echo ""
       echo "  add \"prompt\"   Save a favorite prompt"
       echo "  list           Show all favorites"
-      echo "  run <id>       Re-run a favorite"
-      echo "  delete <id>    Remove a favorite"
+      echo "  run ID       Re-run a favorite"
+      echo "  delete ID    Remove a favorite"
       ;;
   esac
 }
@@ -16956,8 +16956,8 @@ $diff_stat" 512 2>/dev/null || echo "")
       echo "$desc"
       ;;
     blame)
-      local file="${1:?Usage: ai git blame <file> <line>}"
-      local line="${2:?Usage: ai git blame <file> <line>}"
+      local file="${1:?Usage: ai git blame FILE <line>}"
+      local line="${2:?Usage: ai git blame FILE <line>}"
       local blame_output
       blame_output=$(git blame -L "$line,$line" "$file" 2>/dev/null || echo "")
       if [[ -z "$blame_output" ]]; then
@@ -17366,7 +17366,7 @@ cmd_profile() {
   local sub="${1:-}"; shift 2>/dev/null || true
   case "$sub" in
     create|new)
-      local name="${1:?Usage: ai profile create <name> \"description\"}"
+      local name="${1:?Usage: ai profile create NAME \"description\"}"
       local desc="${2:-No description}"
       local profile_dir="$PROFILES_DIR/$name"
       mkdir -p "$profile_dir"
@@ -17376,7 +17376,7 @@ cmd_profile() {
       ok "Profile created: $name"
       ;;
     switch|use)
-      local name="${1:?Usage: ai profile switch <name>}"
+      local name="${1:?Usage: ai profile switch NAME}"
       local profile_dir="$PROFILES_DIR/$name"
       [[ -d "$profile_dir" ]] || { err "Profile not found: $name"; return 1; }
       [[ -f "$profile_dir/config.env" ]] && cp "$profile_dir/config.env" "$CONFIG_FILE"
@@ -17395,7 +17395,7 @@ cmd_profile() {
       done
       ;;
     delete|rm)
-      local name="${1:?Usage: ai profile delete <name>}"
+      local name="${1:?Usage: ai profile delete NAME}"
       rm -rf "$PROFILES_DIR/$name"
       ok "Profile '$name' deleted"
       ;;
@@ -17411,7 +17411,7 @@ cmd_profile() {
 # ════════════════════════════════════════════════════════════════════════════════
 
 cmd_watch() {
-  local file="${1:?Usage: ai watch <file> [command]}"
+  local file="${1:?Usage: ai watch FILE [command]}"
   local action="${2:-summarize}"
   local interval="${3:-2}"
 
@@ -17462,13 +17462,13 @@ cmd_notebook() {
   local sub="${1:-}"; shift 2>/dev/null || true
   case "$sub" in
     new|create)
-      local name="${1:?Usage: ai notebook new <name>}"
+      local name="${1:?Usage: ai notebook new NAME}"
       local nb_file="$NOTEBOOKS_DIR/${name}.ainb"
       cat > "$nb_file" <<EOF
 # AI CLI Notebook: $name
 # Created: $(date -Iseconds)
 # Format: Each cell starts with --- and a type: [code], [ai], [text]
-# Run cells with: ai notebook run <name>
+# Run cells with: ai notebook run NAME
 
 --- [text]
 # $name
@@ -17487,7 +17487,7 @@ EOF
       info "Run:  ai notebook run $name"
       ;;
     run|exec)
-      local name="${1:?Usage: ai notebook run <name>}"
+      local name="${1:?Usage: ai notebook run NAME}"
       local nb_file="$NOTEBOOKS_DIR/${name}.ainb"
       [[ -f "$nb_file" ]] || { err "Notebook not found: $name"; return 1; }
 
@@ -17532,13 +17532,13 @@ EOF
       done
       ;;
     edit)
-      local name="${1:?Usage: ai notebook edit <name>}"
+      local name="${1:?Usage: ai notebook edit NAME}"
       local nb_file="$NOTEBOOKS_DIR/${name}.ainb"
       [[ -f "$nb_file" ]] || { err "Notebook not found: $name"; return 1; }
       ${EDITOR:-nano} "$nb_file"
       ;;
     delete|rm)
-      local name="${1:?Usage: ai notebook delete <name>}"
+      local name="${1:?Usage: ai notebook delete NAME}"
       rm -f "$NOTEBOOKS_DIR/${name}.ainb" "$NOTEBOOKS_DIR/${name}"_output_*.txt
       ok "Notebook '$name' deleted"
       ;;
@@ -17745,7 +17745,7 @@ Use proper markdown formatting." 2048 > "$out" 2>/dev/null
       ok "README saved: $out"
       ;;
     docs)
-      local file="${topic:?Usage: ai write docs <file>}"
+      local file="${topic:?Usage: ai write docs FILE}"
       [[ -f "$file" ]] || { err "File not found: $file"; return 1; }
       local content
       content=$(cat "$file" | head -300)
@@ -17787,7 +17787,7 @@ Include sections: Contact, Summary, Experience - 3 entries, Education, Skills, P
       echo "  blog \"topic\"     Write a blog post"
       echo "  email \"subject\"  Draft a professional email"
       echo "  readme [dir]     Generate README.md"
-      echo "  docs <file>      Generate code documentation"
+      echo "  docs FILE      Generate code documentation"
       echo "  story [topic]    Write a short story"
       echo "  poem [topic]     Write a poem"
       echo "  resume \"role\"    Generate resume template"
@@ -18239,7 +18239,7 @@ _help_v29() {
     shell) cmd_shell help ;;
     find) echo "Usage: ai find \"query\" [directory] [max_results]" ;;
     profile) cmd_profile help ;;
-    watch) echo "Usage: ai watch <file> [summarize|review|lint|explain] [interval]" ;;
+    watch) echo "Usage: ai watch FILE [summarize|review|lint|explain] [interval]" ;;
     notebook) cmd_notebook help ;;
     plan) cmd_plan help ;;
     learn) echo "Usage: ai learn \"topic\" — Interactive learning mode" ;;
@@ -18837,12 +18837,12 @@ cmd_net() {
       fi
       ;;
     headers)
-      local url="${1:?Usage: ai net headers <url>}"
+      local url="${1:?Usage: ai net headers URL}"
       curl -fsSI "$url" 2>/dev/null || echo "Could not fetch headers"
       ;;
     port)
-      local host="${1:?Usage: ai net port <host> <port>}"
-      local port="${2:?Usage: ai net port <host> <port>}"
+      local host="${1:?Usage: ai net port HOST PORT}"
+      local port="${2:?Usage: ai net port HOST PORT}"
       if timeout 3 bash -c "echo >/dev/tcp/$host/$port" 2>/dev/null; then
         printf "  ${GREEN}Port %s on %s is OPEN${R}\n" "$port" "$host"
       else
@@ -18864,8 +18864,8 @@ cmd_net() {
       echo "  dns <domain>        DNS lookup"
       echo "  ping [host]         Ping test (default: 8.8.8.8)"
       echo "  speed               Download speed test"
-      echo "  headers <url>       Show HTTP headers"
-      echo "  port <host> <port>  Check if port is open"
+      echo "  headers URL       Show HTTP headers"
+      echo "  port HOST PORT  Check if port is open"
       echo "  whois <domain>      WHOIS lookup"
       ;;
   esac
@@ -18983,7 +18983,7 @@ cmd_test() {
     -S|--speed|speed)
       hdr "Speed Test"
       if [[ -z "$ACTIVE_MODEL" && -z "$ACTIVE_BACKEND" ]]; then
-        err "No model set. Run: ai recommended use <N>"
+        err "No model set. Run: ai recommended use N"
         return 1
       fi
       info "Backend: ${ACTIVE_BACKEND:-auto} | Model: ${ACTIVE_MODEL:-auto}"
@@ -19043,7 +19043,7 @@ cmd_test() {
       cmd_health 2>/dev/null || true
       ;;
     *)
-      echo "Usage: ai test <-S|-N|-A>"
+      echo "Usage: ai test -S or -N or -A"
       echo ""
       echo "  -S, --speed      Test model inference speed"
       echo "  -N, --network    Test network (download/upload/latency)"
