@@ -4,8 +4,8 @@
 
 API_HOST="${API_HOST:-0.0.0.0}"
 API_PORT="${API_PORT:-8080}"
-API_PID_FILE="$CONFIG_DIR/api.pid"
-API_KEYS_FILE="$CONFIG_DIR/api_keys.json"
+API_PID_FILE="${CONFIG_DIR:-$HOME/.config/ai-cli}/api.pid"
+API_KEYS_FILE="${CONFIG_DIR:-$HOME/.config/ai-cli}/api_keys.json"
 
 cmd_api_v3() {
   local sub="${1:-help}"; shift 2>/dev/null || true

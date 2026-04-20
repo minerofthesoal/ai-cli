@@ -36,15 +36,6 @@ if (( BASH_VERSINFO[0] < 4 )); then
   exit 1
 fi
 
-# ── v3.1.0: Source modular lib files if available ─────────────────────────────
-_AI_LIB="${AI_CLI_LIB:-$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/lib}"
-[[ ! -d "$_AI_LIB" ]] && _AI_LIB="/usr/share/ai-cli/lib"
-[[ ! -d "$_AI_LIB" ]] && _AI_LIB="/usr/local/share/ai-cli/lib"
-if [[ -d "$_AI_LIB" ]]; then
-  for _mod in "$_AI_LIB"/*.sh; do
-    [[ -f "$_mod" ]] && source "$_mod"
-  done
-fi
 # ════════════════════════════════════════════════════════════════════════════════
 #  ENVIRONMENT DETECTION
 # ════════════════════════════════════════════════════════════════════════════════
@@ -245,6 +236,16 @@ touch "$ALIASES_FILE" 2>/dev/null || true
 
 [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
 [[ -f "$KEYS_FILE"   ]] && source "$KEYS_FILE"
+
+# ── v3.1.0: Source modular lib files if available ─────────────────────────────
+_AI_LIB="${AI_CLI_LIB:-$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/lib}"
+[[ ! -d "$_AI_LIB" ]] && _AI_LIB="/usr/share/ai-cli/lib"
+[[ ! -d "$_AI_LIB" ]] && _AI_LIB="/usr/local/share/ai-cli/lib"
+if [[ -d "$_AI_LIB" ]]; then
+  for _mod in "$_AI_LIB"/*.sh; do
+    [[ -f "$_mod" ]] && source "$_mod"
+  done
+fi
 
 # Runtime vars
 ACTIVE_MODEL="${ACTIVE_MODEL:-}"
