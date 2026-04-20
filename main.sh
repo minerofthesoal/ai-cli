@@ -14182,7 +14182,7 @@ ${_mem_ctx}
 
 ${_ask_prompt}"
       fi
-      dispatch_ask "$_ask_prompt" ;;
+      dispatch_ask "$_ask_prompt" || true ;;
 
     ask-web|askweb|aw|ask-w)
       local _aw_mem=0 _aw_args=()
@@ -14235,7 +14235,7 @@ Known facts: ${_aw_context}}
 
 Question: ${_aw_prompt}"
       fi
-      dispatch_ask "$_aw_prompt" ;;
+      dispatch_ask "$_aw_prompt" || true ;;
 
     ask-think|think|ask-t)
       local _at_prompt="$*"
@@ -14276,7 +14276,7 @@ ${_atw_results:-No results found}
 Question: ${_atw_prompt}
 
 Lets reason through this step by step:"
-      dispatch_ask "$_atw_full" ;;
+      dispatch_ask "$_atw_full" || true ;;
 
     # ── ask-n: use all CPU cores for faster local inference ──────────
     ask-n|a-n)
@@ -14298,7 +14298,7 @@ Lets reason through this step by step:"
         fi
       fi
       info "CPU mode — $THREADS cores"
-      dispatch_ask "$_an_prompt"
+      dispatch_ask "$_an_prompt" || true
       THREADS="$_old_threads"; GPU_LAYERS="$_old_gpu" ;;
 
     # ── ask-n with web: all CPU + web search ─────────────────────────
