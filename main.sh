@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.1.6.1"
+VERSION="3.1.6.2"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -19184,13 +19184,7 @@ CHAT_HTML = """<!DOCTYPE html><html><head><title>AI CLI Chat</title>
 button{background:#89b4fa;color:#1e1e2e;border:none;padding:10px 18px;border-radius:6px;cursor:pointer;font-weight:600}
 h3{padding:10px 16px;background:#181825;border-bottom:1px solid #313244;color:#89b4fa}</style></head>
 <body><h3>AI CLI Chat</h3><div id="m"></div><div id="b"><textarea id="p" rows="1" placeholder="Message..."></textarea><button onclick="S()">Send</button></div>
-<script>const m=document.getElementById("m"),p=document.getElementById("p");
-function A(r,t){const d=document.createElement("div");d.className=r;d.textContent=t;m.appendChild(d);m.scrollTop=m.scrollHeight}
-let chatHistory=[];
-async function S(){const t=p.value.trim();if(!t)return;p.value="";A("u",t);chatHistory.push({role:"user",content:t});
-try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},
-body:JSON.stringify({messages:[{role:"user",content:t}]})});const d=await r.json();
-A("a",d.choices?.[0]?.message?.content||"No response")}catch(e){A("a","Error: "+e.message)}}
+<script>const m=document.getElementById("m"),p=document.getElementById("p"); function A(r,t){const d=document.createElement("div");d.className=r;d.textContent=t;m.appendChild(d);m.scrollTop=m.scrollHeight} let chatHistory=[]; async function S(){const t=p.value.trim();if(!t)return;p.value="";A("u",t);chatHistory.push({role:"user",content:t}); try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"}, body:JSON.stringify({messages:[{role:"user",content:t}]})});const d=await r.json(); A("a",d.choices?.[0]?.message?.content||"No response")}catch(e){A("a","Error: "+e.message)}}
 p.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();S()}})</script></body></html>"""
 
 DASH_HTML = """<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI CLI Dashboard</title>
@@ -19227,18 +19221,7 @@ h3{color:#89b4fa;margin-bottom:10px}.g{display:grid;grid-template-columns:repeat
 <button class="b" onclick="tlogin()" style="margin-top:8px">Unlock</button></div>
 <div id="tterm" style="display:none"><div id="tout" class="o" style="min-height:300px;background:#0d0d0d;color:#00ff41;font-family:monospace"></div>
 <div style="display:flex;gap:8px;margin-top:8px"><span style="color:#00ff41;padding:10px">$</span><input type="text" id="tcmd" placeholder="Type a command..." style="font-family:monospace" onkeydown="if(event.key==='Enter')texec()"><button class="b" onclick="texec()">Run</button></div></div></div>
-<script>
-function switchTab(b,i){document.querySelectorAll(".p").forEach((p,j)=>{p.classList.toggle("a",j===i)});document.querySelectorAll("nav .nb").forEach(n=>n.classList.remove("a"));b.classList.add("a")}
-let chatHistory=[];
-function am(c,t){const d=document.createElement("div");d.className="cm c"+c;d.textContent=t;document.getElementById("ms").appendChild(d);document.getElementById("ms").scrollTop=9e9}
-async function sc(){const p=document.getElementById("pr");const t=p.value.trim();if(!t)return;p.value="";am("u",t);chatHistory.push({role:"user",content:t});try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:chatHistory})});const d=await r.json();const reply=d.choices[0].message.content;chatHistory.push({role:"assistant",content:reply});am("a",reply)}catch(e){am("a","Error: "+e.message)}}
-async function rc(c){const o=document.querySelector(".p.a .o");if(o)o.textContent="Running...";try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:[{role:"user",content:"/cmd "+c}]})});const d=await r.json();if(o)o.textContent=d.choices?.[0]?.message?.content||"Done"}catch(e){if(o)o.textContent="Error: "+e.message}}
-document.getElementById("pr").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sc()}})
-let _tauth=false;
-async function tlogin(){const pw=document.getElementById("tpw").value;try{const r=await fetch("/v3/terminal/auth",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});const d=await r.json();if(d.ok){_tauth=true;document.getElementById("tauth").style.display="none";document.getElementById("tterm").style.display="block";tadd("Terminal unlocked. Type any command.")}else{alert("Wrong password")}}catch(e){alert("Error: "+e.message)}}
-function tadd(t){const o=document.getElementById("tout");o.textContent+=t+"\n";o.scrollTop=o.scrollHeight}
-async function texec(){if(!_tauth)return;const c=document.getElementById("tcmd");const cmd=c.value.trim();if(!cmd)return;c.value="";tadd("$ "+cmd);try{const r=await fetch("/v3/terminal/exec",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cmd:cmd,password:document.getElementById("tpw").value})});const d=await r.json();tadd(d.output||d.error||"Done")}catch(e){tadd("Error: "+e.message)}}
-</script></body></html>"""
+<script> function switchTab(b,i){document.querySelectorAll(".p").forEach((p,j)=>{p.classList.toggle("a",j===i)});document.querySelectorAll("nav .nb").forEach(n=>n.classList.remove("a"));b.classList.add("a")} let chatHistory=[]; function am(c,t){const d=document.createElement("div");d.className="cm c"+c;d.textContent=t;document.getElementById("ms").appendChild(d);document.getElementById("ms").scrollTop=9e9} async function sc(){const p=document.getElementById("pr");const t=p.value.trim();if(!t)return;p.value="";am("u",t);chatHistory.push({role:"user",content:t});try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:chatHistory})});const d=await r.json();const reply=d.choices[0].message.content;chatHistory.push({role:"assistant",content:reply});am("a",reply)}catch(e){am("a","Error: "+e.message)}} async function rc(c){const o=document.querySelector(".p.a .o");if(o)o.textContent="Running...";try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:[{role:"user",content:"/cmd "+c}]})});const d=await r.json();if(o)o.textContent=d.choices?.[0]?.message?.content||"Done"}catch(e){if(o)o.textContent="Error: "+e.message}} document.getElementById("pr").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sc()}}) let _tauth=false; async function tlogin(){const pw=document.getElementById("tpw").value;try{const r=await fetch("/v3/terminal/auth",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});const d=await r.json();if(d.ok){_tauth=true;document.getElementById("tauth").style.display="none";document.getElementById("tterm").style.display="block";tadd("Terminal unlocked. Type any command.")}else{alert("Wrong password")}}catch(e){alert("Error: "+e.message)}} function tadd(t){const o=document.getElementById("tout");o.textContent+=t+"\n";o.scrollTop=o.scrollHeight} async function texec(){if(!_tauth)return;const c=document.getElementById("tcmd");const cmd=c.value.trim();if(!cmd)return;c.value="";tadd("$ "+cmd);try{const r=await fetch("/v3/terminal/exec",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cmd:cmd,password:document.getElementById("tpw").value})});const d=await r.json();tadd(d.output||d.error||"Done")}catch(e){tadd("Error: "+e.message)}} </script></body></html>"""
 
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
