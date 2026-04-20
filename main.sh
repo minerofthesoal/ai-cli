@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.1.5.1"
+VERSION="3.1.5.2"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -19427,7 +19427,7 @@ cmd_api_v3() {
       local _api_script; _api_script=$(mktemp /tmp/ai_api_XXXX.py)
       local _cli_bin; _cli_bin=$(command -v ai 2>/dev/null || echo "$0")
       cat > "$_api_script" << 'APIPY'
-import http.server, json, os, subprocess, sys, secrets, re
+import http.server, json, os, subprocess, sys, secrets
 
 CLI = os.environ.get("AI_CLI_BIN", "ai")
 HOST = os.environ.get("API_HOST", "0.0.0.0")
@@ -19435,7 +19435,17 @@ PORT = int(os.environ.get("API_PORT", "8080"))
 MODEL = os.environ.get("AI_MODEL", "auto")
 
 def strip_ansi(s):
-    return re.sub(r'\x1b\[[0-9;]*m', '', s)
+    out = ""
+    i = 0
+    while i < len(s):
+        if s[i] == '\x1b' and i+1 < len(s) and s[i+1] == '[':
+            while i < len(s) and s[i] != 'm':
+                i += 1
+            i += 1
+        else:
+            out += s[i]
+            i += 1
+    return out
 
 def ai_ask(prompt):
     try:
