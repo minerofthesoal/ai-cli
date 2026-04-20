@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.1.5.5"
+VERSION="3.1.5.6"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -19126,7 +19126,7 @@ h3{padding:10px 16px;background:#181825;border-bottom:1px solid #313244;color:#8
 function A(r,t){const d=document.createElement("div");d.className=r;d.textContent=t;m.appendChild(d);m.scrollTop=m.scrollHeight}
 async function S(){const t=p.value.trim();if(!t)return;p.value="";A("u",t);
 try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},
-body:JSON.stringify({messages:[{role:"user",content:t}]})});const d=await r.json();
+body:JSON.stringify({messages:chatHistory})}));const d=await r.json();
 A("a",d.choices?.[0]?.message?.content||"No response")}catch(e){A("a","Error: "+e.message)}}
 p.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();S()}})</script></body></html>"""
 
@@ -19144,11 +19144,11 @@ h3{color:#89b4fa;margin-bottom:10px}.g{display:grid;grid-template-columns:repeat
 .cm{margin:8px 0;padding:10px;border-radius:8px}.cu{background:#313244;margin-left:40px}.ca{background:#181825;border:1px solid #313244;margin-right:40px}
 </style></head><body>
 <nav><h2>AI CLI Dashboard</h2>
-<button class="nb a" onclick="sh(this,0)">Chat</button>
-<button class="nb" onclick="sh(this,1)">Models</button>
-<button class="nb" onclick="sh(this,2)">Settings</button>
-<button class="nb" onclick="sh(this,3)">Tools</button>
-<button class="nb" onclick="sh(this,4)">Terminal</button></nav>
+<button class="nb a" onclick="switchTab(this,0)">Chat</button>
+<button class="nb" onclick="switchTab(this,1)">Models</button>
+<button class="nb" onclick="switchTab(this,2)">Settings</button>
+<button class="nb" onclick="switchTab(this,3)">Tools</button>
+<button class="nb" onclick="switchTab(this,4)">Terminal</button></nav>
 <div id="p0" class="p a"><h3>Chat</h3><div id="ms" class="o" style="min-height:200px"></div>
 <div style="display:flex;gap:8px;margin-top:8px"><textarea id="pr" rows="2" placeholder="Message..."></textarea><button class="b" onclick="sc()">Send</button></div></div>
 <div id="p1" class="p"><h3>Models</h3><button class="b bs" onclick="rc('models')">Refresh</button> <button class="b bs" onclick="rc('recommended')">Browse All</button><div id="mo" class="o">Click Refresh</div></div>
@@ -19165,9 +19165,10 @@ h3{color:#89b4fa;margin-bottom:10px}.g{display:grid;grid-template-columns:repeat
 <div id="tterm" style="display:none"><div id="tout" class="o" style="min-height:300px;background:#0d0d0d;color:#00ff41;font-family:monospace"></div>
 <div style="display:flex;gap:8px;margin-top:8px"><span style="color:#00ff41;padding:10px">$</span><input type="text" id="tcmd" placeholder="Type a command..." style="font-family:monospace" onkeydown="if(event.key==='Enter')texec()"><button class="b" onclick="texec()">Run</button></div></div></div>
 <script>
-function sh(b,i){document.querySelectorAll(".p").forEach((p,j)=>{p.classList.toggle("a",j===i)});document.querySelectorAll("nav .nb").forEach(n=>n.classList.remove("a"));b.classList.add("a")}
+function switchTab(b,i){document.querySelectorAll(".p").forEach((p,j)=>{p.classList.toggle("a",j===i)});document.querySelectorAll("nav .nb").forEach(n=>n.classList.remove("a"));b.classList.add("a")}
+let chatHistory=[];
 function am(c,t){const d=document.createElement("div");d.className="cm c"+c;d.textContent=t;document.getElementById("ms").appendChild(d);document.getElementById("ms").scrollTop=9e9}
-async function sc(){const p=document.getElementById("pr");const t=p.value.trim();if(!t)return;p.value="";am("u",t);try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:[{role:"user",content:t}]})});const d=await r.json();am("a",d.choices?.[0]?.message?.content||"No response")}catch(e){am("a","Error: "+e.message)}}
+async function sc(){const p=document.getElementById("pr");const t=p.value.trim();if(!t)return;p.value="";am("u",t);chatHistory.push({role:"user",content:t});try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:chatHistory})}));const d=await r.json();const _reply=d.choices?.[0]?.message?.content||"No response";chatHistory.push({role:"assistant",content:_reply});am("a",_reply?.[0]?.message?.content||"No response")}catch(e){am("a","Error: "+e.message)}}
 async function rc(c){const o=document.querySelector(".p.a .o");if(o)o.textContent="Running...";try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:[{role:"user",content:"/cmd "+c}]})});const d=await r.json();if(o)o.textContent=d.choices?.[0]?.message?.content||"Done"}catch(e){if(o)o.textContent="Error: "+e.message}}
 document.getElementById("pr").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sc()}})
 let _tauth=false;
