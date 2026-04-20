@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.1.7.1"
+VERSION="3.1.7.2"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -14159,7 +14159,7 @@ main() {
       chmod 600 "$CONFIG_DIR/.api_terminal_pw"
       ok "API terminal password set (${#_pw} chars)"
       ;;
-    -C|--config-set)
+    -Cf|--config-set)
       local _key="${1:-}" _val="${2:-}"
       case "$_key" in
         u-gpu|use-gpu)
@@ -19249,10 +19249,10 @@ def get_dash_html():
     html += "<input type=text id=tcmd placeholder=Command... style=font-family:monospace>"
     html += "<button class=b onclick=texec()>Run</button></div></div></div>"
     js += "var _ta=false;"
-    js += "function tlogin(){var pw=document.getElementById(\\"tpw\\").value;fetch(\\"/v3/terminal/auth\\",{method:\\"POST\\",headers:{\\"Content-Type\\":\\"application/json\\"},body:JSON.stringify({password:pw})}).then(function(r){return r.json()}).then(function(d){if(d.ok){_ta=true;document.getElementById(\\"tauth\\").style.display=\\"none\\";document.getElementById(\\"tterm\\").style.display=\\"block\\";tadd(\\"Terminal unlocked.\\")}else{alert(\\"Wrong password\\")}}).catch(function(e){alert(\\"Error: \\"+e.message)})}"
-    js += "function tadd(t){var o=document.getElementById(\\"tout\\");o.textContent+=t+String.fromCharCode(10);o.scrollTop=o.scrollHeight}"
-    js += "function texec(){if(!_ta)return;var c=document.getElementById(\\"tcmd\\");var cmd=c.value;if(!cmd)return;c.value=\\"\\";tadd(\\"$ \\"+cmd);fetch(\\"/v3/terminal/exec\\",{method:\\"POST\\",headers:{\\"Content-Type\\":\\"application/json\\"},body:JSON.stringify({cmd:cmd,password:document.getElementById(\\"tpw\\").value})}).then(function(r){return r.json()}).then(function(d){tadd(d.output||d.error||\\"Done\\")}).catch(function(e){tadd(\\"Error: \\"+e.message)})}"
-    js += "document.getElementById(\\"tcmd\\").addEventListener(\\"keydown\\",function(e){if(e.key===\\"Enter\\")texec()});"
+    js += "function tlogin(){var pw=document.getElementById(\"tpw\").value;fetch(\"/v3/terminal/auth\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify({password:pw})}).then(function(r){return r.json()}).then(function(d){if(d.ok){_ta=true;document.getElementById(\"tauth\").style.display=\"none\";document.getElementById(\"tterm\").style.display=\"block\";tadd(\"Terminal unlocked.\")}else{alert(\"Wrong password\")}}).catch(function(e){alert(\"Error: \"+e.message)})}"
+    js += "function tadd(t){var o=document.getElementById(\"tout\");o.textContent+=t+String.fromCharCode(10);o.scrollTop=o.scrollHeight}"
+    js += "function texec(){if(!_ta)return;var c=document.getElementById(\"tcmd\");var cmd=c.value;if(!cmd)return;c.value=\"\";tadd(\"$ \"+cmd);fetch(\"/v3/terminal/exec\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify({cmd:cmd,password:document.getElementById(\"tpw\").value})}).then(function(r){return r.json()}).then(function(d){tadd(d.output||d.error||\"Done\")}).catch(function(e){tadd(\"Error: \"+e.message)})}"
+    js += "document.getElementById(\"tcmd\").addEventListener(\"keydown\",function(e){if(e.key===\"Enter\")texec()});"
     html += "<script>" + js + "</script></body></html>"
     return html
 
