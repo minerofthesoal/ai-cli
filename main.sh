@@ -19186,7 +19186,8 @@ h3{padding:10px 16px;background:#181825;border-bottom:1px solid #313244;color:#8
 <body><h3>AI CLI Chat</h3><div id="m"></div><div id="b"><textarea id="p" rows="1" placeholder="Message..."></textarea><button onclick="S()">Send</button></div>
 <script>const m=document.getElementById("m"),p=document.getElementById("p");
 function A(r,t){const d=document.createElement("div");d.className=r;d.textContent=t;m.appendChild(d);m.scrollTop=m.scrollHeight}
-async function S(){const t=p.value.trim();if(!t)return;p.value="";A("u",t);
+let chatHistory=[];
+async function S(){const t=p.value.trim();if(!t)return;p.value="";A("u",t);chatHistory.push({role:"user",content:t});
 try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},
 body:JSON.stringify({messages:[{role:"user",content:t}]})});const d=await r.json();
 A("a",d.choices?.[0]?.message?.content||"No response")}catch(e){A("a","Error: "+e.message)}}
