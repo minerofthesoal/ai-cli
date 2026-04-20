@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.1.6.4"
+VERSION="3.1.7"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -14159,6 +14159,23 @@ main() {
       chmod 600 "$CONFIG_DIR/.api_terminal_pw"
       ok "API terminal password set (${#_pw} chars)"
       ;;
+    -C|--config-set)
+      local _key="${1:-}" _val="${2:-}"
+      case "$_key" in
+        u-gpu|use-gpu)
+          if [[ "$_val" == "0" || "$_val" == "false" ]]; then
+            GPU_LAYERS=0; CPU_ONLY_MODE=1; save_config; ok "GPU disabled"
+          elif [[ "$_val" == "1" || "$_val" == "true" ]]; then
+            GPU_LAYERS=-1; CPU_ONLY_MODE=0; save_config; ok "GPU enabled"
+          else
+            info "GPU: $GPU_LAYERS | CPU-only: $CPU_ONLY_MODE"
+          fi ;;
+        threads) THREADS="${_val:-$THREADS}"; save_config; ok "Threads: $THREADS" ;;
+        temp) TEMPERATURE="${_val:-$TEMPERATURE}"; save_config; ok "Temp: $TEMPERATURE" ;;
+        tokens) MAX_TOKENS="${_val:-$MAX_TOKENS}"; save_config; ok "Tokens: $MAX_TOKENS" ;;
+        context) CONTEXT_SIZE="${_val:-$CONTEXT_SIZE}"; save_config; ok "Context: $CONTEXT_SIZE" ;;
+        *) echo "Usage: ai -C set KEY VALUE"; echo "  u-gpu 0/1  threads N  temp N  tokens N  context N" ;;
+      esac ;;
     -L|--latest)
       cmd_change latest ;;
     change|changelog|changes)
@@ -19192,41 +19209,37 @@ h3{padding:10px 16px;background:#181825;border-bottom:1px solid #313244;color:#8
 <script>const m=document.getElementById("m"),p=document.getElementById("p"); function A(r,t){const d=document.createElement("div");d.className=r;d.textContent=t;m.appendChild(d);m.scrollTop=m.scrollHeight} let chatHistory=[]; async function S(){const t=p.value.trim();if(!t)return;p.value="";A("u",t);chatHistory.push({role:"user",content:t}); try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"}, body:JSON.stringify({messages:[{role:"user",content:t}]})});const d=await r.json(); A("a",d.choices?.[0]?.message?.content||"No response")}catch(e){A("a","Error: "+e.message)}}
 p.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();S()}})</script></body></html>"""
 
-DASH_HTML = """<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI CLI Dashboard</title>
-<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;min-height:100vh}
-nav{background:#181825;padding:12px 20px;display:flex;gap:12px;border-bottom:1px solid #313244;align-items:center;flex-wrap:wrap}
-nav h2{color:#89b4fa;margin-right:auto}.p{display:none;padding:20px;max-width:900px;margin:0 auto}.p.a{display:block}
-textarea,input[type=text]{background:#313244;border:1px solid #45475a;color:#cdd6f4;padding:10px;border-radius:6px;font-family:monospace;font-size:14px;width:100%}
-.b{background:#89b4fa;color:#1e1e2e;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-weight:600;margin:4px}
-.b:hover{background:#74c7ec}.bs{padding:6px 12px;font-size:12px}
-.o{background:#181825;border:1px solid #313244;border-radius:8px;padding:16px;margin:10px 0;white-space:pre-wrap;max-height:400px;overflow-y:auto;font-family:monospace;font-size:13px}
-h3{color:#89b4fa;margin-bottom:10px}.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
-.nb{background:#313244;color:#cdd6f4;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px}
-.nb:hover{background:#45475a}.nb.a{background:#89b4fa;color:#1e1e2e}
-.cm{margin:8px 0;padding:10px;border-radius:8px}.cu{background:#313244;margin-left:40px}.ca{background:#181825;border:1px solid #313244;margin-right:40px}
-</style></head><body>
-<nav><h2>AI CLI Dashboard</h2>
-<button class="nb a" onclick="switchTab(this,0)">Chat</button>
-<button class="nb" onclick="switchTab(this,1)">Models</button>
-<button class="nb" onclick="switchTab(this,2)">Settings</button>
-<button class="nb" onclick="switchTab(this,3)">Tools</button>
-<button class="nb" onclick="switchTab(this,4)">Terminal</button></nav>
-<div id="p0" class="p a"><h3>Chat</h3><div id="ms" class="o" style="min-height:200px"></div>
-<div style="display:flex;gap:8px;margin-top:8px"><textarea id="pr" rows="2" placeholder="Message..."></textarea><button class="b" onclick="sc()">Send</button></div></div>
-<div id="p1" class="p"><h3>Models</h3><button class="b bs" onclick="rc('models')">Refresh</button> <button class="b bs" onclick="rc('recommended')">Browse All</button><div id="mo" class="o">Click Refresh</div></div>
-<div id="p2" class="p"><h3>Settings</h3><button class="b bs" onclick="rc('status')">Status</button> <button class="b bs" onclick="rc('health')">Health</button> <button class="b bs" onclick="rc('sysinfo')">System Info</button><div id="so" class="o">Click a button</div></div>
-<div id="p3" class="p"><h3>Tools</h3><div class="g">
-<button class="b bs" onclick="rc('test -S')">Speed</button><button class="b bs" onclick="rc('test -N')">Network</button>
-<button class="b bs" onclick="rc('analytics')">Analytics</button><button class="b bs" onclick="rc('security')">Security</button>
-<button class="b bs" onclick="rc('memory list')">Memory</button><button class="b bs" onclick="rc('snap list')">Snapshots</button>
-</div><div id="to" class="o" style="margin-top:12px"></div></div>
-<div id="p4" class="p"><h3>Terminal (Protected)</h3>
-<div id="tauth" style="text-align:center;padding:40px"><p style="color:#6c7086;margin-bottom:12px">Enter terminal password</p>
-<input type="password" id="tpw" placeholder="Password" style="max-width:200px;text-align:center" maxlength="8">
-<button class="b" onclick="tlogin()" style="margin-top:8px">Unlock</button></div>
-<div id="tterm" style="display:none"><div id="tout" class="o" style="min-height:300px;background:#0d0d0d;color:#00ff41;font-family:monospace"></div>
-<div style="display:flex;gap:8px;margin-top:8px"><span style="color:#00ff41;padding:10px">$</span><input type="text" id="tcmd" placeholder="Type a command..." style="font-family:monospace" onkeydown="if(event.key==='Enter')texec()"><button class="b" onclick="texec()">Run</button></div></div></div>
-<script> function switchTab(b,i){document.querySelectorAll(".p").forEach((p,j)=>{p.classList.toggle("a",j===i)});document.querySelectorAll("nav .nb").forEach(n=>n.classList.remove("a"));b.classList.add("a")} let chatHistory=[]; function am(c,t){const d=document.createElement("div");d.className="cm c"+c;d.textContent=t;document.getElementById("ms").appendChild(d);document.getElementById("ms").scrollTop=9e9} async function sc(){const p=document.getElementById("pr");const t=p.value.trim();if(!t)return;p.value="";am("u",t);chatHistory.push({role:"user",content:t});try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:chatHistory})});const d=await r.json();const reply=d.choices?.[0]?.message?.content||"No response";chatHistory.push({role:"assistant",content:reply});am("a",reply)}catch(e){am("a","Error: "+e.message)}} async function rc(c){const o=document.querySelector(".p.a .o");if(o)o.textContent="Running...";try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:[{role:"user",content:"/cmd "+c}]})});const d=await r.json();if(o)o.textContent=d.choices?.[0]?.message?.content||"Done"}catch(e){if(o)o.textContent="Error: "+e.message}} document.getElementById("pr").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sc()}}) let _tauth=false; async function tlogin(){const pw=document.getElementById("tpw").value;try{const r=await fetch("/v3/terminal/auth",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});const d=await r.json();if(d.ok){_tauth=true;document.getElementById("tauth").style.display="none";document.getElementById("tterm").style.display="block";tadd("Terminal unlocked. Type any command.")}else{alert("Wrong password")}}catch(e){alert("Error: "+e.message)}} function tadd(t){const o=document.getElementById("tout");o.textContent+=t+String.fromCharCode(10);o.scrollTop=o.scrollHeight} async function texec(){if(!_tauth)return;const c=document.getElementById("tcmd");const cmd=c.value.trim();if(!cmd)return;c.value="";tadd("$ "+cmd);try{const r=await fetch("/v3/terminal/exec",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cmd:cmd,password:document.getElementById("tpw").value})});const d=await r.json();tadd(d.output||d.error||"Done")}catch(e){tadd("Error: "+e.message)}} </script></body></html>"""
+def get_dash_html():
+    js = "function switchTab(b,i){var ps=document.querySelectorAll(\".p\");for(var j=0;j<ps.length;j++){ps[j].style.display=j===i?\"block\":\"none\"}var bs=document.querySelectorAll(\"nav .nb\");for(var k=0;k<bs.length;k++){bs[k].className=\"nb\"}b.className=\"nb a\"}"
+    js += "var chatH=[];"
+    js += "function am(c,t){var d=document.createElement(\"div\");d.className=\"cm \"+c;d.textContent=t;var ms=document.getElementById(\"ms\");ms.appendChild(d);ms.scrollTop=ms.scrollHeight}"
+    js += "function sc(){var p=document.getElementById(\"pr\");var t=p.value;if(!t)return;p.value=\"\";am(\"cu\",t);chatH.push({role:\"user\",content:t});fetch(\"/v1/chat/completions\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify({messages:chatH})}).then(function(r){return r.json()}).then(function(d){var reply=d.choices&&d.choices[0]&&d.choices[0].message?d.choices[0].message.content:\"No response\";chatH.push({role:\"assistant\",content:reply});am(\"ca\",reply)}).catch(function(e){am(\"ca\",\"Error: \"+e.message)})}"
+    js += "function rc(c){var o=document.querySelector(\".p[style*=block] .o\");if(!o)o=document.querySelector(\".o\");if(o)o.textContent=\"Running...\";fetch(\"/v1/chat/completions\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify({messages:[{role:\"user\",content:\"/cmd \"+c}]})}).then(function(r){return r.json()}).then(function(d){if(o)o.textContent=d.choices&&d.choices[0]?d.choices[0].message.content:\"Done\"}).catch(function(e){if(o)o.textContent=\"Error: \"+e.message})}"
+    css = "*{box-sizing:border-box;margin:0;padding:0}body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;min-height:100vh}nav{background:#181825;padding:12px 20px;display:flex;gap:12px;border-bottom:1px solid #313244;align-items:center;flex-wrap:wrap}nav h2{color:#89b4fa;margin-right:auto}.nb{background:#313244;color:#cdd6f4;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px}.nb:hover{background:#45475a}.nb.a{background:#89b4fa;color:#1e1e2e}.p{display:none;padding:20px;max-width:900px;margin:0 auto}textarea,input[type=text]{background:#313244;border:1px solid #45475a;color:#cdd6f4;padding:10px;border-radius:6px;font-family:monospace;font-size:14px;width:100%}.b{background:#89b4fa;color:#1e1e2e;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-weight:600;margin:4px}.b:hover{background:#74c7ec}.bs{padding:6px 12px;font-size:12px}.o{background:#181825;border:1px solid #313244;border-radius:8px;padding:16px;margin:10px 0;white-space:pre-wrap;max-height:400px;overflow-y:auto;font-family:monospace;font-size:13px}h3{color:#89b4fa;margin-bottom:10px}.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}.cm{margin:8px 0;padding:10px;border-radius:8px}.cu{background:#313244;margin-left:40px}.ca{background:#181825;border:1px solid #313244;margin-right:40px}"
+    html = "<!DOCTYPE html><html><head><meta charset=utf-8><title>AI CLI Dashboard</title><style>" + css + "</style></head><body>"
+    html += "<nav><h2>AI CLI Dashboard</h2>"
+    html += "<button class=\"nb a\" onclick=\"switchTab(this,0)\">Chat</button>"
+    html += "<button class=nb onclick=\"switchTab(this,1)\">Models</button>"
+    html += "<button class=nb onclick=\"switchTab(this,2)\">Settings</button>"
+    html += "<button class=nb onclick=\"switchTab(this,3)\">Tools</button></nav>"
+    html += "<div id=p0 class=p style=display:block><h3>Chat</h3><div id=ms class=o style=min-height:200px></div>"
+    html += "<div style=display:flex;gap:8px;margin-top:8px><textarea id=pr rows=2 placeholder=Message...></textarea>"
+    html += "<button class=b onclick=sc()>Send</button></div></div>"
+    html += "<div id=p1 class=p><h3>Models</h3><button class=\"b bs\" onclick=\"rc(\x27models\x27)\">Refresh</button> "
+    html += "<button class=\"b bs\" onclick=\"rc(\x27recommended\x27)\">Browse All</button><div class=o>Click Refresh</div></div>"
+    html += "<div id=p2 class=p><h3>Settings</h3><button class=\"b bs\" onclick=\"rc(\x27status\x27)\">Status</button> "
+    html += "<button class=\"b bs\" onclick=\"rc(\x27health\x27)\">Health</button> "
+    html += "<button class=\"b bs\" onclick=\"rc(\x27sysinfo\x27)\">System Info</button><div class=o>Click a button</div></div>"
+    html += "<div id=p3 class=p><h3>Tools</h3><div class=g>"
+    html += "<button class=\"b bs\" onclick=\"rc(\x27test -S\x27)\">Speed</button>"
+    html += "<button class=\"b bs\" onclick=\"rc(\x27test -N\x27)\">Network</button>"
+    html += "<button class=\"b bs\" onclick=\"rc(\x27analytics\x27)\">Analytics</button>"
+    html += "<button class=\"b bs\" onclick=\"rc(\x27security\x27)\">Security</button>"
+    html += "</div><div class=o></div></div>"
+    html += "<script>" + js + "</script></body></html>"
+    return html
+
+DASH_HTML = get_dash_html()
 
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
