@@ -1,5 +1,7 @@
 #!/bin/bash
 set -e
+# Remove old lib/ files that conflict with embedded modules
+rm -rf /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib 2>/dev/null || true
 mkdir -p "$HOME/.config/ai-cli" 2>/dev/null || true
 if [[ ! -f "$HOME/.config/ai-cli/keys.env" ]]; then
     cat > "$HOME/.config/ai-cli/keys.env" << 'EOF'
