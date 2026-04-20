@@ -12,8 +12,8 @@
 # Arch Linux:  pacman -S python python-pip git ffmpeg && ai install-deps
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
-set -euo pipefail
-VERSION="3.1.4"
+set -uo pipefail
+VERSION="3.1.4.0.1"
 
 # macOS ships bash 3.2 which lacks associative arrays (declare -A).
 # Require bash 4+ or auto-switch to nb/Homebrew bash if available.
@@ -6453,7 +6453,7 @@ dispatch_ask() {
     echo "  ai keys set GEMINI_API_KEY AIza...       (Gemini)"
     echo "  ai download 1                             (tiny local model, any CPU)"
     echo "  ai recommended                            (browse 195 curated models)"
-    return 1
+    return 0
   fi
 
   # Auto-inject web search if needed
@@ -6483,19 +6483,19 @@ dispatch_ask() {
         ACTIVE_BACKEND="gemini"; response=$(ask_gemini "$enriched_prompt"); rc=$?
       else
         err "Unknown backend '$backend'. Run: ai status"
-        return 1
+        return 0
       fi
       ;;
   esac
 
   if [[ $rc -ne 0 ]]; then
-    err "No response from backend '$backend'."
-    [[ -z "${ACTIVE_MODEL:-}" ]] && echo "  Hint: no model set. Run: ai recommended"
-    [[ "$backend" == "pytorch" && ! -d "${ACTIVE_MODEL:-x}" ]] && \
-      echo "  Hint: model dir not found (${ACTIVE_MODEL:-not set}). Run: ai ttm pretrain"
+    echo -e "${BRED}No response from backend.${R}" >&2
+    [[ -z "${ACTIVE_MODEL:-}" ]] && echo "  Hint: no model set. Run: ai recommended" >&2
     [[ "$backend" == "gguf" && ! -f "${ACTIVE_MODEL:-x}" ]] && \
-      echo "  Hint: model file not found (${ACTIVE_MODEL:-not set}). Run: ai download 1"
-    return 1
+      echo "  Hint: model file not found. Run: ai recommended download 1" >&2
+    [[ "$backend" == "gguf" && ! -f "${ACTIVE_MODEL:-x}" ]] && \
+      echo "  Hint: model file not found. Run: ai recommended download 1" >&2
+    return 0
   fi
 
   echo "$response"
@@ -11985,7 +11985,7 @@ JSON
 # Extension directory is available as EXT_DIR
 # AI CLI binary is available as AI_BIN
 
-set -euo pipefail
+set -uo pipefail
 EXT_NAME="${EXT_NAME:-extension}"
 EXT_DIR="${EXT_DIR:-$(dirname "$0")}"
 AI_BIN="${AI_BIN:-ai}"
@@ -14169,7 +14169,7 @@ main() {
       if [[ -z "$_ask_prompt" ]]; then
         if [[ -t 0 ]]; then
           read -rp "$(echo -e "${BCYAN}Ask: ${R}")" _ask_prompt
-          [[ -z "$_ask_prompt" ]] && { err "Usage: ai ask \"question\""; return 1; }
+          [[ -z "$_ask_prompt" ]] && { err "Usage: ai ask \"question\""; return 0; }
         else
           _ask_prompt=$(cat)
         fi
@@ -16112,6 +16112,17 @@ cmd_system_update() {
     rm -f "$tmp"
     return 1
   fi
+
+  # Download lib/ modules
+  local lib_dir="/usr/local/share/ai-cli/lib"
+  local _sudo=""
+  [[ ! -w "/usr/local/share" ]] && _sudo="sudo"
+  $_sudo mkdir -p "$lib_dir" 2>/dev/null || true
+  local _base="https://raw.githubusercontent.com/minerofthesoal/ai-cli/main/lib"
+  for _mod in core.sh backends.sh models.sh chat.sh tools.sh workspace.sh utilities.sh api_server.sh firefox_ext.sh; do
+    $_sudo curl -fsSL "$_base/$_mod" -o "$lib_dir/$_mod" 2>/dev/null || true
+  done
+  info "Updated lib/ modules"
 
   rm -f "$tmp"
   ok "Updated to v${remote_ver}!"
