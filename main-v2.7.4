@@ -338,6 +338,7 @@ PAPERS_CITATION_FORMAT="${PAPERS_CITATION_FORMAT}"
 MULTIMODAL_VL_MODEL="${MULTIMODAL_VL_MODEL}"
 MULTIMODAL_T2I_MODEL="${MULTIMODAL_T2I_MODEL}"
 CUSTOM_SYSTEM_PROMPT="${CUSTOM_SYSTEM_PROMPT}"
+USE_GPU="${USE_GPU:-1}"
 CONF
 }
 
@@ -591,10 +592,17 @@ MULTIAI_RLHF_TRAIN="${MULTIAI_RLHF_TRAIN:-0}"       # auto-train on rated exchan
 
 # v2.4: CPU-only mode (auto-set on Windows or when no GPU found)
 # v2.6: Fixed — sm_61 (Pascal GTX 10xx) and Metal correctly detected as GPU
+# v2.7.4: USE_GPU=0 lets the user hard-disable GPU regardless of detection
+USE_GPU="${USE_GPU:-1}"
 CPU_ONLY_MODE="${CPU_ONLY_MODE:-0}"
 [[ $IS_WINDOWS -eq 1 ]] && CPU_ONLY_MODE=1
 # Only force CPU mode if CUDA_ARCH is truly 0 (no GPU whatsoever)
 [[ "${CUDA_ARCH:-0}" == "0" ]] && CPU_ONLY_MODE=1
+# v2.7.4: Honour explicit USE_GPU=0 — overrides GPU detection
+if [[ "${USE_GPU:-1}" == "0" ]]; then
+  CPU_ONLY_MODE=1
+  GPU_LAYERS=0
+fi
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  GENERALIZED TRAINED MODEL ENGINE
@@ -9152,6 +9160,29 @@ cmd_config() {
     api_share_port)          API_SHARE_PORT="$val"; save_config; ok "Share port: $val" ;;
     api_share_rate_limit)    API_SHARE_RATE_LIMIT="$val"; save_config; ok "Rate limit: $val req/min" ;;
     cpu_only_mode|cpu_only)  CPU_ONLY_MODE="$val"; save_config; ok "CPU-only mode: $val" ;;
+    # v2.7.4: u-gpu / use-gpu — master GPU toggle (0=CPU only, 1=use GPU)
+    u-gpu|use-gpu|use_gpu|ugpu)
+      case "$val" in
+        0|false|no|off|disable|disabled)
+          USE_GPU=0; CPU_ONLY_MODE=1; GPU_LAYERS=0
+          save_config
+          # Clear the CUDA arch cache so next run re-detects cleanly
+          rm -f "${HOME}/.ai/cache/cuda_arch" 2>/dev/null || true
+          ok "GPU disabled (u-gpu=0) — running in CPU-only mode"
+          info "Restart any running model servers for this to take effect" ;;
+        1|true|yes|on|enable|enabled)
+          USE_GPU=1; CPU_ONLY_MODE=0; GPU_LAYERS=-1
+          save_config
+          rm -f "${HOME}/.ai/cache/cuda_arch" 2>/dev/null || true
+          ok "GPU enabled (u-gpu=1) — GPU acceleration active"
+          info "Run 'ai status' to verify GPU detection" ;;
+        "")
+          echo "u-gpu (use GPU): ${USE_GPU:-1}  (0=CPU only, 1=use GPU)"
+          echo "  CPU_ONLY_MODE: ${CPU_ONLY_MODE:-0}"
+          echo "  GPU_LAYERS:    ${GPU_LAYERS:--1}"
+          echo "  CUDA_ARCH:     ${CUDA_ARCH:-0}" ;;
+        *) err "u-gpu value must be 0 (disable) or 1 (enable), got: '$val'" ;;
+      esac ;;
     multiai_rounds)          MULTIAI_ROUNDS="$val"; save_config; ok "Multi-AI rounds: $val" ;;
     multiai_save_dataset)    MULTIAI_SAVE_DATASET="$val"; save_config; ok "Multi-AI save dataset: $val" ;;
     multiai_rlhf_train)      MULTIAI_RLHF_TRAIN="$val"; save_config; ok "Multi-AI RLHF train: $val" ;;
@@ -13060,7 +13091,10 @@ show_help() {
   echo -e "${C2}│${R_}  ${B}GPU / CUDA:${R_}"
   echo -e "${C2}│${R_}    CUDA detection fixed: sm_61 (Pascal GTX 10xx) now recognized"
   echo -e "${C2}│${R_}    Arch cache: CUDA arch cached for fast startup (no slow detect every run)"
-  echo -e "${C2}│${R_}    ai config cpu_only_mode 0      Force GPU mode"
+  echo -e "${C2}│${R_}    ai -C set u-gpu 0              Disable GPU (CPU-only mode)  ← v2.7.4"
+  echo -e "${C2}│${R_}    ai -C set u-gpu 1              Re-enable GPU"
+  echo -e "${C2}│${R_}    ai config u-gpu 0              Same — alias for cpu_only_mode"
+  echo -e "${C2}│${R_}    ai config cpu_only_mode 0      Force GPU mode (legacy)"
   echo -e "${C2}│${R_}  ${B}Bug Fixes:${R_}"
   echo -e "${C2}│${R_}    TTM/PyTorch: auto-patches missing model_type in config.json"
   echo -e "${C2}│${R_}    rclick v3: trusted flag set → fixes 'not authorized' in file manager"
@@ -15158,6 +15192,7 @@ cat << 'HELPEOF'
   ai config <key> <value>      Set a configuration value
 
   Common config keys:
+    u-gpu (use-gpu)    GPU toggle: 0=CPU only, 1=use GPU  ← NEW in v2.7.4
     model              Active LLM model name / path
     api_key            API key (OpenAI / Claude / Gemini)
     api_host           API host (default: localhost)
@@ -15260,8 +15295,16 @@ HELPEOF
 main() {
   # Handle -C named chat flag
   local NAMED_CHAT=""
+  # v2.7.4: -C set <key> <val>  →  config shorthand (e.g. ai -C set u-gpu 0)
+  #          -C <name>             →  named chat session (original behaviour)
   if [[ "${1:-}" == "-C" ]]; then
-    shift; NAMED_CHAT="${1:-auto}"; shift || true
+    shift
+    if [[ "${1:-}" == "set" ]]; then
+      shift
+      cmd_config "$@"
+      return
+    fi
+    NAMED_CHAT="${1:-auto}"; shift || true
     _chat_start "$NAMED_CHAT" 2>/dev/null || true
   fi
 
