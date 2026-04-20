@@ -19186,10 +19186,11 @@ h3{padding:10px 16px;background:#181825;border-bottom:1px solid #313244;color:#8
 <body><h3>AI CLI Chat</h3><div id="m"></div><div id="b"><textarea id="p" rows="1" placeholder="Message..."></textarea><button onclick="S()">Send</button></div>
 <script>const m=document.getElementById("m"),p=document.getElementById("p");
 function A(r,t){const d=document.createElement("div");d.className=r;d.textContent=t;m.appendChild(d);m.scrollTop=m.scrollHeight}
-async function S(){const t=p.value.trim();if(!t)return;p.value="";A("u",t);
+let chatHistory=[];
+async function S(){const t=p.value.trim();if(!t)return;p.value="";A("u",t);chatHistory.push({role:"user",content:t});
 try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},
-body:JSON.stringify({messages:chatHistory})}));const d=await r.json();
-A("a",d.choices?.[0]?.message?.content||"No response")}catch(e){A("a","Error: "+e.message)}}
+body:JSON.stringify({messages:chatHistory})});const d=await r.json();
+const reply=d.choices?.[0]?.message?.content||"No response";chatHistory.push({role:"assistant",content:reply});A("a",reply)}catch(e){A("a","Error: "+e.message)}}
 p.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();S()}})</script></body></html>"""
 
 DASH_HTML = """<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI CLI Dashboard</title>
@@ -19230,7 +19231,7 @@ h3{color:#89b4fa;margin-bottom:10px}.g{display:grid;grid-template-columns:repeat
 function switchTab(b,i){document.querySelectorAll(".p").forEach((p,j)=>{p.classList.toggle("a",j===i)});document.querySelectorAll("nav .nb").forEach(n=>n.classList.remove("a"));b.classList.add("a")}
 let chatHistory=[];
 function am(c,t){const d=document.createElement("div");d.className="cm c"+c;d.textContent=t;document.getElementById("ms").appendChild(d);document.getElementById("ms").scrollTop=9e9}
-async function sc(){const p=document.getElementById("pr");const t=p.value.trim();if(!t)return;p.value="";am("u",t);chatHistory.push({role:"user",content:t});try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:chatHistory})}));const d=await r.json();const _reply=d.choices?.[0]?.message?.content||"No response";chatHistory.push({role:"assistant",content:_reply});am("a",_reply?.[0]?.message?.content||"No response")}catch(e){am("a","Error: "+e.message)}}
+async function sc(){const p=document.getElementById("pr");const t=p.value.trim();if(!t)return;p.value="";am("u",t);chatHistory.push({role:"user",content:t});try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:chatHistory})});const d=await r.json();const reply=d.choices?.[0]?.message?.content||"No response";chatHistory.push({role:"assistant",content:reply});am("a",reply)}catch(e){am("a","Error: "+e.message)}}
 async function rc(c){const o=document.querySelector(".p.a .o");if(o)o.textContent="Running...";try{const r=await fetch("/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:[{role:"user",content:"/cmd "+c}]})});const d=await r.json();if(o)o.textContent=d.choices?.[0]?.message?.content||"Done"}catch(e){if(o)o.textContent="Error: "+e.message}}
 document.getElementById("pr").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sc()}})
 let _tauth=false;
