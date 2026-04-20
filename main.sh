@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.1.6.2"
+VERSION="3.1.6.3"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -19102,7 +19102,12 @@ def strip_ansi(s):
 def ai_ask(prompt):
     try:
         r = subprocess.run([CLI, "ask", prompt], capture_output=True, text=True, timeout=120, env={**os.environ, "NO_COLOR": "1"})
-        return strip_ansi(r.stdout.strip() or r.stderr.strip() or "No response")
+        out = strip_ansi((r.stdout or "") + (r.stderr or "")).strip()
+        if not out:
+            return "No response — run: ai recommended download 1 && ai recommended use 1"
+        return out
+    except subprocess.TimeoutExpired:
+        return "Timed out after 120s — try a smaller model"
     except Exception as e:
         return f"Error: {e}"
 
