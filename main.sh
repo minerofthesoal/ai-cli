@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.1.5.2"
+VERSION="3.1.5.3"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -14452,7 +14452,7 @@ $(cat)" ;;
     dataset|datasets) cmd_dataset "$@" ;;
 
     # ── v3: LLM API Server ───────────────────────────────────────────────────
-    api)    if type cmd_api_v3 &>/dev/null; then cmd_api_v3 "$@"; else cmd_api "$@"; fi ;;
+    api)    cmd_api_v3 "$@" ;;
 
     # ── v2.4.5: Multi-AI Arena ────────────────────────────────────────────────
     multiai|multi-ai|arena) cmd_multiai "$@" ;;
