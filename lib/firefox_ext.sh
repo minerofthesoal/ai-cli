@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
+# Return if sourced before config is loaded
+[[ -z "${VERSION:-}" ]] && return 0 2>/dev/null || true
 # AI CLI v3.1.0 — Firefox Extension v2
 # AI sidebar for Firefox that connects to the local API server
 
-FIREFOX_EXT_DIR="$CONFIG_DIR/firefox_extension_v2"
+FIREFOX_EXT_DIR="${CONFIG_DIR:-$HOME/.config/ai-cli}/firefox_extension_v2"
 
 cmd_install_firefox_ext_v2() {
   hdr "Firefox AI Sidebar Extension v2"

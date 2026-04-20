@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Return if sourced before config is loaded
+[[ -z "${VERSION:-}" ]] && return 0 2>/dev/null || true
 # AI CLI v3.1.0 — Workspace module
 # Snap, templates, RAG, batch, branch, export, notebook, plan, memory, presets, plugins
 
@@ -75,7 +77,7 @@ cmd_export() {
   esac
 }
 
-cmd_import() { local s="${1:?path}"; [[ -f "$s" ]] && cp "$s" "$CONFIG_DIR/" && ok "Imported" || { [[ -d "$s" ]] && cp "$s"/* "$CONFIG_DIR/" 2>/dev/null && ok "Imported"; } || err "Not found"; }
+cmd_import() { local s="${1:?path}"; [[ -f "$s" ]] && cp "$s" "${CONFIG_DIR:-$HOME/.config/ai-cli}/" && ok "Imported" || { [[ -d "$s" ]] && cp "$s"/* "${CONFIG_DIR:-$HOME/.config/ai-cli}/" 2>/dev/null && ok "Imported"; } || err "Not found"; }
 
 cmd_notebook() {
   local sub="${1:-}"; shift 2>/dev/null || true
@@ -195,7 +197,7 @@ cmd_profile() {
   local sub="${1:-}"; shift 2>/dev/null || true
   case "$sub" in
     create) local n="${1:?name}"; mkdir -p "$PROFILES_DIR/$n"; cp "$CONFIG_FILE" "$KEYS_FILE" "$PROFILES_DIR/$n/" 2>/dev/null; ok "Created: $n" ;;
-    switch) local n="${1:?name}"; [[ -d "$PROFILES_DIR/$n" ]] || { err "Not found"; return 1; }; cp "$PROFILES_DIR/$n"/* "$CONFIG_DIR/" 2>/dev/null; source "$CONFIG_FILE"; ok "Switched: $n" ;;
+    switch) local n="${1:?name}"; [[ -d "$PROFILES_DIR/$n" ]] || { err "Not found"; return 1; }; cp "$PROFILES_DIR/$n"/* "${CONFIG_DIR:-$HOME/.config/ai-cli}/" 2>/dev/null; source "$CONFIG_FILE"; ok "Switched: $n" ;;
     list) for d in "$PROFILES_DIR"/*/; do [[ -d "$d" ]] && echo "  $(basename "$d")"; done ;;
     *) echo "Usage: ai profile <create|switch|list>" ;;
   esac

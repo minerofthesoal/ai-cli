@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Return if sourced before config is loaded
+[[ -z "${VERSION:-}" ]] && return 0 2>/dev/null || true
 # AI CLI v3.1.0 — Core module
 # Sourced by main.sh — provides colors, logging, config, platform detection
 
@@ -111,35 +113,35 @@ CUDA_ARCH="$(detect_cuda_arch_cached)"
 
 # ── Paths & Config ────────────────────────────────────────────────────────────
 CONFIG_DIR="${AI_CLI_CONFIG:-$HOME/.config/ai-cli}"
-CONFIG_FILE="$CONFIG_DIR/config.env"
-KEYS_FILE="$CONFIG_DIR/keys.env"
-LOG_FILE="$CONFIG_DIR/history.log"
-SESSIONS_DIR="$CONFIG_DIR/sessions"
-PERSONAS_DIR="$CONFIG_DIR/personas"
+CONFIG_FILE="${CONFIG_DIR:-$HOME/.config/ai-cli}/config.env"
+KEYS_FILE="${CONFIG_DIR:-$HOME/.config/ai-cli}/keys.env"
+LOG_FILE="${CONFIG_DIR:-$HOME/.config/ai-cli}/history.log"
+SESSIONS_DIR="${CONFIG_DIR:-$HOME/.config/ai-cli}/sessions"
+PERSONAS_DIR="${CONFIG_DIR:-$HOME/.config/ai-cli}/personas"
 MODELS_DIR="${AI_CLI_MODELS:-$HOME/.ai-cli/models}"
 AI_OUTPUT_DIR="${AI_OUTPUT_DIR:-$HOME/ai-outputs}"
 CANVAS_DIR="$AI_OUTPUT_DIR/canvas"
-FINETUNE_DIR="$CONFIG_DIR/finetune"
-PLUGINS_DIR="$CONFIG_DIR/plugins"
-TEMPLATES_DIR="$CONFIG_DIR/prompt_templates"
-SNAPSHOTS_DIR="$CONFIG_DIR/snapshots"
-RAG_DIR="$CONFIG_DIR/rag"
-BATCH_DIR="$CONFIG_DIR/batch_queue"
+FINETUNE_DIR="${CONFIG_DIR:-$HOME/.config/ai-cli}/finetune"
+PLUGINS_DIR="${CONFIG_DIR:-$HOME/.config/ai-cli}/plugins"
+TEMPLATES_DIR="${CONFIG_DIR:-$HOME/.config/ai-cli}/prompt_templates"
+SNAPSHOTS_DIR="${CONFIG_DIR:-$HOME/.config/ai-cli}/snapshots"
+RAG_DIR="${CONFIG_DIR:-$HOME/.config/ai-cli}/rag"
+BATCH_DIR="${CONFIG_DIR:-$HOME/.config/ai-cli}/batch_queue"
 EXPORTS_DIR="$AI_OUTPUT_DIR/exports"
-BRANCHES_DIR="$CONFIG_DIR/chat_branches"
-PRESETS_DIR="$CONFIG_DIR/presets"
-COMPARE_DIR="$CONFIG_DIR/compare_results"
-HEALTH_LOG="$CONFIG_DIR/health.log"
-PERF_LOG="$CONFIG_DIR/perf_benchmarks.log"
-ANALYTICS_FILE="$CONFIG_DIR/analytics.jsonl"
-MEMORY_FILE="$CONFIG_DIR/memory.jsonl"
-FAVORITES_FILE="$CONFIG_DIR/favorites.jsonl"
-TASKS_FILE="$CONFIG_DIR/tasks.jsonl"
+BRANCHES_DIR="${CONFIG_DIR:-$HOME/.config/ai-cli}/chat_branches"
+PRESETS_DIR="${CONFIG_DIR:-$HOME/.config/ai-cli}/presets"
+COMPARE_DIR="${CONFIG_DIR:-$HOME/.config/ai-cli}/compare_results"
+HEALTH_LOG="${CONFIG_DIR:-$HOME/.config/ai-cli}/health.log"
+PERF_LOG="${CONFIG_DIR:-$HOME/.config/ai-cli}/perf_benchmarks.log"
+ANALYTICS_FILE="${CONFIG_DIR:-$HOME/.config/ai-cli}/analytics.jsonl"
+MEMORY_FILE="${CONFIG_DIR:-$HOME/.config/ai-cli}/memory.jsonl"
+FAVORITES_FILE="${CONFIG_DIR:-$HOME/.config/ai-cli}/favorites.jsonl"
+TASKS_FILE="${CONFIG_DIR:-$HOME/.config/ai-cli}/tasks.jsonl"
 NOTEBOOKS_DIR="$AI_OUTPUT_DIR/notebooks"
-SCHEDULE_DIR="$CONFIG_DIR/schedules"
-PROFILES_DIR="$CONFIG_DIR/profiles"
+SCHEDULE_DIR="${CONFIG_DIR:-$HOME/.config/ai-cli}/schedules"
+PROFILES_DIR="${CONFIG_DIR:-$HOME/.config/ai-cli}/profiles"
 
-mkdir -p "$CONFIG_DIR" "$MODELS_DIR" "$SESSIONS_DIR" "$PERSONAS_DIR" \
+mkdir -p "${CONFIG_DIR:-$HOME/.config/ai-cli}" "$MODELS_DIR" "$SESSIONS_DIR" "$PERSONAS_DIR" \
          "$AI_OUTPUT_DIR" "$CANVAS_DIR" "$FINETUNE_DIR" "$PLUGINS_DIR" \
          "$TEMPLATES_DIR" "$SNAPSHOTS_DIR" "$RAG_DIR" "$BATCH_DIR" \
          "$EXPORTS_DIR" "$BRANCHES_DIR" "$PRESETS_DIR" "$COMPARE_DIR" \

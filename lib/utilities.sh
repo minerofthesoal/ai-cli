@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Return if sourced before config is loaded
+[[ -z "${VERSION:-}" ]] && return 0 2>/dev/null || true
 # AI CLI v3.1.0 — Utilities module
 # Shell, git, write, learn, quiz, interview, text, json, sql, regex, docker, cron, math, net, date, diff, find
 
