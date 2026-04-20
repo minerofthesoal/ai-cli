@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.1.5.3"
+VERSION="3.1.5.4"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -2952,7 +2952,7 @@ Run: ai ask 'hello'  to test."
   show_result "AI — ${action}" "$result"
 }
 
-main "$@"
+# main called at end of file
 RCLICK_SCRIPT
 
   sudo cp /tmp/ai_rclick_v3.1.sh "$script_path"
@@ -19409,7 +19409,7 @@ $q" ;;
   done
 }
 
-main "$@"
+# main called at end of file
 
 cmd_api_v3() {
   local sub="${1:-help}"; shift 2>/dev/null || true
