@@ -13,7 +13,12 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.1.5"
+VERSION="3.1.5.1"
+
+# Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
+for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
+  [[ -d "$_d" ]] && { rm -rf "$_d" 2>/dev/null || sudo rm -rf "$_d" 2>/dev/null || true; }
+done
 
 # macOS ships bash 3.2 which lacks associative arrays (declare -A).
 # Require bash 4+ or auto-switch to nb/Homebrew bash if available.
@@ -16105,11 +16110,11 @@ cmd_system_update() {
     return 1
   fi
 
-  # Clean up old lib/ files that may conflict
+  # Clean up old lib/ files that cause CONFIG_DIR errors
   for _old_lib in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
     if [[ -d "$_old_lib" ]]; then
-      $_sudo rm -rf "$_old_lib" 2>/dev/null || true
-      info "Removed old lib/ files from $_old_lib"
+      sudo rm -rf "$_old_lib" 2>/dev/null || rm -rf "$_old_lib" 2>/dev/null || true
+      info "Removed old $_old_lib"
     fi
   done
 
@@ -19086,8 +19091,6 @@ cmd_api_v3() {
         return 0
       fi
 
-      info "Starting API server v3 on ${host}:${port}..."
-      API_HOST="$host" API_PORT="$port" \
       AI_CLI_BIN="$(command -v ai 2>/dev/null || echo "$0")" \
       AI_MODEL="${ACTIVE_MODEL:-}" AI_BACKEND="${ACTIVE_BACKEND:-}" \
       "$PYTHON" -c '
@@ -19149,11 +19152,11 @@ h3{color:#89b4fa;margin-bottom:10px}label{color:#a6adc8;font-size:13px;display:b
 .chat-msg{margin:8px 0;padding:10px;border-radius:8px}.chat-user{background:#313244;margin-left:40px}.chat-ai{background:#181825;border:1px solid #313244;margin-right:40px}
 </style></head><body>
 <nav><h2>AI CLI Dashboard</h2>
-<button class="active" onclick="show('chat')">Chat</button>
-<button onclick="show('models')">Models</button>
-<button onclick="show('settings')">Settings</button>
-<button onclick="show('keys')">API Keys</button>
-<button onclick="show('tools')">Tools</button>
+<button class="active" onclick="show(&#39;chat&#39;)">Chat</button>
+<button onclick="show(&#39;models&#39;)">Models</button>
+<button onclick="show(&#39;settings&#39;)">Settings</button>
+<button onclick="show(&#39;keys&#39;)">API Keys</button>
+<button onclick="show(&#39;tools&#39;)">Tools</button>
 </nav>
 <div id="chat" class="panel active">
 <h3>Chat</h3>
