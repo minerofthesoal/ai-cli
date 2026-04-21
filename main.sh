@@ -12,7 +12,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.2.0"
+VERSION="3.2.0.1"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -16064,6 +16064,12 @@ cmd_change() {
   case "$sub" in
     latest|-L)
       hdr "AI CLI v${VERSION} — Latest Changes"
+      echo ""
+      echo -e "  ${B}${BCYAN}v3.2.0.1${R}"
+      echo ""
+      echo -e "  ${B}Docs:${R}"
+      echo "    + ai api now lists all 44 endpoints grouped by purpose"
+      echo "    + new subcommands: ai api endpoints / ep / list"
       echo ""
       echo -e "  ${B}${BCYAN}v3.2.0${R} — Major release"
       echo ""
