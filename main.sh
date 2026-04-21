@@ -20525,11 +20525,100 @@ APIPY
     stop) [[ -f "$API_PID_FILE" ]] && { kill "$(cat "$API_PID_FILE")" 2>/dev/null; rm -f "$API_PID_FILE"; ok "Stopped"; } || info "Not running" ;;
     status) [[ -f "$API_PID_FILE" ]] && kill -0 "$(cat "$API_PID_FILE" 2>/dev/null)" 2>/dev/null && ok "Running" || info "Not running" ;;
     test) curl -sS "http://localhost:${1:-8080}/health" 2>/dev/null | grep -q ok && ok "Healthy" || err "Not responding" ;;
-    *) echo "Usage: ai api start [--port N] [--tailscale]"
-       echo "  /v3/site   Dashboard"
-       echo "  /chat      Chat UI"
-       echo "  /health    Health check" ;;
+    endpoints|ep|list) cmd_api_endpoints ;;
+    *) cmd_api_help ;;
   esac
+}
+
+cmd_api_help() {
+  cat <<'EOF'
+Usage: ai api <subcommand> [options]
+
+Subcommands:
+  start [--port N] [--host H] [--public] [--tailscale]   Start server
+  stop                                                    Stop server
+  status                                                  Show if running
+  test                                                    Curl /health
+  endpoints (ep|list)                                     List all 44 endpoints
+
+Web UIs:
+  /v3/site        12-tab dashboard (Chat · Status · Models · Keys · History
+                  · Tools · Agent · Voice · RAG · Share · API Docs · Terminal)
+  /chat           Minimal chat UI
+EOF
+  cmd_api_endpoints
+}
+
+cmd_api_endpoints() {
+  cat <<'EOF'
+
+AI CLI API v3.2 — 44 HTTP endpoints
+───────────────────────────────────
+
+  Core & OpenAI-compatible
+    GET  /health                     Server health + version
+    GET  /v1/models                  OpenAI-compatible model list
+    POST /v1/chat/completions        OpenAI-compatible chat completion
+    POST /v1/completions             OpenAI-compatible text completion
+    GET  /chat                       Minimal chat web UI
+    GET  /v3/site                    Full 12-tab dashboard
+
+  Server status & introspection
+    GET  /v3/status                  Running status summary
+    GET  /v3/sysinfo                 CPU, RAM, GPU, disk, load
+    GET  /v3/version                 Version string
+    GET  /v3/endpoints               This catalogue
+    GET  /v3/config                  Safe config values (no secrets)
+    GET  /v3/logs                    Recent access log
+
+  Models
+    GET  /v3/models                  Active model + local GGUF files
+    POST /v3/models/activate         Switch active model  {model}
+    POST /v3/models/download         Download recommended {model}
+
+  Backend API keys (masked; set requires password)
+    GET  /v3/keys                    Which keys are set (masked)
+    POST /v3/keys/set                Set a key  {name,value,password}
+
+  Chat, streaming & conversation
+    POST /v3/chat/stream             SSE streaming chat
+    GET  /v3/history?n=N             Recent chat history
+    POST /v3/history/search          Search chat history  {query}
+    POST /v3/history/clear           Wipe chat history
+    GET  /v3/mem                     Memory contents
+    POST /v3/mem                     add/delete/clear memory
+    GET  /v3/context                 Conversation context
+    POST /v3/context                 add/clear context
+    POST /v3/comp/context            Force-compress context
+
+  Analysis
+    POST /v3/tokens                  Estimate token count of text
+    POST /v3/cost                    Estimate USD cost of text
+    POST /v3/embed                   64-dim text embedding
+
+  Features (v3.2)
+    POST /v3/web                     Web-search-augmented ask  {query}
+    POST /v3/benchmark               Round-trip latency test
+    POST /v3/agent                   Autonomous task agent  {goal,steps}
+    POST /v3/diff/review             AI review of a unified diff  {diff}
+    POST /v3/voice/tts               Text-to-speech  {text}
+    POST /v3/share                   Create public share link
+
+  Files & RAG (upload/delete require password)
+    GET  /v3/files                   List uploaded files
+    POST /v3/files/upload            Upload JSON/text  {name,content,password}
+    POST /v3/files/delete            Delete uploaded file  {name,password}
+    GET  /v3/rag/list                List RAG corpora
+    POST /v3/rag/add                 Add text to corpus  {corpus,text}
+    POST /v3/rag/query               Query corpus + answer  {corpus,query,k}
+
+  Protected terminal (password via: ai -apip SECRET)
+    POST /v3/terminal/auth           Unlock terminal  {password}
+    POST /v3/terminal/exec           Execute command  {cmd,password}
+    POST /v3/run                     Run shell command  {cmd,password}
+
+Browse live list: curl http://localhost:8080/v3/endpoints | jq
+EOF
 }
 
 main "$@"
