@@ -53,16 +53,21 @@ ai ask "Hello!"
 - **Terminal** — `ai ask`, `ai chat`
 - **TUI** — curses-based dashboard (`ai aui`)
 - **Canvas v3** — multi-file workspace with syntax highlighting, AI-insert, live preview
-- **GUI+** — tkinter 8-tab interface
+- **GUI+ v4** — tkinter 9-tab interface (Chat · Models · Agent · API · Write · RAG · Canvas · Tools · Status)
+- **HTTP API v3.2** — 44 endpoints, 12-tab web dashboard, OpenAI-compatible
 
 ### Extras
 - Batch processing & watch mode
 - Dataset generation
 - FLUX image generation
 - Audio transcription (Whisper)
-- Embeddings & RAG
+- Text-to-speech (piper / espeak / macOS `say`)
+- Embeddings & RAG (quick mode: `ai rag-quick`)
 - Project management with persistent memory
 - Workflow engine & templates
+- Public sharing via Cloudflare/ngrok tunnel (`ai share`)
+- Autonomous agent loop (`ai agent "goal" --steps N`)
+- AI diff reviewer (`ai diff-review staged`)
 
 ## Usage Examples
 
@@ -91,11 +96,28 @@ ai rlhf rate                      # rate responses for RLHF
 ai aui                            # terminal dashboard
 ai -gui                           # TUI mode
 
-# API server (local LLM over HTTP + web dashboard)
+# API server (local LLM over HTTP + 12-tab dashboard, 44 endpoints)
 ai api start                      # http://localhost:8080
 ai api start --port 9000 --public # bind 0.0.0.0
 ai api stop
 ai -apip SECRET                   # set Terminal-tab password (<=8 chars)
+# Endpoints: /v3/site /v3/status /v3/sysinfo /v3/models /v3/keys
+#            /v3/history /v3/tokens /v3/cost /v3/embed /v3/chat/stream
+#            /v3/web /v3/benchmark /v3/agent /v3/diff/review
+#            /v3/voice/tts /v3/share /v3/rag/* /v3/files/* /v3/run
+curl http://localhost:8080/v3/endpoints | jq
+
+# v3.2 new commands
+ai voice tts "hello world"        # speak via piper/espeak/say
+ai voice stt recording.wav        # transcribe via whisper
+ai voice ask "explain quicksort"  # ask + speak answer
+ai share                          # public tunnel (cloudflared/ngrok)
+ai diff-review staged             # AI review of git staged diff
+ai diff-review HEAD               # review last commit
+ai diff-review mydiff.patch       # review a diff file
+ai agent "plan a blog post" --steps 4   # autonomous multi-step loop
+ai rag-quick README.md "what does this do?"
+ai rag-quick src/  "how are API keys stored?"
 
 # System
 ai install-deps                   # install ML dependencies
@@ -111,7 +133,7 @@ ai -Su                            # self-update from GitHub
 
 ```
 ai-cli/
-├── main.sh                    # Core CLI (~19k lines of Bash)
+├── main.sh                    # Core CLI (~20k lines of Bash)
 ├── installers/
 │   ├── install.sh             # Universal POSIX sh installer
 │   ├── install-arch.sh        # Arch Linux / pacman
