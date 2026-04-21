@@ -68,7 +68,8 @@ ai ask "Hello!"
 
 ```bash
 # Chat & query
-ai ask "Explain quicksort"
+ai ask "Explain quicksort"        # long form
+ai a   "Explain quicksort"        # short alias
 ai chat
 ai ask -m claude "Review this code" < file.py
 
@@ -90,17 +91,27 @@ ai rlhf rate                      # rate responses for RLHF
 ai aui                            # terminal dashboard
 ai -gui                           # TUI mode
 
+# API server (local LLM over HTTP + web dashboard)
+ai api start                      # http://localhost:8080
+ai api start --port 9000 --public # bind 0.0.0.0
+ai api stop
+ai -apip SECRET                   # set Terminal-tab password (<=8 chars)
+
 # System
 ai install-deps                   # install ML dependencies
 ai keys set OPENAI_API_KEY sk-... # set API key
 ai status                         # show config & GPU info
+ai -Cf u-gpu 0                    # disable GPU (persistent)
+ai -Cf u-gpu 1                    # re-enable GPU
+ai -L                             # show latest changelog
+ai -Su                            # self-update from GitHub
 ```
 
 ## Project Structure
 
 ```
 ai-cli/
-├── main.sh                    # Core CLI (22k+ lines of Bash)
+├── main.sh                    # Core CLI (~19k lines of Bash)
 ├── installers/
 │   ├── install.sh             # Universal POSIX sh installer
 │   ├── install-arch.sh        # Arch Linux / pacman

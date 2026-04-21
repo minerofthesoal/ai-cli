@@ -1,6 +1,6 @@
 # Maintainer: minerofthesoal <https://github.com/minerofthesoal>
 pkgname=ai-cli
-pkgver=2.8.5.5
+pkgver=3.1.7.3
 pkgrel=1
 pkgdesc="AI CLI — local + cloud LLM terminal toolkit with 195 curated models"
 arch=('any')

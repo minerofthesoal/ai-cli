@@ -13,7 +13,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.1.7.2"
+VERSION="3.1.7.3"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -15936,16 +15936,43 @@ cmd_change() {
     latest|-L)
       hdr "AI CLI v${VERSION} — Latest Changes"
       echo ""
-      echo -e "  ${B}${BCYAN}v3.1.3.1${R}"
+      echo -e "  ${B}${BCYAN}v3.1.7.3${R}"
       echo ""
-      echo -e "  ${B}Latest:${R}"
-      echo "    + ai ask-n / a-n — CPU-only mode with all cores"
-      echo "    + ai a-w, a-t, a-wt, a-n-t, a-n-w, a-n-w-t shortcuts"
-      echo "    + Canvas v3 — AI insert, delete, rename keybinds"
-      echo "    + nb package manager support for macOS"
-      echo "    + Fixed Bad CPU type on Intel Mac"
-      echo "    + Fixed parentheses syntax errors"
-      echo "    + API /chat web UI endpoint"
+      echo -e "  ${B}Bug Fixes:${R}"
+      echo "    + ai -Su now exits after update so bash cannot re-read"
+      echo "      the replaced script (was causing 'line 19371 syntax"
+      echo "      error near unexpected token (' after updates)"
+      echo "    + API Python heredoc verified end-to-end (health check)"
+      echo ""
+      echo -e "  ${B}${BCYAN}v3.1.7.2${R}"
+      echo ""
+      echo -e "  ${B}Bug Fixes:${R}"
+      echo "    + Fixed \\\\\" double-escaping in APIPY heredoc — quoted"
+      echo "      heredocs pass backslashes literally, so \\\\\" became"
+      echo "      \\\\ + \" and closed the Python string early"
+      echo "    + Renamed -C to -Cf (was colliding with named chat -C)"
+      echo "        ai -Cf u-gpu 0   disable GPU"
+      echo "        ai -Cf u-gpu 1   enable GPU"
+      echo ""
+      echo -e "  ${B}${BCYAN}v3.1.7.1${R}"
+      echo ""
+      echo -e "  ${B}New:${R}"
+      echo "    + Password-protected Terminal tab in API dashboard"
+      echo "        ai -apip PASSWORD   set (max 8 chars)"
+      echo ""
+      echo -e "  ${B}${BCYAN}v3.1.7${R}"
+      echo ""
+      echo -e "  ${B}New:${R}"
+      echo "    + Completely remade API v3 dashboard"
+      echo "    + ai -Cf config command for persistent settings"
+      echo ""
+      echo -e "  ${B}${BCYAN}v3.1.6${R}"
+      echo ""
+      echo -e "  ${B}New:${R}"
+      echo "    + Memory API endpoint (/v3/mem)"
+      echo "    + Context API endpoint (/v3/context)"
+      echo "    + Auto-compression of long conversations"
+      echo "    + Better error messages in API chat"
       echo ""
       echo -e "  ${B}${BCYAN}v3.1.3${R}"
       echo ""
@@ -16149,6 +16176,12 @@ cmd_system_update() {
   rm -f "$tmp"
   ok "Updated to v${remote_ver}!"
   info "Restart your terminal or run: ai --version"
+  # The running bash process is reading THIS file by byte offset. We just
+  # overwrote it in place, so every byte past here now belongs to the new
+  # script — continuing would land mid-heredoc and produce Python-looking
+  # syntax errors (e.g. 'line 19371: syntax error near unexpected token (').
+  # Exit immediately so bash never reads past the replacement.
+  exit 0
 }
 
 ####NEW_FEATURES_MARKER####
