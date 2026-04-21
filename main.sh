@@ -92,14 +92,32 @@ find_python() {
   done; echo ""
 }
 find_llama() {
-  for b in llama-cli llama llama-run llama-main llama.cpp; do
-    command -v "$b" &>/dev/null && { command -v "$b"; return 0; }
+  # Validate candidate is actually llama.cpp (not some other binary on PATH that
+  # happens to be named `llama` and prints "Unknown command" when given our
+  # flags). We only accept binaries whose --help output contains a llama.cpp
+  # telltale like "llama.cpp" or "-ngl" / "--n-gpu-layers".
+  _is_llama_cpp() {
+    local b="$1"
+    "$b" --help 2>&1 \
+      | grep -qE 'llama\.cpp|--n-gpu-layers|^llama-cli|^usage: +llama' \
+      && return 0
+    return 1
+  }
+  # Prefer canonical llama.cpp names. `llama` / `llama-main` / `llama.cpp`
+  # are intentionally omitted — on Arch and some other distros a different
+  # tool squats that name and we'd end up executing the wrong binary.
+  for b in llama-cli llama-run; do
+    if command -v "$b" &>/dev/null && _is_llama_cpp "$b"; then
+      command -v "$b"; return 0
+    fi
   done
   for d in "$HOME/.local/bin" "$HOME/bin" "$HOME/llama.cpp/build/bin" \
             "$HOME/llama.cpp/build" "$HOME/llama.cpp" "/usr/local/bin" \
             "/opt/llama.cpp/bin" "/opt/nb/bin" "/opt/homebrew/bin"; do
-    for b in llama-cli llama llama-run main; do
-      [[ -x "$d/$b" ]] && { echo "$d/$b"; return 0; }
+    for b in llama-cli llama-run main; do
+      if [[ -x "$d/$b" ]] && _is_llama_cpp "$d/$b"; then
+        echo "$d/$b"; return 0
+      fi
     done
   done
   local py; py=$(find_python)
