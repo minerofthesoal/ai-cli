@@ -1,19 +1,18 @@
 #!/usr/bin/env bash
 # ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║  AI.SH v3.0.0 — Universal AI CLI · GUI v7 · GUI+ v3 · 195 Models · 8 APIs║
-# ║  GGUF·PyTorch·OpenAI·Claude·Gemini·Groq·Mistral·Together·HuggingFace      ║
-# ║  RAG·Batch·Snap·Perf·Compare·Templates·Branch·Export·Notebook·Learn·Quiz  ║
-# ║  rclick v3.2 (Win+Mac+Linux) · iSH · bash 4+ auto-switch · Canvas v3     ║
-# ║  v3.0.0: major core rewrite — removed all duplicate functions, fixed GPU   ║
-# ║          detection, silenced llama warnings, bash 3.2 compat, ask-web     ║
-# ║          ai test (-S/-N/-A), 60+ commands with ai -h CMD help           ║
+# ║  AI.SH v3.2.0 — Universal AI CLI · GUI v7 · GUI+ v4 · 195 Models · 44 API EP║
+# ║  GGUF·PyTorch·OpenAI·Claude·Gemini·Groq·Mistral·Together·HuggingFace        ║
+# ║  RAG·Batch·Snap·Perf·Compare·Templates·Branch·Export·Notebook·Learn·Quiz    ║
+# ║  rclick v3.2 (Win+Mac+Linux) · iSH · bash 4+ auto-switch · Canvas v3        ║
+# ║  v3.2: 44 HTTP endpoints · streaming · voice · share · agent · diff-review ║
+# ║        rag-quick · 12-tab dashboard · GUI+ v4 with API + Agent tabs        ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 # Linux/Mac:   chmod +x ai.sh && sudo cp ai.sh /usr/local/bin/ai
 # Arch Linux:  pacman -S python python-pip git ffmpeg && ai install-deps
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.1.7.3"
+VERSION="3.2.0"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -5372,7 +5371,7 @@ cmd_gui_plus() {
   local script; script=$(mktemp /tmp/ai_guiplus_XXXX.py)
   cat > "$script" << 'GUIPLUSEOF'
 #!/usr/bin/env python3
-"""AI CLI v2.9.5 — GUI+ v3: tkinter, tabbed, 8 panels, dark/light themes"""
+"""AI CLI v3.2 — GUI+ v4: tkinter, tabbed, 8 panels, dark/light themes"""
 import sys, os, subprocess, threading, json, time, warnings
 warnings.filterwarnings("ignore")
 import tkinter as tk
@@ -5420,7 +5419,7 @@ class ChatTab(tk.Frame):
             fg=P["fg"], insertbackground=P["fg"], font=("Consolas",11),
             relief=tk.FLAT, borderwidth=0)
         self.chat.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5,0))
-        self.chat.insert(tk.END, "Welcome to AI CLI v2.9.5 — GUI+ v3\nType a message and press Enter or click Send.\n\n")
+        self.chat.insert(tk.END, "Welcome to AI CLI v3.2 — GUI+ v4\nType a message and press Enter or click Send.\n\n")
         self.chat.config(state=tk.DISABLED)
         # Input frame
         inp = tk.Frame(self, bg=P["bg"])
@@ -5682,13 +5681,111 @@ class CanvasTab(tk.Frame):
         self.text.delete("1.0", tk.END)
         self.text.insert(tk.END, text)
 
+class APITab(tk.Frame):
+    """Talks directly to the local HTTP API server (port 8080)."""
+    def __init__(self, parent):
+        super().__init__(parent, bg=P["bg"])
+        top = tk.Frame(self, bg=P["bg"]); top.pack(fill=tk.X, padx=5, pady=5)
+        tk.Label(top, text="API URL:", bg=P["bg"], fg=P["fg"]).pack(side=tk.LEFT)
+        self.url = tk.Entry(top, bg=P["entry_bg"], fg=P["entry_fg"], relief=tk.FLAT, width=28)
+        self.url.insert(0, "http://127.0.0.1:8080")
+        self.url.pack(side=tk.LEFT, padx=4)
+        for label, cmd in [("Start", "api start"), ("Stop", "api stop"), ("Status", "api status")]:
+            tk.Button(top, text=label, command=lambda c=cmd: self._run_ai(c),
+                bg=P["btn"], fg=P["btn_fg"], relief=tk.FLAT).pack(side=tk.LEFT, padx=2)
+        tk.Button(top, text="Open in Browser", command=self._open,
+            bg=P["accent"], fg="#ffffff", relief=tk.FLAT).pack(side=tk.RIGHT)
+        # grid of endpoint probe buttons
+        grid = tk.Frame(self, bg=P["bg"]); grid.pack(fill=tk.X, padx=5, pady=5)
+        buttons = [
+            ("Health", "/health"), ("Status", "/v3/status"), ("SysInfo", "/v3/sysinfo"),
+            ("Models", "/v3/models"), ("Keys", "/v3/keys"), ("Endpoints", "/v3/endpoints"),
+            ("History", "/v3/history"), ("Logs", "/v3/logs"), ("Config", "/v3/config"),
+        ]
+        for i, (lbl, path) in enumerate(buttons):
+            tk.Button(grid, text=lbl, command=lambda p=path: self._get(p),
+                bg=P["btn"], fg=P["btn_fg"], relief=tk.FLAT, padx=6, pady=2
+            ).grid(row=i//5, column=i%5, padx=2, pady=2, sticky="ew")
+        for c in range(5):
+            grid.columnconfigure(c, weight=1)
+        self.out = scrolledtext.ScrolledText(self, wrap=tk.WORD, bg=P["panel"],
+            fg=P["fg"], font=("Consolas",10), relief=tk.FLAT)
+        self.out.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+    def _run_ai(self, cmd):
+        def _r():
+            out = run_ai(cmd)
+            self.after(0, lambda: self._set(out))
+        threading.Thread(target=_r, daemon=True).start()
+
+    def _get(self, path):
+        import urllib.request
+        self._set(f"GET {self.url.get()}{path}\n\n")
+        def _r():
+            try:
+                with urllib.request.urlopen(self.url.get() + path, timeout=10) as r:
+                    out = r.read().decode()
+            except Exception as e:
+                out = f"Error: {e}"
+            self.after(0, lambda: self._set(out))
+        threading.Thread(target=_r, daemon=True).start()
+
+    def _open(self):
+        import webbrowser
+        webbrowser.open(self.url.get() + "/v3/site")
+
+    def _set(self, text):
+        self.out.delete("1.0", tk.END); self.out.insert(tk.END, text)
+
+class AgentTab(tk.Frame):
+    """Run autonomous agent + diff review."""
+    def __init__(self, parent):
+        super().__init__(parent, bg=P["bg"])
+        tk.Label(self, text="Goal:", bg=P["bg"], fg=P["fg"]).pack(anchor=tk.W, padx=5, pady=(6,0))
+        self.goal = tk.Entry(self, bg=P["entry_bg"], fg=P["entry_fg"], relief=tk.FLAT)
+        self.goal.pack(fill=tk.X, padx=5, pady=2)
+        row = tk.Frame(self, bg=P["bg"]); row.pack(fill=tk.X, padx=5, pady=4)
+        tk.Label(row, text="Steps:", bg=P["bg"], fg=P["fg"]).pack(side=tk.LEFT)
+        self.steps = tk.Entry(row, bg=P["entry_bg"], fg=P["entry_fg"], relief=tk.FLAT, width=6)
+        self.steps.insert(0, "3"); self.steps.pack(side=tk.LEFT, padx=4)
+        tk.Button(row, text="Run Agent", command=self.run_agent,
+            bg=P["accent"], fg="#ffffff", relief=tk.FLAT).pack(side=tk.LEFT, padx=4)
+        tk.Button(row, text="Review Staged Diff", command=self.review_diff,
+            bg=P["btn"], fg=P["btn_fg"], relief=tk.FLAT).pack(side=tk.LEFT, padx=4)
+        tk.Button(row, text="Share API", command=self.share,
+            bg=P["btn"], fg=P["btn_fg"], relief=tk.FLAT).pack(side=tk.LEFT, padx=4)
+        self.out = scrolledtext.ScrolledText(self, wrap=tk.WORD, bg=P["panel"],
+            fg=P["fg"], font=("Consolas",10), relief=tk.FLAT)
+        self.out.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+    def _bg(self, cmd):
+        self._set(f"Running: ai {cmd}\n\n")
+        def _r():
+            out = run_ai(cmd); self.after(0, lambda: self._set(out))
+        threading.Thread(target=_r, daemon=True).start()
+
+    def run_agent(self):
+        g = self.goal.get().strip()
+        if not g: return
+        s = self.steps.get().strip() or "3"
+        self._bg(f'agent "{g}" --steps {s}')
+
+    def review_diff(self):
+        self._bg("diff-review")
+
+    def share(self):
+        self._bg("share")
+
+    def _set(self, text):
+        self.out.delete("1.0", tk.END); self.out.insert(tk.END, text)
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title(f"AI CLI v2.9.5 — GUI+ v3 [{THEME}]")
-        self.geometry("1100x700")
+        self.title(f"AI CLI v3.2 — GUI+ v4 [{THEME}]")
+        self.geometry("1180x740")
         self.configure(bg=P["bg"])
-        self.minsize(800, 500)
+        self.minsize(900, 560)
         # Notebook (tabs)
         style = ttk.Style()
         style.theme_use("clam")
@@ -5701,13 +5798,15 @@ class App(tk.Tk):
         nb.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         nb.add(ChatTab(nb), text=" Chat ")
         nb.add(ModelsTab(nb), text=" Models ")
+        nb.add(AgentTab(nb), text=" Agent ")
+        nb.add(APITab(nb), text=" API ")
         nb.add(WriteTab(nb), text=" Write ")
         nb.add(RAGTab(nb), text=" RAG ")
         nb.add(CanvasTab(nb), text=" Canvas ")
         nb.add(ToolsTab(nb), text=" Tools ")
         nb.add(SettingsTab(nb), text=" Status ")
         # Status bar
-        self.status_var = tk.StringVar(value=f"AI CLI v2.9.5 — GUI+ v3 ready")
+        self.status_var = tk.StringVar(value=f"AI CLI v3.2 — GUI+ v4 ready")
         tk.Label(self, textvariable=self.status_var, bg=P["border"], fg=P["dim"],
             font=("Consolas",9), anchor="w").pack(fill=tk.X, side=tk.BOTTOM)
         # Menu bar
@@ -5722,8 +5821,9 @@ class App(tk.Tk):
         self.bind("<Control-q>", lambda e: self.quit())
 
     def about(self):
-        messagebox.showinfo("About", f"AI CLI v2.9.5 — GUI+ v3\n\nTabbed tkinter interface\n"
-            f"Theme: {THEME}\n\nTabs: Chat · Models · Write · RAG · Canvas · Tools · Status")
+        messagebox.showinfo("About", f"AI CLI v3.2 — GUI+ v4\n\nTabbed tkinter interface\n"
+            f"Theme: {THEME}\n\nTabs: Chat · Models · Agent · API · Write · RAG · Canvas · Tools · Status\n\n"
+            f"v3.2: 44 HTTP endpoints, streaming chat, RAG, voice, share, agent loop")
 
 if __name__ == "__main__":
     app = App()
@@ -14485,6 +14585,13 @@ $(cat)" ;;
     install-deps)  cmd_install_deps "$@" ;;
     -uninstall|--uninstall|uninstall) cmd_uninstall ;;
 
+    # ── v3.2 new features ─────────────────────────────────────────────────────
+    voice|say|tts)                  cmd_voice "$@" ;;
+    share|tunnel)                   cmd_share "$@" ;;
+    diff-review|review|dr)          cmd_diff_review "$@" ;;
+    agent|loop|auto)                cmd_agent "$@" ;;
+    rag-quick|rq|quick-rag)         cmd_rag_quick "$@" ;;
+
     # ── GUI / GUI+ / Bench / Serve ────────────────────────────────────────────
     -gui|--gui|gui)            cmd_gui ;;
     -gui+|--gui+|gui+|guiplus) cmd_gui_plus ;;
@@ -14592,8 +14699,12 @@ $(cat)" ;;
       echo "  Did you mean:"
       echo "    ai ask \"$cmd $*\"        Send to AI"
       echo "    ai ask-web \"$cmd $*\"    Send to AI with web search"
+      echo "    ai agent \"$cmd $*\"      Run as autonomous agent task"
       echo "    ai -h $cmd              Get help for a command"
       echo "    ai help                 Show all commands"
+      echo ""
+      echo "  v3.2 new commands:"
+      echo "    ai voice  share  diff-review  agent  rag-quick"
       ;;
   esac
 }
@@ -15953,6 +16064,44 @@ cmd_change() {
   case "$sub" in
     latest|-L)
       hdr "AI CLI v${VERSION} — Latest Changes"
+      echo ""
+      echo -e "  ${B}${BCYAN}v3.2.0${R} — Major release"
+      echo ""
+      echo -e "  ${B}New API endpoints (44 total):${R}"
+      echo "    + /v3/status /v3/sysinfo /v3/version /v3/endpoints"
+      echo "    + /v3/models /v3/models/activate /v3/models/download"
+      echo "    + /v3/keys /v3/keys/set (password-protected)"
+      echo "    + /v3/history /v3/history/search /v3/history/clear"
+      echo "    + /v3/tokens /v3/cost /v3/embed"
+      echo "    + /v3/chat/stream (SSE streaming)"
+      echo "    + /v3/web /v3/benchmark /v3/agent /v3/diff/review"
+      echo "    + /v3/voice/tts /v3/share"
+      echo "    + /v3/rag/list /v3/rag/add /v3/rag/query"
+      echo "    + /v3/files /v3/files/upload /v3/files/delete"
+      echo "    + /v3/run (password-protected) /v3/logs /v3/config"
+      echo ""
+      echo -e "  ${B}GUI / GUI+ updates:${R}"
+      echo "    + Dashboard (/v3/site): 12 tabs, streaming chat toggle,"
+      echo "      model download/activate, key management, token/cost/embed,"
+      echo "      history search, benchmark, diff review, voice, share"
+      echo "    + GUI+ v4 (tkinter): new Agent + API tabs, direct HTTP probe,"
+      echo "      endpoint browser, bumped window size"
+      echo ""
+      echo -e "  ${B}5 new commands:${R}"
+      echo "    ai voice tts \"text\"         Speak text via piper/espeak"
+      echo "    ai voice stt FILE            Transcribe audio via whisper"
+      echo "    ai voice ask \"q\"            Ask + speak answer"
+      echo "    ai share [PORT]              Public tunnel via cloudflared/ngrok"
+      echo "    ai diff-review [staged|HEAD|FILE]   AI review of diffs"
+      echo "    ai agent \"goal\" --steps N   Autonomous task loop"
+      echo "    ai rag-quick FILE \"q\"       One-shot RAG without corpus"
+      echo ""
+      echo -e "  ${B}Core:${R}"
+      echo "    + ThreadingHTTPServer — multiple concurrent clients"
+      echo "    + Access logging (~/.config/ai-cli/api_access.log)"
+      echo "    + Chat history persisted to ~/.config/ai-cli/history.jsonl"
+      echo "    + Upload dir (~/.config/ai-cli/uploads)"
+      echo "    + RAG corpora dir (~/.config/ai-cli/rag)"
       echo ""
       echo -e "  ${B}${BCYAN}v3.1.7.3${R}"
       echo ""
@@ -19124,6 +19273,211 @@ cmd_test() {
       ;;
   esac
 }
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  v3.2 — 5 new features
+# ══════════════════════════════════════════════════════════════════════════════
+
+# 1. ai voice [tts|stt] — speak text aloud or transcribe audio
+cmd_voice() {
+  local sub="${1:-tts}"; shift 2>/dev/null || true
+  case "$sub" in
+    tts|speak|say)
+      local text="$*"
+      [[ -z "$text" ]] && { err "Usage: ai voice tts \"text\""; return 0; }
+      if command -v piper &>/dev/null; then
+        local voice="${PIPER_VOICE:-en_US-lessac-medium}"
+        local tmp; tmp=$(mktemp --suffix=.wav)
+        echo "$text" | piper --model "$voice" --output_file "$tmp" 2>/dev/null && \
+          { ok "Spoken via piper"; _play_audio "$tmp"; rm -f "$tmp"; return 0; }
+      fi
+      if command -v espeak-ng &>/dev/null; then
+        espeak-ng "$text" 2>/dev/null && { ok "Spoken via espeak-ng"; return 0; }
+      fi
+      if command -v espeak &>/dev/null; then
+        espeak "$text" 2>/dev/null && { ok "Spoken via espeak"; return 0; }
+      fi
+      if command -v say &>/dev/null; then  # macOS
+        say "$text" && { ok "Spoken via say"; return 0; }
+      fi
+      err "No TTS backend found. Install one of: piper, espeak-ng, espeak (or macOS 'say')"
+      ;;
+    stt|listen|transcribe)
+      local src="${1:-}"
+      [[ -z "$src" ]] && { err "Usage: ai voice stt <audio-file>"; return 0; }
+      [[ ! -f "$src" ]] && { err "File not found: $src"; return 0; }
+      if command -v whisper &>/dev/null; then
+        whisper "$src" --output_format txt --output_dir /tmp 2>&1
+      elif command -v whisper-cpp &>/dev/null; then
+        whisper-cpp -f "$src" 2>&1
+      else
+        err "Install 'whisper' or 'whisper-cpp' for transcription"
+      fi
+      ;;
+    ask|query)
+      # TTS round-trip: ask AI then speak the answer
+      local prompt="$*"
+      [[ -z "$prompt" ]] && { err "Usage: ai voice ask \"question\""; return 0; }
+      local ans; ans=$(dispatch_ask "$prompt" 2>/dev/null)
+      echo "$ans"
+      cmd_voice tts "$ans"
+      ;;
+    *)
+      echo "Usage: ai voice <tts|stt|ask> [args]"
+      echo "  tts TEXT         Speak text aloud (piper/espeak/say)"
+      echo "  stt FILE         Transcribe audio file (whisper)"
+      echo "  ask QUESTION     Ask AI and speak the answer"
+      ;;
+  esac
+}
+_play_audio() {
+  local f="$1"
+  for p in aplay paplay afplay ffplay play; do
+    if command -v "$p" &>/dev/null; then
+      if [[ "$p" == "ffplay" ]]; then
+        "$p" -nodisp -autoexit -loglevel quiet "$f" 2>/dev/null
+      else
+        "$p" "$f" 2>/dev/null
+      fi
+      return 0
+    fi
+  done
+  warn "No audio player found (tried aplay/paplay/afplay/ffplay/play)"
+  return 1
+}
+
+# 2. ai share — create a public tunnel to the local API
+cmd_share() {
+  local port="${1:-8080}"
+  if ! curl -sS "http://localhost:${port}/health" 2>/dev/null | grep -q ok; then
+    warn "API server not running on port ${port} — starting it"
+    cmd_api_v3 start --port "$port"
+    sleep 1
+  fi
+  if command -v cloudflared &>/dev/null; then
+    info "Opening Cloudflare tunnel to port ${port}..."
+    cloudflared tunnel --url "http://localhost:${port}" 2>&1 | tee "$CONFIG_DIR/share.log" | \
+      awk "/trycloudflare.com/ {print; exit} {print}"
+    info "Log: $CONFIG_DIR/share.log"
+  elif command -v ngrok &>/dev/null; then
+    info "Opening ngrok tunnel to port ${port}..."
+    ngrok http "$port"
+  elif command -v ssh &>/dev/null; then
+    info "Falling back to serveo.net via SSH (no auth)..."
+    ssh -o StrictHostKeyChecking=no -R "80:localhost:${port}" serveo.net
+  else
+    err "Install one of: cloudflared, ngrok, or use SSH to share"
+    echo "  cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/tunnel-guide/"
+    echo "  ngrok:       https://ngrok.com/download"
+  fi
+}
+
+# 3. ai diff-review — AI review of current staged diff or given file
+cmd_diff_review() {
+  local diff_src="${1:-staged}"
+  local diff_text=""
+  case "$diff_src" in
+    staged)     diff_text=$(git diff --cached 2>/dev/null) ;;
+    unstaged)   diff_text=$(git diff 2>/dev/null) ;;
+    head|last)  diff_text=$(git show HEAD 2>/dev/null) ;;
+    branch)     diff_text=$(git diff "origin/${2:-main}..." 2>/dev/null) ;;
+    *)
+      if [[ -f "$diff_src" ]]; then
+        diff_text=$(cat "$diff_src")
+      else
+        err "Usage: ai diff-review [staged|unstaged|head|branch <name>|FILE]"
+        return 0
+      fi
+      ;;
+  esac
+  if [[ -z "$diff_text" ]]; then
+    warn "No diff to review (source: $diff_src)"
+    return 0
+  fi
+  info "Reviewing $(echo "$diff_text" | wc -l) lines of diff..."
+  local prompt="You are a senior engineer. Review this unified diff. Flag bugs, logic errors, missing tests, security issues, and style problems. Be concise — use bullet points. If the diff looks fine, say so in one sentence.
+
+$diff_text"
+  dispatch_ask "$prompt"
+}
+
+# 4. ai agent "goal" [--steps N] — autonomous task loop
+cmd_agent() {
+  local goal="" steps=3 verbose=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --steps|-s) steps="$2"; shift 2 ;;
+      --verbose|-v) verbose=1; shift ;;
+      -h|--help)
+        echo "Usage: ai agent \"goal\" [--steps N] [--verbose]"
+        echo "  Runs an autonomous AI loop that breaks the goal into steps,"
+        echo "  executes each via the chat backend, and composes a final result."
+        return 0 ;;
+      *) goal="${goal:+$goal }$1"; shift ;;
+    esac
+  done
+  [[ -z "$goal" ]] && { err "Usage: ai agent \"goal\" [--steps N]"; return 0; }
+  info "Agent loop: goal=\"$goal\" steps=$steps"
+  local plan_prompt="Break this goal into exactly $steps concrete, numbered sub-tasks (no preamble, just the numbered list):
+
+Goal: $goal"
+  local plan; plan=$(dispatch_ask "$plan_prompt" 2>/dev/null)
+  [[ "$verbose" == "1" ]] && { echo "── plan ──"; echo "$plan"; echo "──────────"; }
+  local running="Goal: $goal
+Plan:
+$plan
+
+Work so far:
+"
+  local i
+  for ((i=1; i<=steps; i++)); do
+    info "Step $i/$steps..."
+    local step_prompt="$running
+
+Execute step $i of the plan. Be concise. Output only the result."
+    local step_out; step_out=$(dispatch_ask "$step_prompt" 2>/dev/null)
+    [[ "$verbose" == "1" ]] && { echo "── step $i ──"; echo "$step_out"; echo "──────────"; }
+    running="${running}
+Step $i result: $step_out"
+  done
+  info "Synthesising final answer..."
+  dispatch_ask "${running}
+
+Now write the final, polished answer to the original goal. Be direct. No meta-commentary."
+}
+
+# 5. ai rag-quick FILE "question" — one-shot RAG without pre-building a corpus
+cmd_rag_quick() {
+  local file="${1:-}" question="${2:-}"
+  [[ -z "$file" || -z "$question" ]] && {
+    echo "Usage: ai rag-quick FILE \"question\""
+    echo "       ai rag-quick DIRECTORY \"question\""
+    return 0
+  }
+  local texts=""
+  if [[ -d "$file" ]]; then
+    while IFS= read -r -d "" f; do
+      texts="$texts
+=== $f ===
+$(head -c 8000 "$f" 2>/dev/null)"
+    done < <(find "$file" -type f \( -name "*.md" -o -name "*.txt" -o -name "*.py" -o -name "*.js" -o -name "*.sh" -o -name "*.json" \) -print0 2>/dev/null | head -c 200000)
+  elif [[ -f "$file" ]]; then
+    texts=$(head -c 80000 "$file" 2>/dev/null)
+  else
+    err "Not a file or directory: $file"; return 0
+  fi
+  [[ -z "$texts" ]] && { err "No text extracted from: $file"; return 0; }
+  local prompt="Use ONLY the following context to answer. If the answer isn't in the context, say \"not in context\".
+
+CONTEXT:
+$texts
+
+QUESTION: $question
+
+ANSWER:"
+  dispatch_ask "$prompt"
+}
+
 cmd_api_v3() {
   local sub="${1:-help}"; shift 2>/dev/null || true
   case "$sub" in
@@ -19140,19 +19494,36 @@ cmd_api_v3() {
       local _api_script; _api_script=$(mktemp /tmp/ai_api_XXXX.py)
       local _cli_bin; _cli_bin=$(command -v ai 2>/dev/null || echo "$0")
       cat > "$_api_script" << 'APIPY'
-import http.server, json, os, subprocess, sys, secrets
+import http.server, json, os, subprocess, sys, secrets, time, glob, platform, shutil, threading, re
 
 CLI = os.environ.get("AI_CLI_BIN", "ai")
 HOST = os.environ.get("API_HOST", "0.0.0.0")
 PORT = int(os.environ.get("API_PORT", "8080"))
 MODEL = os.environ.get("AI_MODEL", "auto")
-TERM_PW_FILE = os.path.expanduser("~/.config/ai-cli/.api_terminal_pw")
+VERSION = os.environ.get("AI_VERSION", "3.2.0")
+CFG_DIR = os.path.expanduser("~/.config/ai-cli")
+TERM_PW_FILE = os.path.join(CFG_DIR, ".api_terminal_pw")
+LOG_FILE = os.path.join(CFG_DIR, "api_access.log")
+HIST_FILE = os.path.join(CFG_DIR, "history.jsonl")
+MODELS_DIR = os.path.expanduser("~/.ai-models")
+UPLOADS_DIR = os.path.join(CFG_DIR, "uploads")
+RAG_DIR = os.path.join(CFG_DIR, "rag")
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+os.makedirs(RAG_DIR, exist_ok=True)
+START_TIME = time.time()
 
 def get_term_pw():
     try:
         return open(TERM_PW_FILE).read().strip()
     except:
         return None
+
+def log_request(path, client_ip):
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {client_ip} {path}\n")
+    except:
+        pass
 
 def strip_ansi(s):
     out = ""
@@ -19185,6 +19556,142 @@ def run_cmd(cmd):
         return strip_ansi(r.stdout.strip() + r.stderr.strip()) or "Done"
     except Exception as e:
         return f"Error: {e}"
+
+def shell_run(cmd, timeout=60):
+    try:
+        r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+        return {"stdout": r.stdout, "stderr": r.stderr, "rc": r.returncode}
+    except subprocess.TimeoutExpired:
+        return {"stdout": "", "stderr": "Timed out", "rc": 124}
+    except Exception as e:
+        return {"stdout": "", "stderr": str(e), "rc": 1}
+
+def estimate_cost(tokens, model_name):
+    rates = {
+        "gpt-4o": (0.0025, 0.01), "gpt-4o-mini": (0.00015, 0.0006),
+        "claude": (0.003, 0.015), "gemini": (0.00125, 0.005),
+        "groq": (0.0001, 0.0001), "mistral": (0.002, 0.006),
+    }
+    name = (model_name or "").lower()
+    rate = (0.001, 0.003)
+    for k, v in rates.items():
+        if k in name:
+            rate = v; break
+    ins = (tokens // 2) / 1000.0 * rate[0]
+    out = (tokens // 2) / 1000.0 * rate[1]
+    return round(ins + out, 6)
+
+def count_tokens(text):
+    # crude 4-char ~ 1-token estimate
+    return max(1, len(text) // 4)
+
+def list_gguf_models():
+    out = []
+    for d in [MODELS_DIR, os.path.expanduser("~/models"), "/usr/share/ai-cli/models"]:
+        if not os.path.isdir(d):
+            continue
+        for p in glob.glob(os.path.join(d, "**", "*.gguf"), recursive=True):
+            try:
+                sz = os.path.getsize(p)
+                out.append({"path": p, "name": os.path.basename(p), "size": sz, "size_mb": round(sz / 1048576, 1)})
+            except:
+                pass
+    return out
+
+def active_model():
+    try:
+        for p in ["~/.config/ai-cli/active_model", "~/.config/ai-cli/config"]:
+            fp = os.path.expanduser(p)
+            if os.path.isfile(fp):
+                t = open(fp).read().strip()
+                if t:
+                    return t.split("\n")[0][:200]
+    except:
+        pass
+    return MODEL
+
+def masked_key(key_name):
+    v = os.environ.get(key_name, "")
+    if not v:
+        return ""
+    if len(v) <= 10:
+        return v[:3] + "…"
+    return v[:6] + "…" + v[-4:]
+
+def sysinfo():
+    info = {
+        "version": VERSION,
+        "platform": platform.platform(),
+        "python": sys.version.split()[0],
+        "cpu_count": os.cpu_count(),
+        "hostname": platform.node(),
+        "uptime_seconds": int(time.time() - START_TIME),
+    }
+    try:
+        import resource
+        rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        info["api_rss_mb"] = round(rss_kb / 1024, 1) if platform.system() == "Linux" else round(rss_kb / 1048576, 1)
+    except:
+        pass
+    try:
+        if os.path.isfile("/proc/loadavg"):
+            info["loadavg"] = open("/proc/loadavg").read().split()[:3]
+    except:
+        pass
+    try:
+        du = shutil.disk_usage(os.path.expanduser("~"))
+        info["disk_free_gb"] = round(du.free / 1e9, 1)
+        info["disk_total_gb"] = round(du.total / 1e9, 1)
+    except:
+        pass
+    try:
+        import subprocess as sp
+        r = sp.run(["nvidia-smi", "--query-gpu=name,memory.total,memory.used,utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=3)
+        if r.returncode == 0 and r.stdout.strip():
+            gpus = []
+            for line in r.stdout.strip().splitlines():
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) >= 5:
+                    gpus.append({"name": parts[0], "mem_total_mb": parts[1], "mem_used_mb": parts[2], "util_pct": parts[3], "temp_c": parts[4]})
+            info["gpus"] = gpus
+    except:
+        pass
+    return info
+
+def read_history(n=50):
+    try:
+        lines = open(HIST_FILE).read().strip().splitlines()[-n:]
+        out = []
+        for l in lines:
+            try:
+                out.append(json.loads(l))
+            except:
+                out.append({"raw": l})
+        return out
+    except:
+        return []
+
+def append_history(role, content, model=None):
+    try:
+        with open(HIST_FILE, "a") as f:
+            f.write(json.dumps({"t": int(time.time()), "role": role, "content": content[:4000], "model": model or MODEL}) + "\n")
+    except:
+        pass
+
+def simple_embed(text):
+    # Deterministic character-hash embedding; 64-dim. Useful as similarity proxy
+    # when no real embedding backend is installed.
+    import hashlib
+    vec = [0.0] * 64
+    for tok in re.findall(r"\w+", text.lower()):
+        h = hashlib.md5(tok.encode()).digest()
+        for i in range(64):
+            vec[i] += (h[i % 16] - 128) / 128.0
+    norm = sum(x * x for x in vec) ** 0.5 or 1.0
+    return [round(x / norm, 6) for x in vec]
+
+def cosine(a, b):
+    return sum(x * y for x, y in zip(a, b))
 
 # ── Memory & Context ─────────────────────────────────────────────────
 MEM_FILE = os.path.expanduser("~/.config/ai-cli/memory.jsonl")
@@ -19261,53 +19768,397 @@ h3{padding:10px 16px;background:#181825;border-bottom:1px solid #313244;color:#8
 p.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();S()}})</script></body></html>"""
 
 def get_dash_html():
-    js = "function switchTab(b,i){var ps=document.querySelectorAll(\".p\");for(var j=0;j<ps.length;j++){ps[j].style.display=j===i?\"block\":\"none\"}var bs=document.querySelectorAll(\"nav .nb\");for(var k=0;k<bs.length;k++){bs[k].className=\"nb\"}b.className=\"nb a\"}"
-    js += "var chatH=[];"
-    js += "function am(c,t){var d=document.createElement(\"div\");d.className=\"cm \"+c;d.textContent=t;var ms=document.getElementById(\"ms\");ms.appendChild(d);ms.scrollTop=ms.scrollHeight}"
-    js += "function sc(){var p=document.getElementById(\"pr\");var t=p.value;if(!t)return;p.value=\"\";am(\"cu\",t);chatH.push({role:\"user\",content:t});fetch(\"/v1/chat/completions\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify({messages:chatH})}).then(function(r){return r.json()}).then(function(d){var reply=d.choices&&d.choices[0]&&d.choices[0].message?d.choices[0].message.content:\"No response\";chatH.push({role:\"assistant\",content:reply});am(\"ca\",reply)}).catch(function(e){am(\"ca\",\"Error: \"+e.message)})}"
-    js += "function rc(c){var o=document.querySelector(\".p[style*=block] .o\");if(!o)o=document.querySelector(\".o\");if(o)o.textContent=\"Running...\";fetch(\"/v1/chat/completions\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify({messages:[{role:\"user\",content:\"/cmd \"+c}]})}).then(function(r){return r.json()}).then(function(d){if(o)o.textContent=d.choices&&d.choices[0]?d.choices[0].message.content:\"Done\"}).catch(function(e){if(o)o.textContent=\"Error: \"+e.message})}"
-    css = "*{box-sizing:border-box;margin:0;padding:0}body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;min-height:100vh}nav{background:#181825;padding:12px 20px;display:flex;gap:12px;border-bottom:1px solid #313244;align-items:center;flex-wrap:wrap}nav h2{color:#89b4fa;margin-right:auto}.nb{background:#313244;color:#cdd6f4;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px}.nb:hover{background:#45475a}.nb.a{background:#89b4fa;color:#1e1e2e}.p{display:none;padding:20px;max-width:900px;margin:0 auto}textarea,input[type=text]{background:#313244;border:1px solid #45475a;color:#cdd6f4;padding:10px;border-radius:6px;font-family:monospace;font-size:14px;width:100%}.b{background:#89b4fa;color:#1e1e2e;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-weight:600;margin:4px}.b:hover{background:#74c7ec}.bs{padding:6px 12px;font-size:12px}.o{background:#181825;border:1px solid #313244;border-radius:8px;padding:16px;margin:10px 0;white-space:pre-wrap;max-height:400px;overflow-y:auto;font-family:monospace;font-size:13px}h3{color:#89b4fa;margin-bottom:10px}.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}.cm{margin:8px 0;padding:10px;border-radius:8px}.cu{background:#313244;margin-left:40px}.ca{background:#181825;border:1px solid #313244;margin-right:40px}"
-    html = "<!DOCTYPE html><html><head><meta charset=utf-8><title>AI CLI Dashboard</title><style>" + css + "</style></head><body>"
-    html += "<nav><h2>AI CLI Dashboard</h2>"
-    html += "<button class=\"nb a\" onclick=\"switchTab(this,0)\">Chat</button>"
-    html += "<button class=nb onclick=\"switchTab(this,1)\">Models</button>"
-    html += "<button class=nb onclick=\"switchTab(this,2)\">Settings</button>"
-    html += "<button class=nb onclick=\"switchTab(this,3)\">Tools</button>"
-    html += "<button class=nb onclick=\"switchTab(this,4)\">Terminal</button></nav>"
-    html += "<div id=p0 class=p style=display:block><h3>Chat</h3><div id=ms class=o style=min-height:200px></div>"
-    html += "<div style=display:flex;gap:8px;margin-top:8px><textarea id=pr rows=2 placeholder=Message...></textarea>"
-    html += "<button class=b onclick=sc()>Send</button></div></div>"
-    html += "<div id=p1 class=p><h3>Models</h3><button class=\"b bs\" onclick=\"rc(\x27models\x27)\">Refresh</button> "
-    html += "<button class=\"b bs\" onclick=\"rc(\x27recommended\x27)\">Browse All</button><div class=o>Click Refresh</div></div>"
-    html += "<div id=p2 class=p><h3>Settings</h3><button class=\"b bs\" onclick=\"rc(\x27status\x27)\">Status</button> "
-    html += "<button class=\"b bs\" onclick=\"rc(\x27health\x27)\">Health</button> "
-    html += "<button class=\"b bs\" onclick=\"rc(\x27sysinfo\x27)\">System Info</button><div class=o>Click a button</div></div>"
-    html += "<div id=p3 class=p><h3>Tools</h3><div class=g>"
-    html += "<button class=\"b bs\" onclick=\"rc(\x27test -S\x27)\">Speed</button>"
-    html += "<button class=\"b bs\" onclick=\"rc(\x27test -N\x27)\">Network</button>"
-    html += "<button class=\"b bs\" onclick=\"rc(\x27analytics\x27)\">Analytics</button>"
-    html += "<button class=\"b bs\" onclick=\"rc(\x27security\x27)\">Security</button>"
-    html += "</div><div class=o></div></div>"
-    html += "<div id=p4 class=p><h3>Terminal (Protected)</h3>"
-    html += "<div id=tauth style=text-align:center;padding:40px>"
-    html += "<p style=color:#6c7086;margin-bottom:12px>Enter terminal password</p>"
-    html += "<input type=password id=tpw placeholder=Password style=max-width:200px;text-align:center maxlength=8>"
-    html += "<br><button class=b onclick=tlogin() style=margin-top:8px>Unlock</button></div>"
-    html += "<div id=tterm style=display:none>"
-    html += "<div id=tout class=o style=min-height:300px;background:#0d0d0d;color:#00ff41;font-family:monospace></div>"
-    html += "<div style=display:flex;gap:8px;margin-top:8px>"
-    html += "<span style=color:#00ff41;padding:10px>$</span>"
-    html += "<input type=text id=tcmd placeholder=Command... style=font-family:monospace>"
-    html += "<button class=b onclick=texec()>Run</button></div></div></div>"
-    js += "var _ta=false;"
-    js += "function tlogin(){var pw=document.getElementById(\"tpw\").value;fetch(\"/v3/terminal/auth\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify({password:pw})}).then(function(r){return r.json()}).then(function(d){if(d.ok){_ta=true;document.getElementById(\"tauth\").style.display=\"none\";document.getElementById(\"tterm\").style.display=\"block\";tadd(\"Terminal unlocked.\")}else{alert(\"Wrong password\")}}).catch(function(e){alert(\"Error: \"+e.message)})}"
-    js += "function tadd(t){var o=document.getElementById(\"tout\");o.textContent+=t+String.fromCharCode(10);o.scrollTop=o.scrollHeight}"
-    js += "function texec(){if(!_ta)return;var c=document.getElementById(\"tcmd\");var cmd=c.value;if(!cmd)return;c.value=\"\";tadd(\"$ \"+cmd);fetch(\"/v3/terminal/exec\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify({cmd:cmd,password:document.getElementById(\"tpw\").value})}).then(function(r){return r.json()}).then(function(d){tadd(d.output||d.error||\"Done\")}).catch(function(e){tadd(\"Error: \"+e.message)})}"
-    js += "document.getElementById(\"tcmd\").addEventListener(\"keydown\",function(e){if(e.key===\"Enter\")texec()});"
-    html += "<script>" + js + "</script></body></html>"
-    return html
+    # CSS
+    css = (
+        "*{box-sizing:border-box;margin:0;padding:0}"
+        "body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;min-height:100vh}"
+        "nav{background:#181825;padding:10px 16px;display:flex;gap:6px;border-bottom:1px solid #313244;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:9}"
+        "nav h2{color:#89b4fa;margin-right:auto;font-size:16px}"
+        "nav .ver{color:#6c7086;font-size:12px;margin-right:10px}"
+        ".nb{background:#313244;color:#cdd6f4;border:none;padding:7px 12px;border-radius:6px;cursor:pointer;font-size:12px}"
+        ".nb:hover{background:#45475a}.nb.a{background:#89b4fa;color:#1e1e2e}"
+        ".p{display:none;padding:18px;max-width:1000px;margin:0 auto}"
+        "textarea,input[type=text],input[type=password],select{background:#313244;border:1px solid #45475a;color:#cdd6f4;padding:9px;border-radius:6px;font-family:monospace;font-size:13px;width:100%}"
+        ".b{background:#89b4fa;color:#1e1e2e;border:none;padding:9px 16px;border-radius:6px;cursor:pointer;font-weight:600;margin:4px 2px}"
+        ".b:hover{background:#74c7ec}.bs{padding:6px 11px;font-size:12px}"
+        ".b.g{background:#a6e3a1}.b.r{background:#f38ba8}.b.y{background:#f9e2af}"
+        ".o{background:#181825;border:1px solid #313244;border-radius:8px;padding:14px;margin:8px 0;white-space:pre-wrap;max-height:420px;overflow:auto;font-family:monospace;font-size:12px}"
+        "h3{color:#89b4fa;margin-bottom:10px}"
+        ".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px}"
+        ".row{display:flex;gap:8px;margin:6px 0;flex-wrap:wrap}"
+        ".cm{margin:6px 0;padding:9px;border-radius:8px}"
+        ".cu{background:#313244;margin-left:40px}"
+        ".ca{background:#181825;border:1px solid #313244;margin-right:40px}"
+        ".kv{display:grid;grid-template-columns:160px 1fr;gap:4px 10px;font-family:monospace;font-size:12px}"
+        ".kv b{color:#89b4fa}"
+        ".tag{display:inline-block;background:#313244;padding:2px 8px;border-radius:10px;font-size:11px;margin:2px;color:#a6e3a1}"
+    )
+
+    # JS - all tab-switching, helpers, fetchers
+    js_parts = []
+    js_parts.append(
+        "function switchTab(b,i){var ps=document.querySelectorAll('.p');"
+        "for(var j=0;j<ps.length;j++){ps[j].style.display=j===i?'block':'none'}"
+        "var bs=document.querySelectorAll('nav .nb');"
+        "for(var k=0;k<bs.length;k++){bs[k].className='nb'}b.className='nb a'}"
+    )
+    js_parts.append(
+        "function j(u,b,cb){fetch(u,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{})"
+        ".then(function(r){return r.json()}).then(cb).catch(function(e){cb({error:e.message})})}"
+    )
+    js_parts.append(
+        "function put(id,v){var o=document.getElementById(id);"
+        "o.textContent=typeof v==='string'?v:JSON.stringify(v,null,2)}"
+    )
+    # chat
+    js_parts.append("var chatH=[];var stream=false;")
+    js_parts.append(
+        "function am(c,t){var d=document.createElement('div');d.className='cm '+c;d.textContent=t;"
+        "var ms=document.getElementById('ms');ms.appendChild(d);ms.scrollTop=ms.scrollHeight;return d}"
+    )
+    js_parts.append(
+        "function sc(){var p=document.getElementById('pr');var t=p.value.trim();if(!t)return;p.value='';"
+        "am('cu',t);chatH.push({role:'user',content:t});"
+        "if(stream){var ad=am('ca','');"
+        "fetch('/v3/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:chatH})})"
+        ".then(function(r){var rd=r.body.getReader();var td=new TextDecoder();var buf='';var full='';"
+        "function read(){return rd.read().then(function(x){if(x.done){chatH.push({role:'assistant',content:full});return}"
+        "buf+=td.decode(x.value);var parts=buf.split('\\n\\n');buf=parts.pop();"
+        "for(var i=0;i<parts.length;i++){var ln=parts[i].replace(/^data: /,'');if(ln==='[DONE]')continue;"
+        "try{var o=JSON.parse(ln);full+=o.delta||'';ad.textContent=full}catch(e){}}return read()});}return read()})}"
+        "else{j('/v1/chat/completions',{messages:chatH},function(d){var rp=d.choices&&d.choices[0]&&d.choices[0].message?d.choices[0].message.content:'Error';"
+        "chatH.push({role:'assistant',content:rp});am('ca',rp)})}}"
+    )
+    js_parts.append(
+        "function rc(c){var o=document.querySelector('.p[style*=block] .o');if(!o)o=document.querySelector('.o');"
+        "if(o)o.textContent='Running...';"
+        "j('/v1/chat/completions',{messages:[{role:'user',content:'/cmd '+c}]},function(d){"
+        "if(o)o.textContent=d.choices&&d.choices[0]?d.choices[0].message.content:JSON.stringify(d)})}"
+    )
+    # status
+    js_parts.append(
+        "function loadStatus(){j('/v3/status',null,function(d){put('stOut',d)});"
+        "j('/v3/sysinfo',null,function(d){put('sysOut',d)});"
+        "j('/v3/version',null,function(d){put('verOut',d)})}"
+    )
+    # models
+    js_parts.append(
+        "function loadModels(){j('/v3/models',null,function(d){var h='Active: '+d.active+'\\n\\nLocal GGUF:\\n';"
+        "if(!d.local||!d.local.length){h+='  (none — run: ai recommended download N)'}"
+        "else{for(var i=0;i<d.local.length;i++){h+='  '+d.local[i].name+'  ('+d.local[i].size_mb+' MB)\\n'}}"
+        "put('mdOut',h)})}"
+        "function useModel(){var v=document.getElementById('mdName').value.trim();if(!v)return;"
+        "j('/v3/models/activate',{model:v},function(d){put('mdOut',d);loadModels()})}"
+        "function dlModel(){var v=document.getElementById('mdName').value.trim();if(!v)return;"
+        "put('mdOut','Downloading...');j('/v3/models/download',{model:v},function(d){put('mdOut',d)})}"
+    )
+    # keys
+    js_parts.append(
+        "function loadKeys(){j('/v3/keys',null,function(d){var h='';"
+        "for(var k in d.keys){h+=k+'  '+(d.keys[k].set?('✓ '+d.keys[k].masked):'(not set)')+'\\n'}put('kOut',h)})}"
+        "function setKey(){var n=document.getElementById('kN').value;var v=document.getElementById('kV').value;"
+        "var p=document.getElementById('kPw').value;"
+        "j('/v3/keys/set',{name:n,value:v,password:p},function(d){put('kOut',d);loadKeys()})}"
+    )
+    # history / tokens / cost / embed
+    js_parts.append(
+        "function loadHist(){j('/v3/history?n=50',null,function(d){put('hOut',d)})}"
+        "function searchHist(){var q=document.getElementById('hQ').value;"
+        "j('/v3/history/search',{query:q},function(d){put('hOut',d)})}"
+        "function clearHist(){if(!confirm('Wipe history?'))return;"
+        "j('/v3/history/clear',{},function(d){put('hOut',d);loadHist()})}"
+        "function tokCount(){var t=document.getElementById('tkT').value;"
+        "j('/v3/tokens',{text:t},function(d){put('tkOut',d)})}"
+        "function costEst(){var t=document.getElementById('tkT').value;var m=document.getElementById('tkM').value;"
+        "j('/v3/cost',{text:t,model:m},function(d){put('tkOut',d)})}"
+        "function embedTxt(){var t=document.getElementById('tkT').value;"
+        "j('/v3/embed',{text:t},function(d){put('tkOut',d)})}"
+    )
+    # web/agent/diff/rag
+    js_parts.append(
+        "function webAsk(){var q=document.getElementById('wQ').value;"
+        "put('wOut','Searching...');j('/v3/web',{query:q},function(d){put('wOut',d)})}"
+        "function agentRun(){var g=document.getElementById('agG').value;var s=parseInt(document.getElementById('agS').value||'3');"
+        "put('agOut','Running agent ('+s+' steps)...');j('/v3/agent',{goal:g,steps:s},function(d){put('agOut',d)})}"
+        "function diffReview(){var d=document.getElementById('dfT').value;"
+        "put('dfOut','Reviewing...');j('/v3/diff/review',{diff:d},function(x){put('dfOut',x)})}"
+        "function ragAdd(){var c=document.getElementById('rgC').value||'default';var t=document.getElementById('rgT').value;"
+        "j('/v3/rag/add',{corpus:c,text:t},function(d){put('rgOut',d)})}"
+        "function ragQuery(){var c=document.getElementById('rgC').value||'default';var q=document.getElementById('rgQ').value;"
+        "put('rgOut','Searching corpus...');j('/v3/rag/query',{corpus:c,query:q,k:3},function(d){put('rgOut',d)})}"
+        "function ragList(){j('/v3/rag/list',null,function(d){put('rgOut',d)})}"
+        "function benchmark(){put('bmOut','Running...');"
+        "j('/v3/benchmark',{},function(d){put('bmOut',d)})}"
+        "function shareLink(){put('shOut','Creating...');"
+        "j('/v3/share',{},function(d){put('shOut',d)})}"
+        "function ttsSay(){var t=document.getElementById('vT').value;"
+        "j('/v3/voice/tts',{text:t},function(d){put('vOut',d)})}"
+    )
+    # endpoints browser
+    js_parts.append(
+        "function loadEndpoints(){j('/v3/endpoints',null,function(d){"
+        "var h='';for(var i=0;i<d.endpoints.length;i++){var e=d.endpoints[i];"
+        "h+=e.method.padEnd(5)+' '+e.path+'\\n        '+e.desc+'\\n'}put('eOut',h)})}"
+        "function loadLogs(){j('/v3/logs',null,function(d){put('lgOut',(d.log||[]).join('\\n'))})}"
+    )
+    # terminal
+    js_parts.append(
+        "var _ta=false;"
+        "function tlogin(){var pw=document.getElementById('tpw').value;"
+        "j('/v3/terminal/auth',{password:pw},function(d){if(d.ok){_ta=true;"
+        "document.getElementById('tauth').style.display='none';"
+        "document.getElementById('tterm').style.display='block';tadd('Terminal unlocked.')}"
+        "else{alert('Wrong password: '+(d.error||''))}})}"
+        "function tadd(t){var o=document.getElementById('tout');"
+        "o.textContent+=t+String.fromCharCode(10);o.scrollTop=o.scrollHeight}"
+        "function texec(){if(!_ta)return;var c=document.getElementById('tcmd');var cmd=c.value;"
+        "if(!cmd)return;c.value='';tadd('$ '+cmd);"
+        "j('/v3/terminal/exec',{cmd:cmd,password:document.getElementById('tpw').value},"
+        "function(d){tadd(d.output||d.error||'Done')})}"
+    )
+
+    js = "\n".join(js_parts)
+
+    tabs = [
+        ("Chat", 0), ("Status", 1), ("Models", 2), ("Keys", 3),
+        ("History", 4), ("Tools", 5), ("Agent", 6), ("Voice", 7),
+        ("RAG", 8), ("Share", 9), ("API Docs", 10), ("Terminal", 11),
+    ]
+
+    h = ["<!DOCTYPE html><html><head><meta charset=utf-8><title>AI CLI v", VERSION,
+         " Dashboard</title><style>", css, "</style></head><body>"]
+    h.append("<nav><h2>AI CLI Dashboard</h2><span class=ver>v")
+    h.append(VERSION)
+    h.append("</span>")
+    for i, (name, idx) in enumerate(tabs):
+        cls = "nb a" if i == 0 else "nb"
+        h.append(f"<button class='{cls}' onclick='switchTab(this,{idx})'>{name}</button>")
+    h.append("</nav>")
+
+    # Tab 0: Chat
+    h.append(
+        "<div id=p0 class=p style=display:block><h3>Chat</h3>"
+        "<div id=ms class=o style=min-height:240px></div>"
+        "<div class=row><textarea id=pr rows=2 placeholder='Message... (Shift+Enter for newline)'></textarea></div>"
+        "<div class=row>"
+        "<button class=b onclick=sc()>Send</button>"
+        "<label style='padding:10px;font-size:12px;color:#a6adc8'>"
+        "<input type=checkbox onchange='stream=this.checked'> Stream</label>"
+        "<button class='b bs' onclick='chatH=[];document.getElementById(\"ms\").innerHTML=\"\"'>Clear</button>"
+        "</div></div>"
+    )
+
+    # Tab 1: Status
+    h.append(
+        "<div id=p1 class=p><h3>Server Status</h3>"
+        "<button class=b onclick=loadStatus()>Refresh</button>"
+        "<h3 style=margin-top:14px>Status</h3><pre id=stOut class=o>(click refresh)</pre>"
+        "<h3>System Info</h3><pre id=sysOut class=o></pre>"
+        "<h3>Version</h3><pre id=verOut class=o></pre>"
+        "</div>"
+    )
+
+    # Tab 2: Models
+    h.append(
+        "<div id=p2 class=p><h3>Models</h3>"
+        "<button class=b onclick=loadModels()>List</button> "
+        "<button class='b bs' onclick=\"rc('recommended')\">Browse 195</button>"
+        "<div class=row>"
+        "<input type=text id=mdName placeholder='model name or number'>"
+        "</div>"
+        "<div class=row>"
+        "<button class='b g' onclick=useModel()>Activate</button>"
+        "<button class='b y' onclick=dlModel()>Download</button>"
+        "</div>"
+        "<pre id=mdOut class=o>(none)</pre></div>"
+    )
+
+    # Tab 3: Keys
+    h.append(
+        "<div id=p3 class=p><h3>Backend API Keys</h3>"
+        "<button class=b onclick=loadKeys()>Refresh</button>"
+        "<pre id=kOut class=o>(click refresh)</pre>"
+        "<h3 style=margin-top:14px>Set a key (terminal password required)</h3>"
+        "<div class=row><input type=text id=kN placeholder='OPENAI_API_KEY'></div>"
+        "<div class=row><input type=password id=kV placeholder='value'></div>"
+        "<div class=row><input type=password id=kPw placeholder='terminal password' maxlength=8></div>"
+        "<button class='b g' onclick=setKey()>Save Key</button>"
+        "</div>"
+    )
+
+    # Tab 4: History / Tokens
+    h.append(
+        "<div id=p4 class=p><h3>Conversation History</h3>"
+        "<div class=row>"
+        "<button class=b onclick=loadHist()>Load last 50</button>"
+        "<input type=text id=hQ placeholder='search query' style=max-width:300px>"
+        "<button class='b bs' onclick=searchHist()>Search</button>"
+        "<button class='b r bs' onclick=clearHist()>Clear</button>"
+        "</div>"
+        "<pre id=hOut class=o></pre>"
+        "<h3 style=margin-top:14px>Tokens · Cost · Embed</h3>"
+        "<textarea id=tkT rows=3 placeholder='text to analyse'></textarea>"
+        "<div class=row>"
+        "<input type=text id=tkM placeholder='model (e.g. gpt-4o)' style=max-width:200px>"
+        "<button class='b bs' onclick=tokCount()>Count Tokens</button>"
+        "<button class='b bs' onclick=costEst()>Estimate Cost</button>"
+        "<button class='b bs' onclick=embedTxt()>Embed</button>"
+        "</div>"
+        "<pre id=tkOut class=o></pre></div>"
+    )
+
+    # Tab 5: Tools
+    h.append(
+        "<div id=p5 class=p><h3>Tools</h3>"
+        "<div class=grid>"
+        "<button class='b bs' onclick=\"rc('test -S')\">Speed Test</button>"
+        "<button class='b bs' onclick=\"rc('test -N')\">Network</button>"
+        "<button class='b bs' onclick=\"rc('analytics')\">Analytics</button>"
+        "<button class='b bs' onclick=\"rc('security')\">Security</button>"
+        "<button class='b bs' onclick=\"rc('health')\">Health</button>"
+        "<button class='b bs' onclick=\"rc('mem list')\">Memory</button>"
+        "</div>"
+        "<h3 style=margin-top:14px>Benchmark</h3>"
+        "<button class=b onclick=benchmark()>Run round-trip</button>"
+        "<pre id=bmOut class=o></pre>"
+        "<h3 style=margin-top:14px>Web-augmented Ask</h3>"
+        "<div class=row><input type=text id=wQ placeholder='query'></div>"
+        "<button class=b onclick=webAsk()>Ask with web search</button>"
+        "<pre id=wOut class=o></pre>"
+        "<div class=o></div></div>"
+    )
+
+    # Tab 6: Agent + Diff
+    h.append(
+        "<div id=p6 class=p><h3>Agent Loop</h3>"
+        "<textarea id=agG rows=3 placeholder='goal'></textarea>"
+        "<div class=row>"
+        "<input type=text id=agS placeholder=steps value=3 style=max-width:120px>"
+        "<button class='b g' onclick=agentRun()>Run</button>"
+        "</div>"
+        "<pre id=agOut class=o></pre>"
+        "<h3 style=margin-top:14px>Diff Review</h3>"
+        "<textarea id=dfT rows=10 placeholder='paste unified diff'></textarea>"
+        "<button class='b' onclick=diffReview()>Review</button>"
+        "<pre id=dfOut class=o></pre></div>"
+    )
+
+    # Tab 7: Voice
+    h.append(
+        "<div id=p7 class=p><h3>Voice (TTS)</h3>"
+        "<textarea id=vT rows=3 placeholder='text to speak'></textarea>"
+        "<button class=b onclick=ttsSay()>Speak</button>"
+        "<pre id=vOut class=o></pre>"
+        "<p style=color:#6c7086;font-size:12px>Requires <code>piper</code> or <code>espeak</code> on PATH.</p>"
+        "</div>"
+    )
+
+    # Tab 8: RAG
+    h.append(
+        "<div id=p8 class=p><h3>RAG</h3>"
+        "<div class=row>"
+        "<input type=text id=rgC placeholder='corpus name (default)' style=max-width:240px>"
+        "<button class='b bs' onclick=ragList()>List Corpora</button>"
+        "</div>"
+        "<h3 style=margin-top:14px>Add to corpus</h3>"
+        "<textarea id=rgT rows=4 placeholder='text to index'></textarea>"
+        "<button class='b g' onclick=ragAdd()>Add</button>"
+        "<h3 style=margin-top:14px>Query</h3>"
+        "<div class=row><input type=text id=rgQ placeholder='question'>"
+        "<button class='b' onclick=ragQuery()>Query</button></div>"
+        "<pre id=rgOut class=o></pre></div>"
+    )
+
+    # Tab 9: Share
+    h.append(
+        "<div id=p9 class=p><h3>Public Share Link</h3>"
+        "<p style=color:#a6adc8>Creates a Cloudflare-tunnel URL so others can reach this API over the internet.</p>"
+        "<button class=b onclick=shareLink()>Create Link</button>"
+        "<pre id=shOut class=o></pre></div>"
+    )
+
+    # Tab 10: API Docs
+    h.append(
+        "<div id=p10 class=p><h3>API Endpoints</h3>"
+        "<button class=b onclick=loadEndpoints()>List All</button>"
+        "<button class='b bs' onclick=loadLogs()>Access Log</button>"
+        "<pre id=eOut class=o></pre>"
+        "<h3 style=margin-top:14px>Access Log</h3>"
+        "<pre id=lgOut class=o></pre></div>"
+    )
+
+    # Tab 11: Terminal
+    h.append(
+        "<div id=p11 class=p><h3>Terminal (Protected)</h3>"
+        "<div id=tauth style=text-align:center;padding:40px>"
+        "<p style='color:#6c7086;margin-bottom:12px'>Enter terminal password</p>"
+        "<input type=password id=tpw placeholder=Password style='max-width:200px;text-align:center' maxlength=8>"
+        "<br><button class=b onclick=tlogin() style=margin-top:8px>Unlock</button></div>"
+        "<div id=tterm style=display:none>"
+        "<div id=tout class=o style='min-height:300px;background:#0d0d0d;color:#00ff41;font-family:monospace'></div>"
+        "<div class=row>"
+        "<span style='color:#00ff41;padding:10px'>$</span>"
+        "<input type=text id=tcmd placeholder=Command... style=font-family:monospace>"
+        "<button class=b onclick=texec()>Run</button></div></div></div>"
+    )
+
+    h.append("<script>" + js + "\n")
+    h.append("document.addEventListener('DOMContentLoaded',function(){loadStatus()});\n")
+    h.append("document.getElementById('pr').addEventListener('keydown',function(e){"
+             "if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sc()}});\n")
+    h.append("document.getElementById('tcmd').addEventListener('keydown',function(e){"
+             "if(e.key==='Enter')texec()});\n")
+    h.append("</script></body></html>")
+    return "".join(h)
 
 DASH_HTML = get_dash_html()
+
+ENDPOINTS = [
+    {"method": "GET",  "path": "/health",              "desc": "Server health + version"},
+    {"method": "GET",  "path": "/v1/models",           "desc": "OpenAI-compatible model list"},
+    {"method": "POST", "path": "/v1/chat/completions", "desc": "OpenAI-compatible chat completion"},
+    {"method": "POST", "path": "/v1/completions",      "desc": "OpenAI-compatible text completion"},
+    {"method": "GET",  "path": "/chat",                "desc": "Minimal chat web UI"},
+    {"method": "GET",  "path": "/v3/site",             "desc": "Full dashboard"},
+    {"method": "GET",  "path": "/v3/status",           "desc": "Running status summary"},
+    {"method": "GET",  "path": "/v3/sysinfo",          "desc": "CPU, RAM, GPU, disk, load"},
+    {"method": "GET",  "path": "/v3/version",          "desc": "Version string"},
+    {"method": "GET",  "path": "/v3/endpoints",        "desc": "This catalogue"},
+    {"method": "GET",  "path": "/v3/models",           "desc": "Active model + local GGUF files"},
+    {"method": "POST", "path": "/v3/models/activate",  "desc": "Switch active model"},
+    {"method": "POST", "path": "/v3/models/download",  "desc": "Download a recommended model"},
+    {"method": "GET",  "path": "/v3/keys",             "desc": "Which backend keys are set (masked)"},
+    {"method": "POST", "path": "/v3/keys/set",         "desc": "Set a backend key (password-protected)"},
+    {"method": "GET",  "path": "/v3/history",          "desc": "Recent chat history (?n=50)"},
+    {"method": "POST", "path": "/v3/history/search",   "desc": "Search chat history"},
+    {"method": "POST", "path": "/v3/history/clear",    "desc": "Wipe chat history"},
+    {"method": "POST", "path": "/v3/tokens",           "desc": "Estimate token count of text"},
+    {"method": "POST", "path": "/v3/cost",             "desc": "Estimate USD cost of text"},
+    {"method": "POST", "path": "/v3/embed",            "desc": "64-dim text embedding"},
+    {"method": "POST", "path": "/v3/chat/stream",      "desc": "SSE streaming chat"},
+    {"method": "POST", "path": "/v3/web",              "desc": "Web-search-augmented ask"},
+    {"method": "POST", "path": "/v3/benchmark",        "desc": "Round-trip latency test"},
+    {"method": "POST", "path": "/v3/agent",            "desc": "Autonomous task agent loop"},
+    {"method": "POST", "path": "/v3/diff/review",      "desc": "AI review of a unified diff"},
+    {"method": "POST", "path": "/v3/voice/tts",        "desc": "Text-to-speech via piper/espeak"},
+    {"method": "POST", "path": "/v3/share",            "desc": "Create public share link"},
+    {"method": "POST", "path": "/v3/run",              "desc": "Run shell command (password-protected)"},
+    {"method": "GET",  "path": "/v3/files",            "desc": "List uploaded files"},
+    {"method": "POST", "path": "/v3/files/upload",     "desc": "Upload JSON/text file (password)"},
+    {"method": "POST", "path": "/v3/files/delete",     "desc": "Delete uploaded file (password)"},
+    {"method": "GET",  "path": "/v3/rag/list",         "desc": "List RAG corpora"},
+    {"method": "POST", "path": "/v3/rag/add",          "desc": "Add text to a RAG corpus"},
+    {"method": "POST", "path": "/v3/rag/query",        "desc": "Query RAG corpus + answer"},
+    {"method": "GET",  "path": "/v3/logs",             "desc": "Recent access log"},
+    {"method": "GET",  "path": "/v3/config",           "desc": "Safe config values (no secrets)"},
+    {"method": "GET",  "path": "/v3/mem",              "desc": "Memory contents"},
+    {"method": "POST", "path": "/v3/mem",              "desc": "add/delete/clear memory"},
+    {"method": "GET",  "path": "/v3/context",          "desc": "Conversation context"},
+    {"method": "POST", "path": "/v3/context",          "desc": "add/clear context"},
+    {"method": "POST", "path": "/v3/comp/context",     "desc": "Force-compress context"},
+    {"method": "POST", "path": "/v3/terminal/auth",    "desc": "Unlock protected terminal"},
+    {"method": "POST", "path": "/v3/terminal/exec",    "desc": "Execute terminal command"},
+]
 
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -19315,23 +20166,115 @@ class H(http.server.BaseHTTPRequestHandler):
         self.send_response(c); self.send_header("Content-Type","application/json"); self.send_header("Access-Control-Allow-Origin","*"); self.send_header("Access-Control-Allow-Headers","*"); self.end_headers(); self.wfile.write(json.dumps(d).encode())
     def _h(self, c, h):
         self.send_response(c); self.send_header("Content-Type","text/html"); self.end_headers(); self.wfile.write(h.encode())
+    def _t(self, c, t, ct="text/plain"):
+        self.send_response(c); self.send_header("Content-Type",ct); self.send_header("Access-Control-Allow-Origin","*"); self.end_headers(); self.wfile.write(t.encode() if isinstance(t, str) else t)
+    def _auth_ok(self, body):
+        pw = get_term_pw()
+        if not pw:
+            return False
+        return body.get("password") == pw
     def do_OPTIONS(self): self._j(200, {})
     def do_GET(self):
-        if self.path == "/health": self._j(200, {"status":"ok"})
-        elif self.path == "/v1/models": self._j(200, {"data":[{"id":MODEL}]})
-        elif self.path == "/chat": self._h(200, CHAT_HTML)
-        elif self.path == "/v3/site": self._h(200, DASH_HTML)
-        elif self.path == "/v3/mem": self._j(200, {"memory": load_mem()})
-        elif self.path == "/v3/context": self._j(200, load_ctx())
-        else: self._j(404, {"error":"not found"})
+        try:
+            log_request(self.path, self.client_address[0])
+        except:
+            pass
+        p = self.path.split("?", 1)[0]
+        if p == "/health": self._j(200, {"status":"ok","version":VERSION,"uptime":int(time.time()-START_TIME)})
+        elif p == "/v1/models":
+            gguf = list_gguf_models()
+            data = [{"id": active_model(), "object": "model"}]
+            for m in gguf:
+                data.append({"id": m["name"], "object": "model", "path": m["path"], "size_mb": m["size_mb"]})
+            self._j(200, {"data": data})
+        elif p == "/chat": self._h(200, CHAT_HTML)
+        elif p == "/v3/site": self._h(200, DASH_HTML)
+        elif p == "/v3/mem": self._j(200, {"memory": load_mem()})
+        elif p == "/v3/context": self._j(200, load_ctx())
+        # ─── v3.2 new endpoints ───────────────────────────────────────
+        elif p == "/v3/status":
+            self._j(200, {
+                "status": "ok", "version": VERSION,
+                "active_model": active_model(),
+                "uptime_seconds": int(time.time() - START_TIME),
+                "mem_count": len(load_mem()),
+                "ctx_msgs": len(load_ctx().get("messages", [])),
+                "terminal_unlocked": bool(get_term_pw()),
+            })
+        elif p == "/v3/sysinfo": self._j(200, sysinfo())
+        elif p == "/v3/models":
+            self._j(200, {"active": active_model(), "local": list_gguf_models()})
+        elif p == "/v3/keys":
+            ks = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY",
+                  "GROQ_API_KEY", "MISTRAL_API_KEY", "TOGETHER_API_KEY",
+                  "HF_TOKEN", "HF_API_KEY"]
+            self._j(200, {"keys": {k: {"set": bool(os.environ.get(k)), "masked": masked_key(k)} for k in ks}})
+        elif p == "/v3/history":
+            n = 50
+            if "?" in self.path:
+                q = self.path.split("?", 1)[1]
+                for kv in q.split("&"):
+                    if kv.startswith("n="):
+                        try: n = max(1, min(500, int(kv[2:])))
+                        except: pass
+            self._j(200, {"history": read_history(n)})
+        elif p == "/v3/logs":
+            try:
+                data = open(LOG_FILE).read().splitlines()[-200:]
+            except:
+                data = []
+            self._j(200, {"log": data})
+        elif p == "/v3/files":
+            items = []
+            for name in os.listdir(UPLOADS_DIR):
+                fp = os.path.join(UPLOADS_DIR, name)
+                if os.path.isfile(fp):
+                    items.append({"name": name, "size": os.path.getsize(fp), "mtime": int(os.path.getmtime(fp))})
+            self._j(200, {"files": items})
+        elif p == "/v3/rag/list":
+            items = []
+            for name in os.listdir(RAG_DIR):
+                if name.endswith(".jsonl"):
+                    items.append(name[:-6])
+            self._j(200, {"corpora": items})
+        elif p == "/v3/version":
+            self._j(200, {"version": VERSION, "cli": CLI})
+        elif p == "/v3/endpoints":
+            self._j(200, {"endpoints": ENDPOINTS})
+        elif p == "/v3/config":
+            cfg = {}
+            fp = os.path.expanduser("~/.config/ai-cli/config")
+            if os.path.isfile(fp):
+                try:
+                    for line in open(fp):
+                        if "=" in line and not line.strip().startswith("#"):
+                            k, v = line.strip().split("=", 1)
+                            if "KEY" in k or "TOKEN" in k or "SECRET" in k:
+                                continue
+                            cfg[k] = v.strip('"').strip("'")
+                except:
+                    pass
+            self._j(200, {"config": cfg})
+        elif p == "/favicon.ico":
+            self._t(200, "", "image/x-icon")
+        else: self._j(404, {"error":"not found", "path": p})
     def do_POST(self):
+        try:
+            log_request(self.path, self.client_address[0])
+        except:
+            pass
         l = int(self.headers.get("Content-Length", 0))
-        b = json.loads(self.rfile.read(l)) if l else {}
-        if self.path in ("/v1/chat/completions", "/v1/completions"):
+        raw = self.rfile.read(l) if l else b""
+        try:
+            b = json.loads(raw) if raw else {}
+        except:
+            b = {}
+        p = self.path
+        if p in ("/v1/chat/completions", "/v1/completions"):
             msgs = b.get("messages", [])
-            p = msgs[-1]["content"] if msgs else b.get("prompt", "")
-            if p.startswith("/cmd "):
-                r = run_cmd(p[5:])
+            prm = msgs[-1]["content"] if msgs else b.get("prompt", "")
+            if prm.startswith("/cmd "):
+                r = run_cmd(prm[5:])
             else:
                 mem = load_mem()
                 ctx = load_ctx()
@@ -19340,16 +20283,163 @@ class H(http.server.BaseHTTPRequestHandler):
                     full_prompt += "Previous conversation summary: " + ctx["compressed"] + "\n\n"
                 if mem:
                     full_prompt += "Known facts about the user: " + "; ".join(mem) + "\n\n"
-                full_prompt += p
+                full_prompt += prm
                 r = ai_ask(full_prompt)
-                ctx["messages"].append({"role": "user", "content": p})
+                ctx["messages"].append({"role": "user", "content": prm})
                 ctx["messages"].append({"role": "assistant", "content": r})
                 if ctx_is_full(ctx):
                     ctx = compress_ctx(ctx)
                 save_ctx(ctx)
-                auto_update_mem(p, r)
-            self._j(200, {"id":f"c-{secrets.token_hex(6)}","object":"chat.completion","model":MODEL,"choices":[{"index":0,"message":{"role":"assistant","content":r},"finish_reason":"stop"}]})
-        elif self.path == "/v3/mem":
+                auto_update_mem(prm, r)
+                append_history("user", prm)
+                append_history("assistant", r)
+            self._j(200, {"id":f"c-{secrets.token_hex(6)}","object":"chat.completion","model":active_model(),"choices":[{"index":0,"message":{"role":"assistant","content":r},"finish_reason":"stop"}],"usage":{"prompt_tokens":count_tokens(prm),"completion_tokens":count_tokens(r),"total_tokens":count_tokens(prm)+count_tokens(r)}})
+        # ─── streaming chat (SSE) ────────────────────────────────────
+        elif p == "/v3/chat/stream":
+            msgs = b.get("messages", [])
+            prm = msgs[-1]["content"] if msgs else b.get("prompt", "")
+            r = ai_ask(prm)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            # chunk word-by-word so clients see a stream even when the
+            # underlying backend returned the full string at once.
+            for tok in r.split(" "):
+                try:
+                    self.wfile.write(f"data: {json.dumps({'delta': tok + ' '})}\n\n".encode())
+                    self.wfile.flush()
+                    time.sleep(0.02)
+                except:
+                    return
+            self.wfile.write(b"data: [DONE]\n\n")
+            append_history("user", prm); append_history("assistant", r)
+        elif p == "/v3/tokens":
+            text = b.get("text", "") or b.get("prompt", "")
+            self._j(200, {"tokens": count_tokens(text), "chars": len(text)})
+        elif p == "/v3/cost":
+            text = b.get("text", "") or b.get("prompt", "")
+            model = b.get("model", active_model())
+            tok = count_tokens(text)
+            self._j(200, {"tokens": tok, "model": model, "estimated_usd": estimate_cost(tok, model)})
+        elif p == "/v3/embed":
+            text = b.get("text", "") or b.get("input", "")
+            self._j(200, {"embedding": simple_embed(text), "dim": 64})
+        elif p == "/v3/history/search":
+            q = (b.get("query") or "").lower()
+            hist = read_history(500)
+            hits = [h for h in hist if q in json.dumps(h).lower()] if q else hist
+            self._j(200, {"hits": hits[-100:], "count": len(hits)})
+        elif p == "/v3/history/clear":
+            try: open(HIST_FILE, "w").close()
+            except: pass
+            self._j(200, {"ok": True})
+        elif p == "/v3/benchmark":
+            t0 = time.time()
+            r = ai_ask("Say 'ready' in one word.")
+            dt = round(time.time() - t0, 3)
+            self._j(200, {"latency_s": dt, "reply": r[:120], "model": active_model()})
+        elif p == "/v3/web":
+            q = b.get("query", "")
+            r = run_cmd(f"ask-web \"{q}\"") if q else "Error: missing query"
+            self._j(200, {"query": q, "answer": r})
+        elif p == "/v3/agent":
+            goal = b.get("goal", "")
+            steps = int(b.get("steps", 3))
+            r = run_cmd(f"agent \"{goal}\" --steps {steps}") if goal else "Error: missing goal"
+            self._j(200, {"goal": goal, "result": r})
+        elif p == "/v3/diff/review":
+            diff = b.get("diff", "")
+            if not diff:
+                self._j(400, {"error": "missing diff"}); return
+            prompt = "Review this diff. Call out bugs, logic errors, and missing tests. Be concise.\n\n" + diff[:20000]
+            self._j(200, {"review": ai_ask(prompt)})
+        elif p == "/v3/voice/tts":
+            text = b.get("text", "")
+            r = run_cmd(f"voice tts \"{text}\"") if text else "Error: missing text"
+            self._j(200, {"result": r})
+        elif p == "/v3/share":
+            r = run_cmd("share")
+            self._j(200, {"result": r})
+        elif p == "/v3/models/activate":
+            name = b.get("model", "")
+            if not name:
+                self._j(400, {"error": "missing model"}); return
+            r = run_cmd(f"model use \"{name}\"")
+            self._j(200, {"active": active_model(), "result": r})
+        elif p == "/v3/models/download":
+            name = b.get("model", "")
+            if not name:
+                self._j(400, {"error": "missing model"}); return
+            r = run_cmd(f"recommended download \"{name}\"")
+            self._j(200, {"result": r})
+        elif p == "/v3/keys/set":
+            if not self._auth_ok(b):
+                self._j(401, {"error": "Unauthorized — requires terminal password"}); return
+            name = b.get("name", ""); value = b.get("value", "")
+            if not name or not value:
+                self._j(400, {"error": "missing name or value"}); return
+            r = run_cmd(f"keys set {name} {value}")
+            self._j(200, {"ok": True, "name": name, "masked": masked_key(name) if os.environ.get(name) else "(set)"})
+        elif p == "/v3/run":
+            if not self._auth_ok(b):
+                self._j(401, {"error": "Unauthorized"}); return
+            cmd = b.get("cmd", "")
+            if not cmd:
+                self._j(400, {"error": "missing cmd"}); return
+            self._j(200, shell_run(cmd, timeout=int(b.get("timeout", 60))))
+        elif p == "/v3/files/upload":
+            if not self._auth_ok(b):
+                self._j(401, {"error": "Unauthorized"}); return
+            name = b.get("name", "").replace("/", "_") or f"upload_{int(time.time())}.txt"
+            content = b.get("content", "")
+            fp = os.path.join(UPLOADS_DIR, name)
+            with open(fp, "w") as f:
+                f.write(content)
+            self._j(200, {"ok": True, "path": fp, "size": len(content)})
+        elif p == "/v3/files/delete":
+            if not self._auth_ok(b):
+                self._j(401, {"error": "Unauthorized"}); return
+            name = b.get("name", "").replace("/", "_")
+            fp = os.path.join(UPLOADS_DIR, name)
+            if os.path.isfile(fp):
+                os.remove(fp)
+                self._j(200, {"ok": True})
+            else:
+                self._j(404, {"error": "not found"})
+        elif p == "/v3/rag/add":
+            corpus = b.get("corpus", "default").replace("/", "_")
+            text = b.get("text", "")
+            if not text:
+                self._j(400, {"error": "missing text"}); return
+            fp = os.path.join(RAG_DIR, corpus + ".jsonl")
+            with open(fp, "a") as f:
+                f.write(json.dumps({"t": int(time.time()), "text": text, "emb": simple_embed(text)}) + "\n")
+            self._j(200, {"ok": True, "corpus": corpus})
+        elif p == "/v3/rag/query":
+            corpus = b.get("corpus", "default").replace("/", "_")
+            q = b.get("query", "")
+            k = int(b.get("k", 3))
+            fp = os.path.join(RAG_DIR, corpus + ".jsonl")
+            if not os.path.isfile(fp):
+                self._j(404, {"error": "unknown corpus"}); return
+            qv = simple_embed(q)
+            items = []
+            for line in open(fp):
+                try:
+                    d = json.loads(line)
+                    d["score"] = round(cosine(qv, d.get("emb", [])), 4)
+                    d.pop("emb", None)
+                    items.append(d)
+                except:
+                    pass
+            items.sort(key=lambda d: d.get("score", 0), reverse=True)
+            top = items[:k]
+            ctx = "\n\n".join(d.get("text", "") for d in top)
+            answer = ai_ask(f"Use only this context to answer:\n{ctx}\n\nQuestion: {q}") if q else ""
+            self._j(200, {"top": top, "answer": answer})
+        elif p == "/v3/mem":
             action = b.get("action", "list")
             if action == "add":
                 items = load_mem()
@@ -19407,15 +20497,21 @@ class H(http.server.BaseHTTPRequestHandler):
                     self._j(400, {"error": "No command"})
         else: self._j(404, {"error":{"message":f"Unknown: {self.path}"}})
 
-print(f"AI CLI API v3 on http://{HOST}:{PORT}")
+print(f"AI CLI API v{VERSION} on http://{HOST}:{PORT}")
 print(f"Dashboard: http://{HOST}:{PORT}/v3/site")
-print(f"Chat: http://{HOST}:{PORT}/chat")
-s = http.server.HTTPServer((HOST, PORT), H)
+print(f"Chat:      http://{HOST}:{PORT}/chat")
+print(f"Endpoints: http://{HOST}:{PORT}/v3/endpoints")
+
+class ThreadedHTTPServer(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+s = ThreadedHTTPServer((HOST, PORT), H)
 try: s.serve_forever()
 except KeyboardInterrupt: print("\nStopped")
 APIPY
       AI_CLI_BIN="$_cli_bin" API_HOST="$host" API_PORT="$port" \
-        AI_MODEL="${ACTIVE_MODEL:-auto}" \
+        AI_MODEL="${ACTIVE_MODEL:-auto}" AI_VERSION="$VERSION" \
         "$PYTHON" "$_api_script" &
       local pid=$!; echo "$pid" > "$API_PID_FILE"; sleep 1
       if kill -0 "$pid" 2>/dev/null; then
