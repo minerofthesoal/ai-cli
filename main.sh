@@ -12,7 +12,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.2.0.1"
+VERSION="3.2.1"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -14591,6 +14591,7 @@ $(cat)" ;;
     diff-review|review|dr)          cmd_diff_review "$@" ;;
     agent|loop|auto)                cmd_agent "$@" ;;
     rag-quick|rq|quick-rag)         cmd_rag_quick "$@" ;;
+    hy|hypernix)                    cmd_hy "$@" ;;
 
     # ── GUI / GUI+ / Bench / Serve ────────────────────────────────────────────
     -gui|--gui|gui)            cmd_gui ;;
@@ -19484,6 +19485,153 @@ ANSWER:"
   dispatch_ask "$prompt"
 }
 
+cmd_hy() {
+  # HyperNix integration — https://pypi.org/project/hypernix/
+  # HyperNix is a PyTorch model quantization + chat toolkit for the
+  # ray0rf1re/hyper-nix.1 model family. We shell out to its CLI.
+  local sub="${1:-help}"; shift 2>/dev/null || true
+  local hy_repo="${HYPERNIX_REPO:-nix2.5}"
+
+  _hy_bin() {
+    if command -v hypernix >/dev/null 2>&1; then echo "hypernix"; return 0; fi
+    if "$PYTHON" -c "import hypernix" >/dev/null 2>&1; then
+      echo "$PYTHON -m hypernix"; return 0
+    fi
+    return 1
+  }
+
+  case "$sub" in
+    help|"")
+      cat <<'EOF'
+Usage: ai hy <subcommand> [options]
+
+HyperNix wrapper — PyTorch model quantization + chat toolkit.
+Upstream: https://pypi.org/project/hypernix/
+
+Subcommands:
+  help                       Show this help
+  install [--extras E]       pip install hypernix[E]   (E: llama-cpp | train)
+  info                       Installed version + python path
+  models                     Common --repo-id values (nix2.5, qwen3.5-4b, …)
+  ask|a|chat "prompt"        Chat via hypernix (uses --repo-id, default nix2.5)
+  repo ID                    Set default repo for this shell (exports HYPERNIX_REPO)
+  passthrough ARGS...        Run the raw `hypernix ARGS` command
+
+Environment:
+  HYPERNIX_REPO   default repo-id (current: ${HYPERNIX_REPO:-nix2.5})
+
+Examples:
+  ai hy install --extras llama-cpp
+  ai hy ask "explain rotary embeddings"
+  ai hy chat "write a haiku" --repo-id gemma-4-e4b
+  ai hy repo qwen3.5-4b
+  ai hy passthrough quantize --help
+EOF
+      ;;
+
+    install)
+      local extras=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --extras) extras="$2"; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      [[ -z "$PYTHON" ]] && { err "Python required"; return 1; }
+      local spec="hypernix"
+      [[ -n "$extras" ]] && spec="hypernix[${extras}]"
+      info "Installing $spec via pip..."
+      if "$PYTHON" -m pip install --upgrade "$spec"; then
+        ok "Installed. Try: ai hy ask \"hello\""
+      else
+        err "pip install failed — try: $PYTHON -m pip install --user $spec"
+        return 1
+      fi
+      ;;
+
+    info)
+      local b; if ! b=$(_hy_bin); then
+        warn "hypernix is not installed"
+        info "Install:  ai hy install"
+        return 1
+      fi
+      info "Binary:   $b"
+      info "Python:   $PYTHON"
+      "$PYTHON" -c "import hypernix, importlib.metadata as m; print('Version: ' + m.version('hypernix'))" 2>/dev/null \
+        || warn "Could not read version (hypernix importable but metadata missing)"
+      info "Default repo-id: $hy_repo  (override: HYPERNIX_REPO=... or ai hy repo ID)"
+      ;;
+
+    models)
+      cat <<'EOF'
+Common --repo-id values (not exhaustive — see upstream):
+
+  nix2.5                HyperNix flagship
+  qwen3.5-4b            Qwen 3.5, 4 B parameters
+  qwen3.5-8b            Qwen 3.5, 8 B parameters
+  gemma-4-e4b           Gemma 4, E4B
+  gemma-4-e12b          Gemma 4, E12B
+  llama-3.2-3b          Llama 3.2, 3 B
+  mistral-nemo-12b      Mistral Nemo, 12 B
+
+Use any with:  ai hy ask "prompt" --repo-id <id>
+Set default:   ai hy repo <id>
+EOF
+      ;;
+
+    ask|a|chat)
+      local prompt="" repo="$hy_repo"
+      # collect prompt + optional flags
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --repo-id|--repo) repo="$2"; shift 2 ;;
+          --)               shift; prompt="${prompt}${prompt:+ }$*"; break ;;
+          *)                prompt="${prompt}${prompt:+ }$1"; shift ;;
+        esac
+      done
+      [[ -z "$prompt" ]] && { err "Usage: ai hy ask \"prompt\" [--repo-id ID]"; return 1; }
+      local b; if ! b=$(_hy_bin); then
+        err "hypernix is not installed"
+        info "Run:  ai hy install"
+        return 1
+      fi
+      info "HyperNix ask → repo=$repo"
+      # shellcheck disable=SC2086
+      $b chat --repo-id "$repo" --message "$prompt"
+      ;;
+
+    repo)
+      local new="${1:-}"
+      [[ -z "$new" ]] && { info "Current HYPERNIX_REPO: $hy_repo"; info "Set with: ai hy repo <id>"; return 0; }
+      export HYPERNIX_REPO="$new"
+      # Persist to the user's ai-cli config so it survives shells
+      local cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ai-cli"
+      mkdir -p "$cfg_dir"
+      local envf="$cfg_dir/aliases.env"
+      touch "$envf"
+      if grep -q '^export HYPERNIX_REPO=' "$envf" 2>/dev/null; then
+        sed -i.bak -E "s|^export HYPERNIX_REPO=.*|export HYPERNIX_REPO=\"$new\"|" "$envf" && rm -f "${envf}.bak"
+      else
+        printf 'export HYPERNIX_REPO="%s"\n' "$new" >> "$envf"
+      fi
+      ok "Default repo set to: $new"
+      info "Sourced from: $envf (runs on next shell; this shell already exported)"
+      ;;
+
+    passthrough|raw)
+      local b; if ! b=$(_hy_bin); then err "hypernix not installed"; return 1; fi
+      # shellcheck disable=SC2086
+      $b "$@"
+      ;;
+
+    *)
+      err "Unknown hy subcommand: $sub"
+      cmd_hy help
+      return 1
+      ;;
+  esac
+}
+
 cmd_api_v3() {
   local sub="${1:-help}"; shift 2>/dev/null || true
   case "$sub" in
@@ -21609,6 +21757,170 @@ def v4_get_files_fetch(h, hdrs, qs):
         pass
     return None  # sentinel — we already wrote the response
 
+# ── hidden: /v4/_rdp — Tailscale-only remote desktop control ────────────────
+# This endpoint is intentionally NOT listed in /v4/endpoints. It is gated by:
+#   1. Terminal password (ai -apip PASSWORD), AND
+#   2. Caller must be on the local Tailnet (IP in 100.64.0.0/10 range), AND
+#   3. Tailscale must be running locally (`tailscale status` succeeds).
+# Actions: info / screenshot / type / key / click / mousemove.
+# Intent: owner-initiated remote control of their own machine over Tailscale.
+
+def _tailscale_up():
+    """Return True iff `tailscale status` reports the daemon running."""
+    try:
+        r = subprocess.run(["tailscale", "status", "--json"],
+                           capture_output=True, text=True, timeout=3)
+        if r.returncode != 0: return False
+        d = json.loads(r.stdout or "{}")
+        return bool(d.get("Self") and d.get("BackendState") == "Running")
+    except Exception:
+        return False
+
+def _tailscale_client(client_addr):
+    """Return True iff client_addr is inside 100.64.0.0/10 (Tailnet CGNAT)."""
+    try:
+        parts = client_addr.split(".")
+        if len(parts) != 4: return False
+        a, b = int(parts[0]), int(parts[1])
+        # 100.64.0.0/10 = 100.64.0.0 .. 100.127.255.255
+        return a == 100 and 64 <= b <= 127
+    except Exception:
+        return False
+
+def _have(*bins):
+    return [b for b in bins if shutil.which(b)]
+
+def v4_post_rdp(h, hdrs, qs):
+    """Hidden remote-desktop control. Requires Tailscale + terminal password."""
+    t0 = time.time(); req_id = _req_id()
+    client_ip = h.client_address[0]
+    b = v4_body(h)
+    pw = get_term_pw()
+    if not pw:
+        return (403, _err("not_configured",
+                          "no PC password set — run: ai -apip PASSWORD", req_id))
+    if b.get("password") != pw:
+        return (401, _err("wrong_password", "wrong PC password", req_id))
+    if not _tailscale_up():
+        return (403, _err("tailscale_down",
+                          "tailscale is not running on this host", req_id))
+    # Allow 127.0.0.1 for local testing; otherwise require Tailnet source.
+    if not (client_ip.startswith("127.") or _tailscale_client(client_ip)):
+        return (403, _err("not_tailnet",
+                          f"client {client_ip} is not on the Tailnet", req_id))
+    action = (b.get("action") or "info").lower()
+
+    # --- info: report screen capabilities ---------------------------------
+    if action == "info":
+        tools = {
+            "screenshot": _have("gnome-screenshot", "scrot", "grim", "screencapture", "import"),
+            "control":    _have("xdotool", "ydotool"),
+        }
+        dims = None
+        try:
+            r = subprocess.run(["xdpyinfo"], capture_output=True, text=True, timeout=2)
+            for line in r.stdout.splitlines():
+                if "dimensions" in line:
+                    dims = line.strip(); break
+        except Exception: pass
+        return (200, _env(t0, request_id=req_id,
+                          action="info",
+                          tailscale=True,
+                          client_ip=client_ip,
+                          dimensions=dims,
+                          tools_available=tools,
+                          platform=platform.system()))
+
+    # --- screenshot: capture and return a fetchable URL -------------------
+    if action == "screenshot":
+        out_name = f"rdp_{int(time.time())}_{secrets.token_hex(3)}.png"
+        out_path = os.path.join(UPLOADS_DIR, out_name)
+        engine = None
+        for bin in ("gnome-screenshot", "scrot", "grim", "screencapture", "import"):
+            if not shutil.which(bin): continue
+            try:
+                if bin == "gnome-screenshot":
+                    r = subprocess.run([bin, "-f", out_path],
+                                       capture_output=True, timeout=10)
+                elif bin == "scrot":
+                    r = subprocess.run([bin, out_path],
+                                       capture_output=True, timeout=10)
+                elif bin == "grim":
+                    r = subprocess.run([bin, out_path],
+                                       capture_output=True, timeout=10)
+                elif bin == "screencapture":
+                    r = subprocess.run([bin, "-x", out_path],
+                                       capture_output=True, timeout=10)
+                else:  # import (ImageMagick)
+                    r = subprocess.run([bin, "-window", "root", out_path],
+                                       capture_output=True, timeout=10)
+                if r.returncode == 0 and os.path.isfile(out_path):
+                    engine = bin; break
+            except Exception: continue
+        if not engine:
+            return (500, _err("no_screenshot_tool",
+                              "install one of: gnome-screenshot, scrot, grim, "
+                              "screencapture, imagemagick", req_id))
+        return (200, _env(t0, request_id=req_id,
+                          action="screenshot",
+                          engine=engine,
+                          path=out_path,
+                          size_bytes=os.path.getsize(out_path),
+                          url=f"/v4/files/fetch?name={out_name}"))
+
+    # --- control actions: type, key, click, mousemove ---------------------
+    ctl = shutil.which("xdotool") or shutil.which("ydotool")
+    if not ctl:
+        return (500, _err("no_control_tool",
+                          "install xdotool (X11) or ydotool (Wayland)", req_id))
+    if action == "type":
+        text = b.get("text", "")
+        if not text: return (400, _err("missing_input", "missing text", req_id))
+        if len(text) > 4000:
+            return (400, _err("too_large", "text must be ≤4000 chars", req_id))
+        r = subprocess.run([ctl, "type", "--delay", "15", text],
+                           capture_output=True, text=True, timeout=30)
+        return (200, _env(t0, request_id=req_id,
+                          action="type", tool=os.path.basename(ctl),
+                          chars=len(text),
+                          ok=r.returncode == 0,
+                          stderr=r.stderr[:200]))
+    if action == "key":
+        key = b.get("key", "")
+        if not key: return (400, _err("missing_input", "missing key", req_id))
+        # Accept either a single key ("Return") or combo ("ctrl+alt+t")
+        r = subprocess.run([ctl, "key", key],
+                           capture_output=True, text=True, timeout=5)
+        return (200, _env(t0, request_id=req_id,
+                          action="key", key=key,
+                          ok=r.returncode == 0,
+                          stderr=r.stderr[:200]))
+    if action == "click":
+        button = str(b.get("button", 1))
+        x = b.get("x"); y = b.get("y")
+        cmd = [ctl]
+        if x is not None and y is not None:
+            cmd += ["mousemove", str(int(x)), str(int(y))]
+        cmd += ["click", button]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        return (200, _env(t0, request_id=req_id,
+                          action="click", button=button,
+                          x=x, y=y,
+                          ok=r.returncode == 0,
+                          stderr=r.stderr[:200]))
+    if action == "mousemove":
+        x = int(b.get("x") or 0); y = int(b.get("y") or 0)
+        r = subprocess.run([ctl, "mousemove", str(x), str(y)],
+                           capture_output=True, text=True, timeout=5)
+        return (200, _env(t0, request_id=req_id,
+                          action="mousemove", x=x, y=y,
+                          ok=r.returncode == 0,
+                          stderr=r.stderr[:200]))
+    return (400, _err("unknown_action",
+                      "expected action: info|screenshot|type|key|click|mousemove",
+                      req_id))
+
+
 def v4_get_chat_stream(h, hdrs, qs):
     """SSE streaming chat. Writes directly to the wire; returns None.
 
@@ -21757,7 +22069,13 @@ V4_POST = {
     "/v4/terminal/exec":     v4_post_terminal_exec,
     "/v4/auth/new":          v4_post_auth_new,
     "/v4/auth/revoke":       v4_post_auth_revoke,
+    # Hidden: Tailscale + PC-password-gated remote desktop control.
+    # Intentionally omitted from V4_ENDPOINTS_DOC below.
+    "/v4/_rdp":              v4_post_rdp,
 }
+
+# Paths hidden from the public /v4/endpoints catalogue
+V4_HIDDEN_PATHS = {"/v4/_rdp"}
 
 # endpoints that bypass auth (even when keys are configured)
 V4_OPEN_PATHS = {
@@ -21770,6 +22088,8 @@ V4_OPEN_PATHS = {
 V4_ENDPOINTS_DOC = []
 for meth, d in (("GET", V4_GET), ("POST", V4_POST)):
     for p in sorted(d):
+        if p in V4_HIDDEN_PATHS:
+            continue
         V4_ENDPOINTS_DOC.append({
             "method": meth, "path": p,
             "open": p in V4_OPEN_PATHS,
@@ -22235,6 +22555,7 @@ APIPY
     new-k|newkey|new-key) cmd_api_new_key "$@" ;;
     keys) cmd_api_keys_list ;;
     revoke) cmd_api_revoke "$@" ;;
+    -Upgrade-k|-upgrade-k|upgrade-k|upgrade-key) cmd_api_upgrade_key "$@" ;;
     *) cmd_api_help ;;
   esac
 }
@@ -22377,6 +22698,104 @@ PY
   ok "Key revoked"
 }
 
+cmd_api_upgrade_key() {
+  # ai api -Upgrade-k "key-or-name" [new-budget] [new-cycle] [--reset] [--add N]
+  # Modes:
+  #   (no budget args)   → reset usage counters only
+  #   BUDGET             → replace tokens and/or time budget
+  #   --add BUDGET       → add to existing tokens budget
+  #   --reset            → zero out tokens_used / time_used_sec / cycle_start
+  #   --unrevoke         → lift a revoke
+  local needle="${1:-}"; shift 2>/dev/null || true
+  [[ -z "$needle" ]] && {
+    err "Usage: ai api -Upgrade-k \"key-or-name\" [budget…] [--reset] [--add BUDGET] [--unrevoke]"
+    info "  budget examples: 999, 500k, 1.5m, 9.99m (tokens) or 30s, 2min, 1h (time/cycle)"
+    info "  --reset        zero out usage counters and restart the cycle"
+    info "  --add 500k     add 500k to the existing token budget"
+    info "  --unrevoke     lift a previous revoke"
+    return 1
+  }
+
+  local replace_tokens="" replace_time="" add_tokens="" do_reset=0 do_unrevoke=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --reset)    do_reset=1; shift ;;
+      --unrevoke) do_unrevoke=1; shift ;;
+      --add)
+        local spec="${2:-}"
+        [[ -z "$spec" ]] && { err "--add needs a spec"; return 1; }
+        local parsed; parsed=$(_api_parse_budget_spec "$spec") || { err "Invalid --add spec: $spec"; return 1; }
+        local t_part="${parsed%%|*}"
+        [[ -z "$t_part" ]] && { err "--add only accepts token specs (999, 500k, 1.5m)"; return 1; }
+        add_tokens="$t_part"
+        shift 2 ;;
+      *)
+        local parsed; parsed=$(_api_parse_budget_spec "$1") || { err "Invalid budget spec: $1"; return 1; }
+        local t_part="${parsed%%|*}"
+        local s_part="${parsed#*|}"
+        [[ -n "$t_part" ]] && replace_tokens="$t_part"
+        [[ -n "$s_part" ]] && replace_time="$s_part"
+        shift ;;
+    esac
+  done
+
+  local cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ai-cli"
+  local keys_file="$cfg_dir/api_keys.json"
+  [[ ! -s "$keys_file" ]] && { err "No key store at $keys_file"; return 1; }
+
+  if ! "$PYTHON" - "$keys_file" "$needle" "$replace_tokens" "$replace_time" \
+        "$add_tokens" "$do_reset" "$do_unrevoke" <<'PY'
+import json, sys, time
+path, needle, rep_t, rep_s, add_t, do_reset, do_unrevoke = sys.argv[1:8]
+do_reset = do_reset == "1"; do_unrevoke = do_unrevoke == "1"
+d = json.load(open(path))
+hit = None
+if needle in d: hit = needle
+else:
+    for k, v in d.items():
+        if v.get("name") == needle:
+            hit = k; break
+if not hit:
+    print(f"No key matched: {needle}", file=sys.stderr); sys.exit(2)
+info = d[hit]
+changes = []
+if rep_t:
+    info["tokens_budget"] = int(rep_t); changes.append(f"tokens_budget={rep_t}")
+if rep_s:
+    info["time_budget_sec"] = int(rep_s)
+    info["cycle_seconds"] = int(rep_s)
+    changes.append(f"time_budget_sec={rep_s}")
+if add_t:
+    old = int(info.get("tokens_budget") or 0)
+    info["tokens_budget"] = old + int(add_t)
+    changes.append(f"tokens_budget+={add_t} (was {old}, now {info['tokens_budget']})")
+if do_reset:
+    info["tokens_used"] = 0
+    info["time_used_sec"] = 0.0
+    info["cycle_start"] = int(time.time())
+    changes.append("usage counters reset")
+if do_unrevoke:
+    if info.get("revoked"):
+        info["revoked"] = False
+        changes.append("unrevoked")
+    else:
+        changes.append("already active (unrevoke no-op)")
+# default when no arg: nudge the cycle forward (soft reset of cycle window)
+if not changes:
+    info["cycle_start"] = int(time.time())
+    changes.append("cycle window restarted")
+json.dump(d, open(path, "w"), indent=2)
+print(f"Upgraded {hit[:10]}…{hit[-4:]} ({info.get('name','')}):")
+for c in changes:
+    print(f"  • {c}")
+PY
+  then
+    err "Upgrade failed"
+    return 1
+  fi
+  ok "Key upgraded"
+}
+
 cmd_api_help() {
   cat <<'EOF'
 Usage: ai api <subcommand> [options]
@@ -22396,6 +22815,11 @@ Auth (v4):
                                    Per-request hard cap: 2.1 min (126s).
   keys                             List keys (masked) + usage + status
   revoke <key-or-name>             Revoke a key
+  -Upgrade-k "key-or-name"         Modify an existing key:
+      [new-budget]                    replace tokens/time budget
+      [--add BUDGET]                  add to the token budget
+      [--reset]                       zero usage counters + restart cycle
+      [--unrevoke]                    lift a previous revoke
 
 Web UIs:
   /v3/site        12-tab dashboard (Chat · Status · Models · Keys · History
