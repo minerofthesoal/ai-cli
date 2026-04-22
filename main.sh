@@ -19498,11 +19498,32 @@ cmd_api_v3() {
       fi
       info "Starting API server v3 on ${host}:${port}..."
       local _api_script; _api_script=$(mktemp /tmp/ai_api_XXXX.py)
-      local _cli_bin; _cli_bin=$(command -v ai 2>/dev/null || echo "$0")
+      local _cli_bin
+      if _cli_bin=$(command -v ai 2>/dev/null) && [[ -n "$_cli_bin" ]]; then
+        :
+      else
+        # Fall back to this script's own absolute path (works even if not installed).
+        _cli_bin=$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")
+      fi
       cat > "$_api_script" << 'APIPY'
 import http.server, json, os, subprocess, sys, secrets, time, glob, platform, shutil, threading, re
 
-CLI = os.environ.get("AI_CLI_BIN", "ai")
+_CLI_RAW = os.environ.get("AI_CLI_BIN", "ai")
+
+def _resolve_cli(raw):
+    """Return an argv PREFIX to invoke the CLI.
+    - If `raw` is an absolute path ending in .sh (or not directly executable but
+      readable), wrap it with `bash` so it runs regardless of +x bit.
+    - Otherwise return [raw] as a single-arg prefix."""
+    if os.path.isabs(raw) and os.path.isfile(raw):
+        if not os.access(raw, os.X_OK) or raw.endswith(".sh"):
+            return ["bash", raw]
+        return [raw]
+    # `raw` may be just "ai" — rely on $PATH
+    return [raw]
+
+CLI_ARGV = _resolve_cli(_CLI_RAW)
+CLI = CLI_ARGV[0]   # legacy name for code paths that still reference CLI as a string
 HOST = os.environ.get("API_HOST", "0.0.0.0")
 PORT = int(os.environ.get("API_PORT", "8080"))
 MODEL = os.environ.get("AI_MODEL", "auto")
@@ -19546,7 +19567,7 @@ def strip_ansi(s):
 
 def ai_ask(prompt):
     try:
-        r = subprocess.run([CLI, "ask", prompt], capture_output=True, text=True, timeout=120, env={**os.environ, "NO_COLOR": "1"})
+        r = subprocess.run(CLI_ARGV + ["ask", prompt], capture_output=True, text=True, timeout=120, env={**os.environ, "NO_COLOR": "1"})
         out = strip_ansi((r.stdout or "") + (r.stderr or "")).strip()
         if not out:
             return "No response — run: ai recommended download 1 && ai recommended use 1"
@@ -19558,7 +19579,10 @@ def ai_ask(prompt):
 
 def run_cmd(cmd):
     try:
-        r = subprocess.run(f"{CLI} {cmd}", shell=True, capture_output=True, text=True, timeout=120, env={**os.environ, "NO_COLOR": "1"})
+        # Keep shell-form for legacy v3 callers (string cmd); prefix CLI_ARGV quoted.
+        import shlex
+        prefix = " ".join(shlex.quote(x) for x in CLI_ARGV)
+        r = subprocess.run(f"{prefix} {cmd}", shell=True, capture_output=True, text=True, timeout=120, env={**os.environ, "NO_COLOR": "1"})
         return strip_ansi(r.stdout.strip() + r.stderr.strip()) or "Done"
     except Exception as e:
         return f"Error: {e}"
@@ -19664,7 +19688,7 @@ def key_timeout(headers):
 
 def ai_ask_timed(prompt, timeout=HARD_MAX_REQUEST_SEC):
     try:
-        r = subprocess.run([CLI, "ask", prompt], capture_output=True, text=True,
+        r = subprocess.run(CLI_ARGV + ["ask", prompt], capture_output=True, text=True,
                            timeout=timeout, env={**os.environ, "NO_COLOR": "1"})
         out = strip_ansi((r.stdout or "") + (r.stderr or "")).strip()
         return out or "(no output from backend)"
@@ -19676,7 +19700,7 @@ def ai_ask_timed(prompt, timeout=HARD_MAX_REQUEST_SEC):
 def run_cmd_argv(argv, timeout=HARD_MAX_REQUEST_SEC):
     """Run an `ai` subcommand as a proper argv list (no shell)."""
     try:
-        r = subprocess.run([CLI] + list(argv), capture_output=True, text=True,
+        r = subprocess.run(CLI_ARGV + list(argv), capture_output=True, text=True,
                            timeout=timeout, env={**os.environ, "NO_COLOR": "1"})
         return {"ok": r.returncode == 0,
                 "stdout": strip_ansi(r.stdout or ""),
@@ -20279,7 +20303,7 @@ def v4_get_sysinfo(h, hdrs, qs):
     return (200, sysinfo())
 
 def v4_get_version(h, hdrs, qs):
-    return (200, {"version": VERSION, "api": "v4", "cli": CLI})
+    return (200, {"version": VERSION, "api": "v4", "cli": CLI, "cli_argv": CLI_ARGV})
 
 def v4_get_models(h, hdrs, qs):
     return (200, {"active": active_model(), "local": list_gguf_models(),
@@ -20433,7 +20457,7 @@ def v4_post_compare(h, hdrs, qs):
     for m in models:
         env = {**os.environ, "NO_COLOR": "1"}
         try:
-            r = subprocess.run([CLI, "ask", "-m", m, prm], capture_output=True,
+            r = subprocess.run(CLI_ARGV + ["ask", "-m", m, prm], capture_output=True,
                                text=True, timeout=tmo, env=env)
             out[m] = strip_ansi((r.stdout or "") + (r.stderr or "")).strip()
         except Exception as e:
@@ -20775,7 +20799,7 @@ def v4_get_chat_stream(h, hdrs, qs):
         return None
     t0 = time.time()
     try:
-        proc = subprocess.Popen([CLI, "ask", q],
+        proc = subprocess.Popen(CLI_ARGV + ["ask", q],
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 env={**os.environ, "NO_COLOR": "1"})
         deadline = t0 + timeout
@@ -21307,9 +21331,12 @@ APIPY
         "$PYTHON" "$_api_script" &
       local pid=$!; echo "$pid" > "$API_PID_FILE"; sleep 1
       if kill -0 "$pid" 2>/dev/null; then
-        ok "API v3 running on http://${host}:${port}"
+        ok "API v3 + v4 running on http://${host}:${port}"
         info "Dashboard: http://${host}:${port}/v3/site"
         info "Chat:      http://${host}:${port}/chat"
+        info "v4 health: http://${host}:${port}/v4/health"
+        info "v4 docs:   http://${host}:${port}/v4/endpoints"
+        info "Create v4 key:  ai api new-k \"my-key\" 500k"
         info "Stop:      ai api stop"
       else
         err "Server failed to start"; rm -f "$API_PID_FILE" "$_api_script"
