@@ -12,7 +12,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.2.0.1"
+VERSION="3.2.1"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -14591,6 +14591,7 @@ $(cat)" ;;
     diff-review|review|dr)          cmd_diff_review "$@" ;;
     agent|loop|auto)                cmd_agent "$@" ;;
     rag-quick|rq|quick-rag)         cmd_rag_quick "$@" ;;
+    hy|hypernix)                    cmd_hy "$@" ;;
 
     # ── GUI / GUI+ / Bench / Serve ────────────────────────────────────────────
     -gui|--gui|gui)            cmd_gui ;;
@@ -19484,6 +19485,153 @@ ANSWER:"
   dispatch_ask "$prompt"
 }
 
+cmd_hy() {
+  # HyperNix integration — https://pypi.org/project/hypernix/
+  # HyperNix is a PyTorch model quantization + chat toolkit for the
+  # ray0rf1re/hyper-nix.1 model family. We shell out to its CLI.
+  local sub="${1:-help}"; shift 2>/dev/null || true
+  local hy_repo="${HYPERNIX_REPO:-nix2.5}"
+
+  _hy_bin() {
+    if command -v hypernix >/dev/null 2>&1; then echo "hypernix"; return 0; fi
+    if "$PYTHON" -c "import hypernix" >/dev/null 2>&1; then
+      echo "$PYTHON -m hypernix"; return 0
+    fi
+    return 1
+  }
+
+  case "$sub" in
+    help|"")
+      cat <<'EOF'
+Usage: ai hy <subcommand> [options]
+
+HyperNix wrapper — PyTorch model quantization + chat toolkit.
+Upstream: https://pypi.org/project/hypernix/
+
+Subcommands:
+  help                       Show this help
+  install [--extras E]       pip install hypernix[E]   (E: llama-cpp | train)
+  info                       Installed version + python path
+  models                     Common --repo-id values (nix2.5, qwen3.5-4b, …)
+  ask|a|chat "prompt"        Chat via hypernix (uses --repo-id, default nix2.5)
+  repo ID                    Set default repo for this shell (exports HYPERNIX_REPO)
+  passthrough ARGS...        Run the raw `hypernix ARGS` command
+
+Environment:
+  HYPERNIX_REPO   default repo-id (current: ${HYPERNIX_REPO:-nix2.5})
+
+Examples:
+  ai hy install --extras llama-cpp
+  ai hy ask "explain rotary embeddings"
+  ai hy chat "write a haiku" --repo-id gemma-4-e4b
+  ai hy repo qwen3.5-4b
+  ai hy passthrough quantize --help
+EOF
+      ;;
+
+    install)
+      local extras=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --extras) extras="$2"; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      [[ -z "$PYTHON" ]] && { err "Python required"; return 1; }
+      local spec="hypernix"
+      [[ -n "$extras" ]] && spec="hypernix[${extras}]"
+      info "Installing $spec via pip..."
+      if "$PYTHON" -m pip install --upgrade "$spec"; then
+        ok "Installed. Try: ai hy ask \"hello\""
+      else
+        err "pip install failed — try: $PYTHON -m pip install --user $spec"
+        return 1
+      fi
+      ;;
+
+    info)
+      local b; if ! b=$(_hy_bin); then
+        warn "hypernix is not installed"
+        info "Install:  ai hy install"
+        return 1
+      fi
+      info "Binary:   $b"
+      info "Python:   $PYTHON"
+      "$PYTHON" -c "import hypernix, importlib.metadata as m; print('Version: ' + m.version('hypernix'))" 2>/dev/null \
+        || warn "Could not read version (hypernix importable but metadata missing)"
+      info "Default repo-id: $hy_repo  (override: HYPERNIX_REPO=... or ai hy repo ID)"
+      ;;
+
+    models)
+      cat <<'EOF'
+Common --repo-id values (not exhaustive — see upstream):
+
+  nix2.5                HyperNix flagship
+  qwen3.5-4b            Qwen 3.5, 4 B parameters
+  qwen3.5-8b            Qwen 3.5, 8 B parameters
+  gemma-4-e4b           Gemma 4, E4B
+  gemma-4-e12b          Gemma 4, E12B
+  llama-3.2-3b          Llama 3.2, 3 B
+  mistral-nemo-12b      Mistral Nemo, 12 B
+
+Use any with:  ai hy ask "prompt" --repo-id <id>
+Set default:   ai hy repo <id>
+EOF
+      ;;
+
+    ask|a|chat)
+      local prompt="" repo="$hy_repo"
+      # collect prompt + optional flags
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --repo-id|--repo) repo="$2"; shift 2 ;;
+          --)               shift; prompt="${prompt}${prompt:+ }$*"; break ;;
+          *)                prompt="${prompt}${prompt:+ }$1"; shift ;;
+        esac
+      done
+      [[ -z "$prompt" ]] && { err "Usage: ai hy ask \"prompt\" [--repo-id ID]"; return 1; }
+      local b; if ! b=$(_hy_bin); then
+        err "hypernix is not installed"
+        info "Run:  ai hy install"
+        return 1
+      fi
+      info "HyperNix ask → repo=$repo"
+      # shellcheck disable=SC2086
+      $b chat --repo-id "$repo" --message "$prompt"
+      ;;
+
+    repo)
+      local new="${1:-}"
+      [[ -z "$new" ]] && { info "Current HYPERNIX_REPO: $hy_repo"; info "Set with: ai hy repo <id>"; return 0; }
+      export HYPERNIX_REPO="$new"
+      # Persist to the user's ai-cli config so it survives shells
+      local cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ai-cli"
+      mkdir -p "$cfg_dir"
+      local envf="$cfg_dir/aliases.env"
+      touch "$envf"
+      if grep -q '^export HYPERNIX_REPO=' "$envf" 2>/dev/null; then
+        sed -i.bak -E "s|^export HYPERNIX_REPO=.*|export HYPERNIX_REPO=\"$new\"|" "$envf" && rm -f "${envf}.bak"
+      else
+        printf 'export HYPERNIX_REPO="%s"\n' "$new" >> "$envf"
+      fi
+      ok "Default repo set to: $new"
+      info "Sourced from: $envf (runs on next shell; this shell already exported)"
+      ;;
+
+    passthrough|raw)
+      local b; if ! b=$(_hy_bin); then err "hypernix not installed"; return 1; fi
+      # shellcheck disable=SC2086
+      $b "$@"
+      ;;
+
+    *)
+      err "Unknown hy subcommand: $sub"
+      cmd_hy help
+      return 1
+      ;;
+  esac
+}
+
 cmd_api_v3() {
   local sub="${1:-help}"; shift 2>/dev/null || true
   case "$sub" in
@@ -20278,68 +20426,319 @@ def v4_body(handler):
     except Exception:
         return {}
 
+# ── v4 shared response helpers ──────────────────────────────────────────────
+# Every upgraded v4 handler wraps its payload with:
+#   id          : request ID for tracing (req_xxxx)
+#   elapsed_ms  : integer milliseconds since the request started
+#   server_time : ISO8601 timestamp (UTC)
+#   model       : active model (when relevant)
+# The original fields stay at the top level so existing clients don't break.
+
+def _req_id():
+    return "req_" + secrets.token_hex(8)
+
+def _env(t0, request_id=None, **fields):
+    """Wrap a response dict with timing/metadata envelope. Call as:
+         return (200, _env(t0, id, foo=1, bar=2))"""
+    out = {
+        "id": request_id or _req_id(),
+        "elapsed_ms": int((time.time() - t0) * 1000),
+        "server_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    out.update(fields)
+    return out
+
+def _err(code, message, request_id=None, **extra):
+    """Standard error envelope."""
+    body = {"error": {"code": code, "message": message,
+                      "request_id": request_id or _req_id()}}
+    body["error"].update(extra)
+    return body
+
+# Per-1K-token pricing table (USD). Falls back to a generic estimate when
+# the model is unknown. Values are rough and up-to-date as of early 2026 —
+# keep them conservative so "cost" is a ceiling, not the floor.
+PRICING_USD_PER_1K = {
+    # name fragment → (input_usd_per_1k, output_usd_per_1k)
+    "gpt-4o":               (0.0025, 0.01),
+    "gpt-4-turbo":          (0.01,   0.03),
+    "gpt-4":                (0.03,   0.06),
+    "gpt-3.5":              (0.0005, 0.0015),
+    "o1-preview":           (0.015,  0.06),
+    "o1-mini":              (0.003,  0.012),
+    "claude-3-5-sonnet":    (0.003,  0.015),
+    "claude-3-5-haiku":     (0.001,  0.005),
+    "claude-3-opus":        (0.015,  0.075),
+    "claude-3-haiku":       (0.00025,0.00125),
+    "claude":               (0.003,  0.015),
+    "gemini-1.5-pro":       (0.00125,0.005),
+    "gemini-1.5-flash":     (0.000075,0.0003),
+    "gemini":               (0.001,  0.004),
+    "groq":                 (0.0001, 0.0001),
+    "mistral-large":        (0.002,  0.006),
+    "mistral":              (0.0005, 0.0015),
+    "llama-3":              (0.0004, 0.0008),
+    "llama":                (0.0003, 0.0006),
+    # local GGUF / "auto" etc → free
+}
+
+def price_for(model, tokens_in, tokens_out):
+    """Return (price_in_usd, price_out_usd, matched_tier)."""
+    m = (model or "").lower()
+    for key, (pin, pout) in PRICING_USD_PER_1K.items():
+        if key in m:
+            return (round(tokens_in * pin / 1000, 6),
+                    round(tokens_out * pout / 1000, 6), key)
+    return (0.0, 0.0, "local-or-unknown")
+
+def ai_ask_capture(prompt, timeout, extra_args=None):
+    """Run CLI ask with proper timing. Returns (text, elapsed_sec, ok)."""
+    t0 = time.time()
+    argv = CLI_ARGV + ["ask"] + list(extra_args or []) + [prompt]
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True,
+                           timeout=timeout,
+                           env={**os.environ, "NO_COLOR": "1"})
+        out = strip_ansi((r.stdout or "") + (r.stderr or "")).strip()
+        return (out or "(no output from backend)",
+                time.time() - t0, r.returncode == 0)
+    except subprocess.TimeoutExpired:
+        return (f"Timed out after {timeout}s (hard cap {HARD_MAX_REQUEST_SEC}s)",
+                time.time() - t0, False)
+    except Exception as e:
+        return (f"Error: {type(e).__name__}: {e}", time.time() - t0, False)
+
+# Persistent in-memory counters (per-process). Reset on restart.
+V4_COUNTERS = {"requests": 0, "errors": 0, "tokens_in": 0, "tokens_out": 0}
+V4_JOBS = {}   # job_id → {"status", "kind", "target", "started", "ended", "output"}
+V4_TERM_SESSIONS = {}  # token → {"created", "expires", "client"}
+
+def _new_job(kind, target):
+    jid = "job_" + secrets.token_hex(6)
+    V4_JOBS[jid] = {"status": "running", "kind": kind, "target": target,
+                    "started": int(time.time()), "ended": None, "output": ""}
+    return jid
+
+def _finish_job(jid, output, ok=True):
+    if jid in V4_JOBS:
+        V4_JOBS[jid]["status"] = "done" if ok else "failed"
+        V4_JOBS[jid]["ended"] = int(time.time())
+        V4_JOBS[jid]["output"] = output[-4000:]
+
 # ── v4 GET handlers (no body, no budget spend except maybe time) ──
 def v4_get_ping(h, hdrs, qs):
+    t0 = time.time()
     ok, info, err = auth_check(hdrs)
-    if not ok: return (401, {"error": err})
-    return (200, {"pong": True, "version": VERSION, "t": int(time.time()),
-                  "authenticated": info is not None})
+    if not ok: return (401, _err("auth_required", err))
+    V4_COUNTERS["requests"] += 1
+    return (200, _env(t0, pong=True, version=VERSION, t=int(time.time()),
+                      authenticated=info is not None,
+                      request_count=V4_COUNTERS["requests"]))
 
 def v4_get_health(h, hdrs, qs):
-    return (200, {"status": "ok", "version": VERSION,
-                  "uptime_sec": int(time.time() - START_TIME),
-                  "auth_required": bool(load_keys())})
+    t0 = time.time()
+    checks = {
+        "cli_resolvable": bool(shutil.which(CLI_ARGV[0]) or os.path.isfile(CLI_ARGV[-1])),
+        "config_dir_writable": os.access(CFG_DIR, os.W_OK),
+        "uploads_dir": os.path.isdir(UPLOADS_DIR),
+        "rag_dir": os.path.isdir(RAG_DIR),
+    }
+    all_ok = all(checks.values())
+    return (200, _env(t0,
+                      status="ok" if all_ok else "degraded",
+                      version=VERSION,
+                      uptime_sec=int(time.time() - START_TIME),
+                      auth_required=bool(load_keys()),
+                      checks=checks))
 
 def v4_get_status(h, hdrs, qs):
-    return (200, {"status": "ok", "version": VERSION,
-                  "active_model": active_model(),
-                  "uptime_seconds": int(time.time() - START_TIME),
-                  "mem_count": len(load_mem()),
-                  "ctx_msgs": len(load_ctx().get("messages", [])),
-                  "keys_configured": len(load_keys()),
-                  "hard_request_cap_sec": HARD_MAX_REQUEST_SEC})
+    t0 = time.time()
+    try:
+        import resource
+        rss_mb = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1)
+    except Exception:
+        rss_mb = None
+    keys = load_keys()
+    active_keys = sum(1 for v in keys.values() if not v.get("revoked"))
+    return (200, _env(t0,
+                      status="ok", version=VERSION,
+                      active_model=active_model(),
+                      uptime_seconds=int(time.time() - START_TIME),
+                      mem_count=len(load_mem()),
+                      ctx_msgs=len(load_ctx().get("messages", [])),
+                      keys_configured=len(keys),
+                      keys_active=active_keys,
+                      process_rss_mb=rss_mb,
+                      counters=dict(V4_COUNTERS),
+                      running_jobs=sum(1 for j in V4_JOBS.values() if j["status"] == "running"),
+                      hard_request_cap_sec=HARD_MAX_REQUEST_SEC))
 
 def v4_get_sysinfo(h, hdrs, qs):
-    return (200, sysinfo())
+    t0 = time.time()
+    base = sysinfo()
+    # GPU
+    gpus = []
+    try:
+        r = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total,memory.used,utilization.gpu",
+                            "--format=csv,noheader,nounits"],
+                           capture_output=True, text=True, timeout=2)
+        if r.returncode == 0:
+            for line in r.stdout.strip().splitlines():
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) == 4:
+                    gpus.append({"name": parts[0],
+                                 "mem_total_mib": int(parts[1]),
+                                 "mem_used_mib": int(parts[2]),
+                                 "util_pct": int(parts[3])})
+    except Exception:
+        pass
+    # Python / kernel
+    base.update({"gpus": gpus, "python": platform.python_version(),
+                 "kernel": platform.release()})
+    return (200, _env(t0, **base))
 
 def v4_get_version(h, hdrs, qs):
-    return (200, {"version": VERSION, "api": "v4", "cli": CLI, "cli_argv": CLI_ARGV})
+    t0 = time.time()
+    git_sha = None
+    try:
+        repo = os.path.dirname(os.path.abspath(CLI_ARGV[-1])) if CLI_ARGV else "."
+        r = subprocess.run(["git", "-C", repo, "rev-parse", "--short", "HEAD"],
+                           capture_output=True, text=True, timeout=2)
+        if r.returncode == 0:
+            git_sha = r.stdout.strip() or None
+    except Exception:
+        pass
+    return (200, _env(t0, version=VERSION, api="v4", cli=CLI,
+                      cli_argv=CLI_ARGV, python=platform.python_version(),
+                      git_sha=git_sha, hard_request_cap_sec=HARD_MAX_REQUEST_SEC))
 
 def v4_get_models(h, hdrs, qs):
-    return (200, {"active": active_model(), "local": list_gguf_models(),
-                  "data": [{"id": active_model()}] + [{"id": m["name"]} for m in list_gguf_models()]})
+    t0 = time.time()
+    local = []
+    for m in list_gguf_models():
+        fp = m.get("path") or ""
+        try:
+            sz = os.path.getsize(fp) if fp and os.path.isfile(fp) else 0
+        except Exception:
+            sz = 0
+        local.append({
+            "id": m["name"], "type": "gguf",
+            "path": fp, "size_bytes": sz,
+            "size_gb": round(sz / (1024**3), 2) if sz else 0.0,
+        })
+    cloud = [
+        {"id": "openai:gpt-4o", "type": "api", "provider": "openai",
+         "needs_key": "OPENAI_API_KEY", "context_length": 128000},
+        {"id": "anthropic:claude-3-5-sonnet", "type": "api", "provider": "anthropic",
+         "needs_key": "ANTHROPIC_API_KEY", "context_length": 200000},
+        {"id": "gemini:gemini-1.5-pro", "type": "api", "provider": "gemini",
+         "needs_key": "GEMINI_API_KEY", "context_length": 1000000},
+        {"id": "groq:llama-3.1-70b", "type": "api", "provider": "groq",
+         "needs_key": "GROQ_API_KEY", "context_length": 32000},
+    ]
+    return (200, _env(t0, active=active_model(),
+                      local=local, cloud=cloud,
+                      total=len(local) + len(cloud),
+                      data=[{"id": active_model()}]
+                           + [{"id": m["id"]} for m in local]
+                           + [{"id": m["id"]} for m in cloud]))
 
 def v4_get_keys(h, hdrs, qs):
-    ks = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY",
-          "GROQ_API_KEY", "MISTRAL_API_KEY", "TOGETHER_API_KEY",
-          "HF_TOKEN", "HF_API_KEY"]
-    return (200, {"keys": {k: {"set": bool(os.environ.get(k)),
-                               "masked": masked_key(k)} for k in ks}})
+    t0 = time.time()
+    ks = {
+        "OPENAI_API_KEY":   {"provider": "openai",    "prefix": "sk-"},
+        "ANTHROPIC_API_KEY":{"provider": "anthropic", "prefix": "sk-ant-"},
+        "GEMINI_API_KEY":   {"provider": "gemini",    "prefix": "AIza"},
+        "GROQ_API_KEY":     {"provider": "groq",      "prefix": "gsk_"},
+        "MISTRAL_API_KEY":  {"provider": "mistral",   "prefix": ""},
+        "TOGETHER_API_KEY": {"provider": "together",  "prefix": ""},
+        "HF_TOKEN":         {"provider": "hf",        "prefix": "hf_"},
+        "HF_API_KEY":       {"provider": "hf",        "prefix": "hf_"},
+    }
+    out = {}
+    for k, meta in ks.items():
+        v = os.environ.get(k, "")
+        out[k] = {"set": bool(v),
+                  "masked": masked_key(k),
+                  "provider": meta["provider"],
+                  "format_ok": v.startswith(meta["prefix"]) if (v and meta["prefix"]) else True}
+    return (200, _env(t0, keys=out, total_set=sum(1 for v in out.values() if v["set"])))
 
 def v4_get_history(h, hdrs, qs):
-    n = 50
+    t0 = time.time()
+    n = 50; offset = 0; role = None; since = None
     try: n = max(1, min(500, int(qs.get("n", "50"))))
     except: pass
-    return (200, {"history": read_history(n)})
+    try: offset = max(0, int(qs.get("offset", "0")))
+    except: pass
+    role = qs.get("role") or None
+    try: since = int(qs.get("since", "0")) or None
+    except: pass
+    hist = read_history(n + offset + 100)
+    if role:
+        hist = [x for x in hist if x.get("role") == role]
+    if since:
+        hist = [x for x in hist if x.get("t", 0) >= since]
+    if offset: hist = hist[offset:]
+    hist = hist[-n:]
+    return (200, _env(t0, history=hist, count=len(hist),
+                      filters={"role": role, "since": since, "offset": offset}))
 
 def v4_get_logs(h, hdrs, qs):
+    t0 = time.time()
+    try: n = max(1, min(2000, int(qs.get("n", "200"))))
+    except: n = 200
+    grep = qs.get("grep") or ""
     try:
-        data = open(LOG_FILE).read().splitlines()[-200:]
-    except:
-        data = []
-    return (200, {"log": data})
+        lines = open(LOG_FILE).read().splitlines()
+    except Exception:
+        lines = []
+    if grep:
+        try: lines = [x for x in lines if re.search(grep, x)]
+        except re.error: pass
+    tail = lines[-n:]
+    return (200, _env(t0, log=tail, total=len(lines), returned=len(tail),
+                      grep=grep or None))
 
 def v4_get_files(h, hdrs, qs):
+    t0 = time.time()
     items = []
-    for n in os.listdir(UPLOADS_DIR):
+    total_bytes = 0
+    for n in sorted(os.listdir(UPLOADS_DIR)):
         fp = os.path.join(UPLOADS_DIR, n)
-        if os.path.isfile(fp):
-            items.append({"name": n, "size": os.path.getsize(fp),
-                          "mtime": int(os.path.getmtime(fp))})
-    return (200, {"files": items})
+        if not os.path.isfile(fp): continue
+        sz = os.path.getsize(fp)
+        total_bytes += sz
+        mime = "application/octet-stream"
+        ext = n.rsplit(".", 1)[-1].lower() if "." in n else ""
+        mime = {"txt": "text/plain", "json": "application/json",
+                "md": "text/markdown", "py": "text/x-python",
+                "js": "application/javascript", "html": "text/html",
+                "csv": "text/csv", "wav": "audio/wav",
+                "mp3": "audio/mpeg", "png": "image/png",
+                "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                "pdf": "application/pdf"}.get(ext, mime)
+        items.append({"name": n, "size": sz,
+                      "mtime": int(os.path.getmtime(fp)),
+                      "mime": mime, "ext": ext})
+    return (200, _env(t0, files=items, count=len(items),
+                      total_bytes=total_bytes,
+                      uploads_dir=UPLOADS_DIR))
 
 def v4_get_rag_list(h, hdrs, qs):
-    return (200, {"corpora": [x[:-6] for x in os.listdir(RAG_DIR) if x.endswith(".jsonl")]})
+    t0 = time.time()
+    out = []
+    for n in sorted(os.listdir(RAG_DIR)):
+        if not n.endswith(".jsonl"): continue
+        fp = os.path.join(RAG_DIR, n)
+        docs = 0
+        try:
+            with open(fp) as f:
+                for _ in f: docs += 1
+        except Exception: pass
+        out.append({"corpus": n[:-6], "docs": docs,
+                    "size_bytes": os.path.getsize(fp)})
+    return (200, _env(t0, corpora=out, count=len(out)))
 
 def v4_get_mem(h, hdrs, qs):
     return (200, {"memory": load_mem()})
@@ -20348,301 +20747,772 @@ def v4_get_context(h, hdrs, qs):
     return (200, load_ctx())
 
 def v4_get_config(h, hdrs, qs):
+    t0 = time.time()
     cfg = {}
-    fp = os.path.expanduser("~/.config/ai-cli/config")
+    fp_new = os.path.expanduser("~/.config/ai-cli/config.env")
+    fp_old = os.path.expanduser("~/.config/ai-cli/config")
+    fp = fp_new if os.path.isfile(fp_new) else fp_old
     if os.path.isfile(fp):
         try:
             for line in open(fp):
-                if "=" in line and not line.strip().startswith("#"):
-                    k, v = line.strip().split("=", 1)
-                    if "KEY" in k or "TOKEN" in k or "SECRET" in k:
-                        continue
-                    cfg[k] = v.strip('"').strip("'")
-        except:
-            pass
-    return (200, {"config": cfg})
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line: continue
+                k, v = line.split("=", 1)
+                if any(s in k.upper() for s in ("KEY", "TOKEN", "SECRET", "PASSWORD")):
+                    continue
+                cfg[k] = v.strip('"').strip("'")
+        except Exception: pass
+    return (200, _env(t0, config=cfg, source=fp if os.path.isfile(fp) else None,
+                      count=len(cfg)))
 
 def v4_get_endpoints(h, hdrs, qs):
-    return (200, {"endpoints": V4_ENDPOINTS_DOC})
+    t0 = time.time()
+    qf = (qs.get("category") or "").lower()
+    doc = V4_ENDPOINTS_DOC
+    if qf:
+        doc = [e for e in doc if qf in e.get("func", "").lower()
+                             or qf in e["path"].lower()]
+    return (200, _env(t0, endpoints=doc, count=len(doc),
+                      categories=["status", "models", "chat", "batch", "analysis",
+                                  "features", "files", "rag", "terminal", "auth"]))
 
 def v4_get_usage(h, hdrs, qs):
-    # per-caller usage
+    t0 = time.time()
     k = key_from_headers(hdrs)
     keys = load_keys()
     if k and k in keys:
         info = dict(keys[k])
         info["key_prefix"] = k[:10] + "…"
         info.pop("name_display", None)
-        return (200, {"key": info})
-    return (200, {"key": None, "note": "Open mode (no keys configured) — no per-caller usage tracked"})
+        # derive useful aggregates
+        cycle_remaining = max(0, int(info.get("cycle_seconds", 0))
+                              - (int(time.time()) - int(info.get("cycle_start", 0))))
+        tb = info.get("tokens_budget") or 0
+        tu = info.get("tokens_used", 0)
+        tm_b = info.get("time_budget_sec") or 0
+        tm_u = info.get("time_used_sec", 0)
+        info["tokens_remaining"] = max(0, tb - tu) if tb else None
+        info["time_remaining_sec"] = round(max(0, tm_b - tm_u), 3) if tm_b else None
+        info["cycle_time_remaining_sec"] = cycle_remaining
+        info["tokens_percent_used"] = round(100.0 * tu / tb, 2) if tb else None
+        return (200, _env(t0, key=info))
+    return (200, _env(t0, key=None,
+                      note="Open mode (no keys configured) — no per-caller usage tracked"))
 
 def v4_get_auth_keys(h, hdrs, qs):
-    # admin-only: requires terminal password in X-Admin-PW header
+    t0 = time.time()
     pw = get_term_pw()
     if pw and hdrs.get("X-Admin-PW", "") != pw:
-        return (401, {"error": "admin password required (X-Admin-PW)"})
+        return (401, _err("admin_required", "admin password required (X-Admin-PW)"))
     out = {}
+    active = 0
     for k, info in load_keys().items():
-        out[k[:10] + "…"] = {kk: vv for kk, vv in info.items()}
-    return (200, {"keys": out, "count": len(out)})
+        row = {kk: vv for kk, vv in info.items()}
+        row["key_prefix"] = k[:10] + "…" + k[-4:]
+        if not info.get("revoked"): active += 1
+        out[k[:10] + "…"] = row
+    return (200, _env(t0, keys=out, count=len(out), active=active))
 
 # ── v4 POST handlers ──
 def v4_post_chat(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
     msgs = b.get("messages") or []
-    prm = msgs[-1]["content"] if msgs else b.get("prompt", "")
+    system = b.get("system", "")
+    model_req = b.get("model") or None
+    # Build the actual prompt, prepending system text and flattening message turns.
+    if msgs:
+        parts = []
+        if system: parts.append(f"[system] {system}")
+        for m in msgs:
+            role = m.get("role", "user")
+            parts.append(f"[{role}] {m.get('content', '')}")
+        prm = "\n".join(parts)
+    else:
+        prm = b.get("prompt", "")
+        if system: prm = f"[system] {system}\n{prm}"
     if not prm:
-        return (400, {"error": "missing prompt / messages"})
-    t0 = time.time()
+        V4_COUNTERS["errors"] += 1
+        return (400, _err("missing_input", "missing prompt or messages", req_id))
     tmo = key_timeout(hdrs)
-    r = ai_ask_timed(prm, timeout=tmo)
-    elapsed = time.time() - t0
-    append_history("user", prm); append_history("assistant", r)
-    tks = count_tokens(prm) + count_tokens(r)
+    extra = []
+    if model_req: extra += ["-m", model_req]
+    reply, elapsed, ok = ai_ask_capture(prm, tmo, extra_args=extra)
+    append_history("user", prm); append_history("assistant", reply)
+    tin = count_tokens(prm); tout = count_tokens(reply); tks = tin + tout
+    V4_COUNTERS["requests"] += 1
+    V4_COUNTERS["tokens_in"] += tin; V4_COUNTERS["tokens_out"] += tout
+    if not ok: V4_COUNTERS["errors"] += 1
     record_usage(hdrs, tokens=tks, seconds=elapsed, path="/v4/chat")
-    return (200, {"id": f"c-{secrets.token_hex(6)}",
-                  "object": "chat.completion", "model": active_model(),
-                  "choices": [{"index": 0,
-                               "message": {"role": "assistant", "content": r},
-                               "finish_reason": "stop"}],
-                  "usage": {"prompt_tokens": count_tokens(prm),
-                            "completion_tokens": count_tokens(r),
-                            "total_tokens": tks},
-                  "elapsed_sec": round(elapsed, 3)})
+    pin, pout, tier = price_for(model_req or active_model(), tin, tout)
+    return (200, _env(t0, request_id=req_id,
+                      id=f"c-{secrets.token_hex(6)}",
+                      object="chat.completion",
+                      model=model_req or active_model(),
+                      choices=[{"index": 0,
+                                "message": {"role": "assistant", "content": reply},
+                                "finish_reason": "stop" if ok else "error"}],
+                      usage={"prompt_tokens": tin,
+                             "completion_tokens": tout,
+                             "total_tokens": tks,
+                             "estimated_usd": round(pin + pout, 6),
+                             "pricing_tier": tier},
+                      elapsed_sec=round(elapsed, 3)))
 
 def v4_post_complete(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
     prm = b.get("prompt", "")
     if not prm:
-        return (400, {"error": "missing prompt"})
-    t0 = time.time()
-    r = ai_ask_timed(prm, timeout=key_timeout(hdrs))
-    elapsed = time.time() - t0
-    record_usage(hdrs, tokens=count_tokens(prm) + count_tokens(r),
-                 seconds=elapsed, path="/v4/complete")
-    return (200, {"text": r, "model": active_model(),
-                  "elapsed_sec": round(elapsed, 3)})
+        return (400, _err("missing_input", "missing prompt", req_id))
+    model_req = b.get("model") or None
+    extra = []
+    if model_req: extra += ["-m", model_req]
+    reply, elapsed, ok = ai_ask_capture(prm, key_timeout(hdrs), extra_args=extra)
+    tin = count_tokens(prm); tout = count_tokens(reply)
+    record_usage(hdrs, tokens=tin + tout, seconds=elapsed, path="/v4/complete")
+    V4_COUNTERS["requests"] += 1
+    V4_COUNTERS["tokens_in"] += tin; V4_COUNTERS["tokens_out"] += tout
+    pin, pout, tier = price_for(model_req or active_model(), tin, tout)
+    return (200, _env(t0, request_id=req_id,
+                      text=reply,
+                      model=model_req or active_model(),
+                      ok=ok,
+                      usage={"prompt_tokens": tin, "completion_tokens": tout,
+                             "total_tokens": tin + tout,
+                             "estimated_usd": round(pin + pout, 6),
+                             "pricing_tier": tier},
+                      elapsed_sec=round(elapsed, 3)))
 
 def v4_post_batch(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
     prompts = b.get("prompts") or []
     if not isinstance(prompts, list) or not prompts:
-        return (400, {"error": "missing prompts[]"})
+        return (400, _err("missing_input", "missing prompts[]", req_id))
     if len(prompts) > 20:
-        return (400, {"error": "max 20 prompts per batch"})
+        return (400, _err("limit_exceeded", "max 20 prompts per batch", req_id))
+    concurrency = int(b.get("concurrency", len(prompts)) or len(prompts))
+    concurrency = max(1, min(len(prompts), concurrency))
     tmo = key_timeout(hdrs)
     results = [None] * len(prompts)
+    sem = threading.Semaphore(concurrency)
     def _work(i, p):
-        results[i] = ai_ask_timed(p, timeout=tmo)
+        with sem:
+            t_i = time.time()
+            reply, el, ok = ai_ask_capture(p, tmo)
+            results[i] = {"index": i, "prompt_preview": p[:80],
+                          "text": reply, "ok": ok,
+                          "tokens_in": count_tokens(p),
+                          "tokens_out": count_tokens(reply),
+                          "elapsed_sec": round(el, 3)}
     ts = []
-    t0 = time.time()
     for i, p in enumerate(prompts):
         t = threading.Thread(target=_work, args=(i, p), daemon=True)
         t.start(); ts.append(t)
     for t in ts: t.join(timeout=tmo + 5)
     elapsed = time.time() - t0
-    tks = sum(count_tokens(p) + count_tokens(r or "") for p, r in zip(prompts, results))
-    record_usage(hdrs, tokens=tks, seconds=elapsed, path="/v4/batch")
-    return (200, {"results": results, "elapsed_sec": round(elapsed, 3)})
+    tks_in = sum((r or {}).get("tokens_in", 0) for r in results)
+    tks_out = sum((r or {}).get("tokens_out", 0) for r in results)
+    ok_count = sum(1 for r in results if r and r.get("ok"))
+    record_usage(hdrs, tokens=tks_in + tks_out, seconds=elapsed, path="/v4/batch")
+    return (200, _env(t0, request_id=req_id,
+                      results=results, count=len(prompts),
+                      ok_count=ok_count, fail_count=len(prompts) - ok_count,
+                      concurrency=concurrency,
+                      tokens_in=tks_in, tokens_out=tks_out,
+                      elapsed_sec=round(elapsed, 3)))
 
 def v4_post_compare(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
     prm = b.get("prompt", ""); models = b.get("models") or []
     if not prm or not models:
-        return (400, {"error": "missing prompt and models[]"})
+        return (400, _err("missing_input", "need prompt and models[]", req_id))
     if len(models) > 6:
-        return (400, {"error": "max 6 models per compare"})
+        return (400, _err("limit_exceeded", "max 6 models per compare", req_id))
     tmo = key_timeout(hdrs); out = {}
-    t0 = time.time()
-    for m in models:
-        env = {**os.environ, "NO_COLOR": "1"}
+    stats = {}
+    # run in parallel for fairness
+    lock = threading.Lock()
+    def _run(m):
+        t_m = time.time()
         try:
-            r = subprocess.run(CLI_ARGV + ["ask", "-m", m, prm], capture_output=True,
-                               text=True, timeout=tmo, env=env)
-            out[m] = strip_ansi((r.stdout or "") + (r.stderr or "")).strip()
+            r = subprocess.run(CLI_ARGV + ["ask", "-m", m, prm],
+                               capture_output=True, text=True, timeout=tmo,
+                               env={**os.environ, "NO_COLOR": "1"})
+            txt = strip_ansi((r.stdout or "") + (r.stderr or "")).strip()
+            ok = r.returncode == 0
         except Exception as e:
-            out[m] = f"Error: {e}"
+            txt = f"Error: {type(e).__name__}: {e}"; ok = False
+        el = time.time() - t_m
+        with lock:
+            out[m] = {"text": txt, "ok": ok, "elapsed_sec": round(el, 3),
+                      "chars": len(txt),
+                      "tokens_out": count_tokens(txt)}
+    ts = [threading.Thread(target=_run, args=(m,), daemon=True) for m in models]
+    for t in ts: t.start()
+    for t in ts: t.join(timeout=tmo + 5)
     elapsed = time.time() - t0
-    tks = count_tokens(prm) * len(models) + sum(count_tokens(v) for v in out.values())
-    record_usage(hdrs, tokens=tks, seconds=elapsed, path="/v4/compare")
-    return (200, {"results": out, "elapsed_sec": round(elapsed, 3)})
+    # pick winners
+    fastest = min(out.items(), key=lambda kv: kv[1].get("elapsed_sec", 1e9), default=(None, {}))[0]
+    longest = max(out.items(), key=lambda kv: kv[1].get("chars", 0), default=(None, {}))[0]
+    tin = count_tokens(prm) * len(models)
+    tout = sum(v.get("tokens_out", 0) for v in out.values())
+    record_usage(hdrs, tokens=tin + tout, seconds=elapsed, path="/v4/compare")
+    return (200, _env(t0, request_id=req_id,
+                      results=out, models=models,
+                      stats={"fastest_model": fastest,
+                             "longest_reply_model": longest,
+                             "total_chars": sum(v.get("chars", 0) for v in out.values()),
+                             "tokens_in": tin, "tokens_out": tout},
+                      elapsed_sec=round(elapsed, 3)))
 
 def v4_post_tokens(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
-    t = b.get("text", "") or b.get("prompt", "")
-    return (200, {"tokens": count_tokens(t), "chars": len(t)})
+    # Accept either a single "text"/"prompt" OR an array of "texts"[]/"inputs"[]
+    arr = b.get("texts") or b.get("inputs")
+    single = b.get("text") or b.get("prompt") or ""
+    if arr and isinstance(arr, list):
+        items = []
+        total_tok = 0; total_chars = 0
+        for i, t in enumerate(arr):
+            ts = str(t or "")
+            tk = count_tokens(ts)
+            total_tok += tk; total_chars += len(ts)
+            items.append({"index": i, "tokens": tk, "chars": len(ts),
+                          "words": len(ts.split())})
+        return (200, _env(t0, request_id=req_id,
+                          items=items, count=len(items),
+                          total_tokens=total_tok, total_chars=total_chars,
+                          avg_tokens=round(total_tok / max(1, len(items)), 2)))
+    text = single
+    words = len(text.split())
+    return (200, _env(t0, request_id=req_id,
+                      tokens=count_tokens(text), chars=len(text),
+                      words=words,
+                      tokens_per_word=round(count_tokens(text) / max(1, words), 3),
+                      tokens_per_char=round(count_tokens(text) / max(1, len(text)), 4)))
 
 def v4_post_cost(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
-    t = b.get("text", "") or b.get("prompt", "")
-    m = b.get("model", active_model())
-    tok = count_tokens(t)
-    return (200, {"tokens": tok, "model": m, "estimated_usd": estimate_cost(tok, m)})
+    text = b.get("text", "") or b.get("prompt", "")
+    model = b.get("model", active_model())
+    # Let caller split tokens_in/out explicitly, or derive from text.
+    tokens_in = int(b.get("tokens_in") or count_tokens(text))
+    tokens_out = int(b.get("tokens_out") or 0)
+    # Optional response-length estimate (multiplier over input)
+    if not tokens_out and b.get("estimate_output"):
+        try: tokens_out = int(tokens_in * float(b["estimate_output"]))
+        except Exception: pass
+    pin, pout, tier = price_for(model, tokens_in, tokens_out)
+    return (200, _env(t0, request_id=req_id,
+                      model=model, pricing_tier=tier,
+                      tokens_in=tokens_in, tokens_out=tokens_out,
+                      cost_in_usd=pin, cost_out_usd=pout,
+                      estimated_usd=round(pin + pout, 6),
+                      per_1k_input_usd=PRICING_USD_PER_1K.get(tier, (0, 0))[0],
+                      per_1k_output_usd=PRICING_USD_PER_1K.get(tier, (0, 0))[1]))
 
 def v4_post_embed(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
-    t = b.get("text", "") or b.get("input", "")
-    return (200, {"embedding": simple_embed(t), "dim": 64})
+    dim = int(b.get("dim", 64) or 64)
+    dim = max(16, min(512, dim))
+    inputs = b.get("inputs") or b.get("texts")
+    if not inputs:
+        one = b.get("text") or b.get("input") or ""
+        inputs = [one]
+    if not isinstance(inputs, list):
+        return (400, _err("bad_input", "inputs must be string or array", req_id))
+    # Re-derive an embedding of requested dim by folding simple_embed.
+    def _embed(text, d):
+        base = simple_embed(str(text or ""))
+        if d == len(base): return base
+        if d < len(base): return base[:d]
+        # pad by tiling
+        out = list(base)
+        while len(out) < d:
+            out += base
+        return out[:d]
+    data = []
+    for i, s in enumerate(inputs):
+        v = _embed(s, dim)
+        # L2 normalize
+        norm = (sum(x * x for x in v) ** 0.5) or 1.0
+        v = [round(x / norm, 6) for x in v]
+        data.append({"index": i, "embedding": v,
+                     "tokens": count_tokens(str(s or ""))})
+    return (200, _env(t0, request_id=req_id,
+                      data=data, model="ai-cli-hash-embed",
+                      dim=dim, count=len(data),
+                      embedding=(data[0]["embedding"] if data else [])))
 
 def v4_post_benchmark(h, hdrs, qs):
-    t0 = time.time()
-    r = ai_ask_timed("Say 'ready' in one word.", timeout=min(30, key_timeout(hdrs)))
-    dt = time.time() - t0
-    record_usage(hdrs, tokens=count_tokens(r) + 5, seconds=dt, path="/v4/benchmark")
-    return (200, {"latency_sec": round(dt, 3), "reply": r[:120], "model": active_model()})
+    t0 = time.time(); req_id = _req_id()
+    b = v4_body(h)
+    iterations = max(1, min(20, int(b.get("iterations", 1) or 1)))
+    prompt = b.get("prompt") or "Say 'ready' in one word."
+    tmo = min(60, key_timeout(hdrs))
+    latencies = []; replies = []; ok_count = 0
+    tot_out = 0
+    for _ in range(iterations):
+        r, el, ok = ai_ask_capture(prompt, tmo)
+        latencies.append(el); replies.append(r)
+        if ok: ok_count += 1
+        tot_out += count_tokens(r)
+    lat_sorted = sorted(latencies)
+    def pct(p):
+        if not lat_sorted: return 0
+        i = min(len(lat_sorted) - 1, int(len(lat_sorted) * p))
+        return round(lat_sorted[i], 3)
+    mean = round(sum(latencies) / len(latencies), 3) if latencies else 0
+    record_usage(hdrs, tokens=tot_out + count_tokens(prompt) * iterations,
+                 seconds=time.time() - t0, path="/v4/benchmark")
+    return (200, _env(t0, request_id=req_id,
+                      iterations=iterations, ok_count=ok_count,
+                      latency_sec={"min": round(min(latencies), 3) if latencies else 0,
+                                   "mean": mean,
+                                   "p50": pct(0.5), "p95": pct(0.95),
+                                   "max": round(max(latencies), 3) if latencies else 0},
+                      tokens_out_total=tot_out,
+                      throughput_tok_per_sec=round(tot_out / max(0.001, sum(latencies)), 2),
+                      first_reply=(replies[0] if replies else "")[:200],
+                      model=active_model()))
 
 def v4_post_web(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h); q = b.get("query", "")
-    if not q: return (400, {"error": "missing query"})
-    t0 = time.time()
+    if not q: return (400, _err("missing_input", "missing query", req_id))
     r = run_cmd_argv(["ask-web", q], timeout=key_timeout(hdrs))
     elapsed = time.time() - t0
-    record_usage(hdrs, tokens=count_tokens(q) + count_tokens(r.get("stdout", "")),
+    answer = r.get("stdout") or r.get("stderr") or ""
+    # Pull any bullet-style source lines out of the answer.
+    sources = []
+    for line in answer.splitlines():
+        s = line.strip()
+        m = re.search(r"https?://[^\s)\]]+", s)
+        if m:
+            sources.append({"url": m.group(0),
+                            "snippet": s[:200]})
+    record_usage(hdrs, tokens=count_tokens(q) + count_tokens(answer),
                  seconds=elapsed, path="/v4/web")
-    return (200, {"query": q, "answer": r.get("stdout") or r.get("stderr"),
-                  "elapsed_sec": round(elapsed, 3)})
+    return (200, _env(t0, request_id=req_id,
+                      query=q, answer=answer,
+                      sources=sources[:10], source_count=len(sources),
+                      ok=r.get("ok", False),
+                      elapsed_sec=round(elapsed, 3)))
 
 def v4_post_agent(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
     goal = b.get("goal", ""); steps = int(b.get("steps", 3) or 3)
-    if not goal: return (400, {"error": "missing goal"})
-    t0 = time.time()
-    r = run_cmd_argv(["agent", goal, "--steps", str(steps)], timeout=key_timeout(hdrs))
+    if not goal: return (400, _err("missing_input", "missing goal", req_id))
+    if steps < 1 or steps > 20:
+        return (400, _err("bad_input", "steps must be 1..20", req_id))
+    r = run_cmd_argv(["agent", goal, "--steps", str(steps)],
+                     timeout=key_timeout(hdrs))
     elapsed = time.time() - t0
-    record_usage(hdrs, tokens=count_tokens(goal) + count_tokens(r.get("stdout", "")),
+    raw = r.get("stdout") or r.get("stderr") or ""
+    # Try to parse step-by-step output: lines starting with "Step N" or "▶"
+    trace = []
+    for line in raw.splitlines():
+        s = line.strip()
+        if re.match(r"^(Step\s+\d+|▶|\* )", s):
+            trace.append(s)
+    record_usage(hdrs, tokens=count_tokens(goal) + count_tokens(raw),
                  seconds=elapsed, path="/v4/agent")
-    return (200, {"goal": goal, "steps": steps,
-                  "result": r.get("stdout") or r.get("stderr"),
-                  "elapsed_sec": round(elapsed, 3)})
+    return (200, _env(t0, request_id=req_id,
+                      goal=goal, steps=steps,
+                      result=raw, trace=trace[:50],
+                      ok=r.get("ok", False),
+                      elapsed_sec=round(elapsed, 3)))
 
 def v4_post_diff_review(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
     diff = b.get("diff", "")
-    if not diff: return (400, {"error": "missing diff"})
-    t0 = time.time()
-    prm = ("Review this unified diff. Flag bugs, logic errors, and missing "
-           "tests. Be concise.\n\n" + diff[:20000])
-    r = ai_ask_timed(prm, timeout=key_timeout(hdrs))
-    elapsed = time.time() - t0
-    record_usage(hdrs, tokens=count_tokens(prm) + count_tokens(r),
+    if not diff: return (400, _err("missing_input", "missing diff", req_id))
+    # Count files and hunks in the diff for metadata
+    files = re.findall(r"^(?:---|\+\+\+)\s+(\S+)", diff, re.MULTILINE)
+    hunks = len(re.findall(r"^@@", diff, re.MULTILINE))
+    added = len(re.findall(r"^\+(?!\+\+)", diff, re.MULTILINE))
+    removed = len(re.findall(r"^-(?!--)", diff, re.MULTILINE))
+    prm = ("You are a senior reviewer. Review this unified diff and output in this "
+           "exact shape:\nSUMMARY: <one line>\nISSUES:\n- <severity> <file>: <message>\n"
+           "SUGGESTIONS:\n- <suggestion>\n\nDiff:\n" + diff[:20000])
+    reply, elapsed, ok = ai_ask_capture(prm, key_timeout(hdrs))
+    # Extract structured issues
+    issues = []; suggestions = []
+    section = None
+    for line in reply.splitlines():
+        l = line.strip()
+        if l.upper().startswith("ISSUES"): section = "i"; continue
+        if l.upper().startswith("SUGGESTIONS"): section = "s"; continue
+        if l.startswith("- "):
+            (issues if section == "i" else suggestions).append(l[2:].strip())
+    record_usage(hdrs, tokens=count_tokens(prm) + count_tokens(reply),
                  seconds=elapsed, path="/v4/diff/review")
-    return (200, {"review": r, "elapsed_sec": round(elapsed, 3)})
+    return (200, _env(t0, request_id=req_id,
+                      review=reply,
+                      structured={"issues": issues[:50],
+                                  "suggestions": suggestions[:50]},
+                      diff_stats={"files": sorted(set(files)),
+                                  "file_count": len(set(files)),
+                                  "hunks": hunks, "lines_added": added,
+                                  "lines_removed": removed},
+                      ok=ok,
+                      elapsed_sec=round(elapsed, 3)))
 
 def v4_post_voice_tts(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h); text = b.get("text", "")
-    if not text: return (400, {"error": "missing text"})
-    r = run_cmd_argv(["voice", "tts", text], timeout=min(30, key_timeout(hdrs)))
-    return (200, {"ok": r.get("ok", False),
-                  "result": r.get("stdout") or r.get("stderr")})
+    if not text: return (400, _err("missing_input", "missing text", req_id))
+    fmt = (b.get("format") or "wav").lower()
+    voice = b.get("voice") or ""
+    out_name = f"tts_{int(time.time())}_{secrets.token_hex(3)}.{fmt}"
+    out_path = os.path.join(UPLOADS_DIR, out_name)
+    # Try engines in order: piper / say (macOS) / espeak / pyttsx3 / CLI fallback
+    engines_tried = []
+    engine_used = None
+    ok = False
+    for engine in ("piper", "say", "espeak-ng", "espeak"):
+        if not shutil.which(engine): continue
+        engines_tried.append(engine)
+        try:
+            if engine == "say":
+                r = subprocess.run([engine, "-o", out_path, "--data-format=LEF32@22050", text],
+                                   capture_output=True, text=True, timeout=30)
+            elif engine == "piper":
+                # piper needs a model — skip if not configured
+                break
+            else:
+                r = subprocess.run([engine, "-w", out_path, text],
+                                   capture_output=True, text=True, timeout=30)
+            if r.returncode == 0 and os.path.isfile(out_path):
+                engine_used = engine; ok = True; break
+        except Exception: continue
+    if not ok:
+        # Fall back to existing CLI voice command
+        r = run_cmd_argv(["voice", "tts", text], timeout=min(30, key_timeout(hdrs)))
+        engine_used = "cli-voice-fallback"; ok = r.get("ok", False)
+        stdout = r.get("stdout") or r.get("stderr") or ""
+    else:
+        stdout = ""
+    audio_url = (f"/v4/files/fetch?name={out_name}" if (ok and os.path.isfile(out_path)) else None)
+    record_usage(hdrs, tokens=count_tokens(text), seconds=time.time() - t0,
+                 path="/v4/voice/tts")
+    return (200, _env(t0, request_id=req_id,
+                      ok=ok, engine=engine_used, engines_available=engines_tried,
+                      audio_path=out_path if ok and os.path.isfile(out_path) else None,
+                      audio_url=audio_url, format=fmt, voice=voice or None,
+                      size_bytes=(os.path.getsize(out_path) if ok and os.path.isfile(out_path) else 0),
+                      fallback_output=stdout))
 
 def v4_post_share(h, hdrs, qs):
-    # Non-blocking: return a hint; real command must be run from TTY
-    return (200, {"hint": "Run `ai share` in a terminal — cloudflared/ngrok "
-                          "needs a foreground process to stream the URL."})
+    t0 = time.time(); req_id = _req_id()
+    b = v4_body(h)
+    content = b.get("content") or b.get("text") or ""
+    ttl = int(b.get("ttl_sec", 86400) or 86400)
+    if not content:
+        return (400, _err("missing_input", "missing content/text", req_id))
+    # Persist to a timestamped file under uploads/shares; expose a local URL.
+    share_dir = os.path.join(UPLOADS_DIR, "shares")
+    os.makedirs(share_dir, exist_ok=True)
+    slug = secrets.token_urlsafe(8).replace("_", "-").replace("-", "")[:12]
+    path = os.path.join(share_dir, f"{slug}.txt")
+    with open(path, "w") as f: f.write(content)
+    # Try tunnels in order: cloudflared / ngrok — launch fire-and-forget, don't block.
+    tunnel = None
+    for bin in ("cloudflared", "ngrok"):
+        if shutil.which(bin):
+            tunnel = bin; break
+    return (200, _env(t0, request_id=req_id,
+                      slug=slug,
+                      local_path=path,
+                      local_url=f"http://{HOST}:{PORT}/v4/files/fetch?name=shares/{slug}.txt",
+                      tunnel_available=tunnel,
+                      ttl_sec=ttl,
+                      expires_at=int(time.time()) + ttl,
+                      note=("Use /v4/files/fetch for local viewing. For a public URL, run "
+                            "`ai share` in a terminal — cloudflared/ngrok needs a foreground "
+                            "process to stream the tunnel URL." if not tunnel else
+                            f"Public tunnel binary ({tunnel}) is installed — run `ai share` to "
+                            "start it from a terminal.")))
 
 def v4_post_models_activate(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h); m = b.get("model", "")
-    if not m: return (400, {"error": "missing model"})
+    if not m: return (400, _err("missing_input", "missing model", req_id))
+    previous = active_model()
     r = run_cmd_argv(["recommended", "use", m], timeout=30)
-    return (200, {"active": active_model(), "result": r})
+    new_active = active_model()
+    changed = previous != new_active
+    return (200, _env(t0, request_id=req_id,
+                      previous=previous, active=new_active,
+                      requested=m, changed=changed,
+                      ok=r.get("ok", False) and changed,
+                      stdout=r.get("stdout", "")[:500],
+                      stderr=r.get("stderr", "")[:500]))
 
 def v4_post_models_download(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h); m = b.get("model", "")
-    if not m: return (400, {"error": "missing model"})
-    # Download can take minutes — fire-and-forget via background thread
+    if not m: return (400, _err("missing_input", "missing model", req_id))
+    jid = _new_job("model_download", m)
     def _dl():
-        run_cmd_argv(["recommended", "download", m], timeout=3600)
+        r = run_cmd_argv(["recommended", "download", m], timeout=3600)
+        _finish_job(jid, (r.get("stdout", "") + r.get("stderr", ""))[-2000:],
+                    ok=r.get("ok", False))
     threading.Thread(target=_dl, daemon=True).start()
-    return (202, {"accepted": True, "model": m,
-                  "note": "download started in background; poll /v4/models to see when it lands"})
+    return (202, _env(t0, request_id=req_id,
+                      accepted=True, model=m, job_id=jid,
+                      poll_url=f"/v4/jobs?id={jid}",
+                      note="download running in background; GET /v4/jobs?id=… to poll"))
 
 def v4_post_keys_set(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
-    # require admin password (terminal pw)
     pw = get_term_pw()
     if pw and b.get("password") != pw:
-        return (401, {"error": "admin password required"})
+        return (401, _err("admin_required", "admin password required", req_id))
     name = b.get("name", ""); value = b.get("value", "")
     if not name or not value:
-        return (400, {"error": "missing name/value"})
+        return (400, _err("missing_input", "missing name/value", req_id))
+    # Validate format by prefix when known
+    expected_prefix = {
+        "OPENAI_API_KEY": "sk-", "ANTHROPIC_API_KEY": "sk-ant-",
+        "GEMINI_API_KEY": "AIza", "GROQ_API_KEY": "gsk_",
+        "HF_TOKEN": "hf_", "HF_API_KEY": "hf_",
+    }.get(name, "")
+    format_ok = (not expected_prefix) or value.startswith(expected_prefix)
     r = run_cmd_argv(["keys", "set", name, value], timeout=10)
-    return (200, {"ok": r.get("ok", False), "name": name})
+    return (200, _env(t0, request_id=req_id,
+                      ok=r.get("ok", False),
+                      name=name,
+                      format_ok=format_ok,
+                      expected_prefix=expected_prefix or None,
+                      stderr=r.get("stderr", "")[:500]))
 
 def v4_post_history_search(h, hdrs, qs):
-    b = v4_body(h); q = (b.get("query") or "").lower()
-    hist = read_history(500)
-    hits = [x for x in hist if q in json.dumps(x).lower()] if q else hist
-    return (200, {"hits": hits[-100:], "count": len(hits)})
+    t0 = time.time(); req_id = _req_id()
+    b = v4_body(h)
+    q = (b.get("query") or "").strip()
+    limit = max(1, min(200, int(b.get("limit", 50) or 50)))
+    role_filter = b.get("role")
+    since = int(b.get("since", 0) or 0)
+    hist = read_history(2000)
+    if role_filter:
+        hist = [x for x in hist if x.get("role") == role_filter]
+    if since:
+        hist = [x for x in hist if x.get("t", 0) >= since]
+    # Score by literal match count, normalised by length.
+    ql = q.lower()
+    if q:
+        scored = []
+        for item in hist:
+            txt = json.dumps(item, ensure_ascii=False).lower()
+            count = txt.count(ql)
+            if not count: continue
+            score = count / max(1, len(txt) / 1000)
+            # highlight: first 120 chars around the first match
+            raw = item.get("content") or ""
+            idx = raw.lower().find(ql)
+            highlight = raw[max(0, idx - 40): idx + len(q) + 80] if idx >= 0 else ""
+            scored.append((score, {"item": item, "score": round(score, 3),
+                                   "highlight": highlight}))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        hits = [x[1] for x in scored[:limit]]
+    else:
+        hits = [{"item": x, "score": 0, "highlight": ""} for x in hist[-limit:]]
+    return (200, _env(t0, request_id=req_id,
+                      hits=hits, count=len(hits),
+                      query=q, searched=len(hist)))
 
 def v4_post_history_clear(h, hdrs, qs):
-    try: open(HIST_FILE, "w").close()
-    except: pass
-    return (200, {"ok": True})
+    t0 = time.time(); req_id = _req_id()
+    # Archive before delete so it's recoverable
+    lines = 0
+    try:
+        if os.path.isfile(HIST_FILE):
+            lines = sum(1 for _ in open(HIST_FILE))
+            bak = f"{HIST_FILE}.bak_{int(time.time())}"
+            try:
+                shutil.copy2(HIST_FILE, bak)
+            except Exception:
+                bak = None
+        else:
+            bak = None
+        open(HIST_FILE, "w").close()
+    except Exception as e:
+        return (500, _err("io_error", str(e), req_id))
+    return (200, _env(t0, request_id=req_id,
+                      ok=True, cleared_entries=lines, backup=bak))
 
 def v4_post_files_upload(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
     pw = get_term_pw()
     if pw and b.get("password") != pw:
-        return (401, {"error": "password required"})
+        return (401, _err("admin_required", "password required", req_id))
     name = (b.get("name") or f"upload_{int(time.time())}.txt").replace("/", "_")
+    # Hard size cap (10 MB) to keep the JSON body bounded.
+    MAX = 10 * 1024 * 1024
     content = b.get("content", "")
+    is_base64 = bool(b.get("base64"))
+    try:
+        if is_base64:
+            import base64
+            data = base64.b64decode(content)
+        else:
+            data = content.encode() if isinstance(content, str) else bytes(content)
+    except Exception as e:
+        return (400, _err("bad_content", f"decode error: {e}", req_id))
+    if len(data) > MAX:
+        return (413, _err("too_large", f"file exceeds {MAX} bytes", req_id,
+                          size=len(data)))
     fp = os.path.join(UPLOADS_DIR, name)
-    with open(fp, "w") as f:
-        f.write(content)
-    return (200, {"ok": True, "path": fp, "size": len(content)})
+    with open(fp, "wb") as f: f.write(data)
+    import hashlib
+    digest = hashlib.sha256(data).hexdigest()
+    return (200, _env(t0, request_id=req_id,
+                      ok=True, path=fp, name=name,
+                      size=len(data),
+                      sha256=digest,
+                      fetch_url=f"/v4/files/fetch?name={name}"))
 
 def v4_post_files_delete(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
     pw = get_term_pw()
     if pw and b.get("password") != pw:
-        return (401, {"error": "password required"})
-    name = (b.get("name") or "").replace("/", "_")
-    fp = os.path.join(UPLOADS_DIR, name)
-    if os.path.isfile(fp):
-        os.remove(fp); return (200, {"ok": True})
-    return (404, {"error": "not found"})
+        return (401, _err("admin_required", "password required", req_id))
+    # Accept single name or array of names for bulk delete
+    names = b.get("names") or ([b["name"]] if b.get("name") else [])
+    if not names:
+        return (400, _err("missing_input", "missing name or names[]", req_id))
+    deleted = []; missing = []
+    for n in names:
+        n = str(n).replace("/", "_")
+        fp = os.path.join(UPLOADS_DIR, n)
+        if os.path.isfile(fp):
+            try: os.remove(fp); deleted.append(n)
+            except Exception: missing.append(n)
+        else:
+            missing.append(n)
+    code = 200 if deleted else 404
+    return (code, _env(t0, request_id=req_id,
+                       ok=bool(deleted), deleted=deleted, missing=missing,
+                       count_deleted=len(deleted)))
 
 def v4_post_rag_add(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
     corpus = (b.get("corpus") or "default").replace("/", "_")
     text = b.get("text", "")
-    if not text: return (400, {"error": "missing text"})
+    source = b.get("source") or None
+    if not text: return (400, _err("missing_input", "missing text", req_id))
+    # Auto-chunk long text into overlapping windows.
+    chunk_size = int(b.get("chunk_size", 800) or 800)
+    overlap = int(b.get("overlap", 80) or 80)
+    chunk_size = max(100, min(4000, chunk_size))
+    overlap = max(0, min(chunk_size // 2, overlap))
+    chunks = []
+    if len(text) <= chunk_size:
+        chunks = [text]
+    else:
+        step = chunk_size - overlap
+        for i in range(0, len(text), step):
+            chunk = text[i:i + chunk_size]
+            if chunk.strip(): chunks.append(chunk)
     fp = os.path.join(RAG_DIR, corpus + ".jsonl")
+    added = 0
     with open(fp, "a") as f:
-        f.write(json.dumps({"t": int(time.time()), "text": text,
-                            "emb": simple_embed(text)}) + "\n")
-    return (200, {"ok": True, "corpus": corpus})
+        for i, ch in enumerate(chunks):
+            f.write(json.dumps({"t": int(time.time()), "text": ch,
+                                "source": source, "chunk_idx": i,
+                                "emb": simple_embed(ch)}) + "\n")
+            added += 1
+    return (200, _env(t0, request_id=req_id,
+                      ok=True, corpus=corpus,
+                      chunks_added=added,
+                      total_chars=len(text),
+                      avg_chunk_chars=round(len(text) / max(1, added), 1),
+                      source=source))
 
 def v4_post_rag_query(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
     corpus = (b.get("corpus") or "default").replace("/", "_")
     q = b.get("query", ""); k = int(b.get("k", 3) or 3)
+    with_answer = bool(b.get("with_answer", True))
     fp = os.path.join(RAG_DIR, corpus + ".jsonl")
     if not os.path.isfile(fp):
-        return (404, {"error": "unknown corpus"})
+        return (404, _err("not_found", f"unknown corpus: {corpus}", req_id))
+    if not q:
+        return (400, _err("missing_input", "missing query", req_id))
     qv = simple_embed(q); items = []
     for line in open(fp):
         try:
             d = json.loads(line)
-            d["score"] = round(cosine(qv, d.get("emb", [])), 4)
+            # Hybrid scoring: cosine + term-frequency boost
+            cos = cosine(qv, d.get("emb", []))
+            lf = d.get("text", "").lower(); ql = q.lower()
+            tf = sum(lf.count(w) for w in ql.split() if len(w) > 2)
+            d["score"] = round(cos + 0.05 * tf, 4)
+            d["cosine"] = round(cos, 4)
+            d["term_freq"] = tf
             d.pop("emb", None)
             items.append(d)
-        except: pass
+        except Exception: pass
     items.sort(key=lambda d: d.get("score", 0), reverse=True)
     top = items[:k]
     ctx = "\n\n".join(d.get("text", "") for d in top)
-    answer = ai_ask_timed(f"Use only this context to answer:\n{ctx}\n\nQuestion: {q}",
-                          timeout=key_timeout(hdrs)) if q else ""
-    return (200, {"top": top, "answer": answer})
+    answer = ""; elapsed_ans = 0; ok_ans = False
+    if with_answer:
+        answer, elapsed_ans, ok_ans = ai_ask_capture(
+            f"Use only this context to answer:\n{ctx}\n\nQuestion: {q}",
+            key_timeout(hdrs))
+    return (200, _env(t0, request_id=req_id,
+                      top=top, answer=answer,
+                      corpus=corpus, k=k,
+                      total_docs_scanned=len(items),
+                      answer_elapsed_sec=round(elapsed_ans, 3),
+                      answer_ok=ok_ans))
 
 def v4_post_run(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
     pw = get_term_pw()
     if not pw or b.get("password") != pw:
-        return (401, {"error": "terminal password required"})
+        return (401, _err("admin_required", "terminal password required", req_id))
     cmd = b.get("cmd", "")
-    if not cmd: return (400, {"error": "missing cmd"})
-    return (200, shell_run(cmd, timeout=int(b.get("timeout", 60))))
+    if not cmd: return (400, _err("missing_input", "missing cmd", req_id))
+    timeout = min(key_timeout(hdrs), max(1, int(b.get("timeout", 60) or 60)))
+    cwd = b.get("cwd") or None
+    env_extras = b.get("env") or {}
+    env = {**os.environ}
+    # Only allow scalar string env passthrough.
+    if isinstance(env_extras, dict):
+        for k, v in env_extras.items():
+            if isinstance(k, str) and isinstance(v, (str, int, float, bool)):
+                env[str(k)] = str(v)
+    try:
+        r = subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                           timeout=timeout, env=env,
+                           cwd=cwd if cwd and os.path.isdir(cwd) else None)
+        return (200, _env(t0, request_id=req_id,
+                          stdout=r.stdout, stderr=r.stderr,
+                          rc=r.returncode, ok=r.returncode == 0,
+                          cmd=cmd, cwd=cwd or os.getcwd(),
+                          timeout_sec=timeout))
+    except subprocess.TimeoutExpired:
+        return (200, _env(t0, request_id=req_id, stdout="", stderr="Timed out",
+                          rc=124, ok=False, cmd=cmd, timeout_sec=timeout))
+    except Exception as e:
+        return (500, _err("exec_error", f"{type(e).__name__}: {e}", req_id))
 
 def v4_post_mem(h, hdrs, qs):
     b = v4_body(h); action = b.get("action", "list")
@@ -20678,20 +21548,60 @@ def v4_post_comp_context(h, hdrs, qs):
     return (200, {"ok": True, "compressed": ctx.get("compressed", ""),
                   "remaining_msgs": len(ctx["messages"])})
 
+def _prune_term_sessions():
+    now = time.time()
+    for tok, s in list(V4_TERM_SESSIONS.items()):
+        if s.get("expires", 0) < now:
+            V4_TERM_SESSIONS.pop(tok, None)
+
+def _session_ok(hdrs, body):
+    """A terminal call is allowed if the body has the admin pw OR the header
+    X-Term-Session matches a live session token."""
+    pw = get_term_pw()
+    if not pw:
+        return (False, "no password set — run: ai -apip PASSWORD")
+    if body.get("password") == pw:
+        return (True, None)
+    _prune_term_sessions()
+    tok = hdrs.get("X-Term-Session") or body.get("session")
+    if tok and tok in V4_TERM_SESSIONS:
+        return (True, None)
+    return (False, "unauthorized (send password or X-Term-Session)")
+
 def v4_post_terminal_auth(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h); pw = get_term_pw()
     if not pw:
-        return (403, {"error": "no password set — run: ai -apip PASSWORD"})
-    return (200, {"ok": True}) if b.get("password") == pw else (401, {"error": "wrong password"})
+        return (403, _err("not_configured",
+                          "no password set — run: ai -apip PASSWORD", req_id))
+    if b.get("password") != pw:
+        return (401, _err("wrong_password", "wrong password", req_id))
+    ttl = max(30, min(3600, int(b.get("ttl_sec", 900) or 900)))
+    tok = "ts_" + secrets.token_urlsafe(24)
+    V4_TERM_SESSIONS[tok] = {"created": time.time(),
+                             "expires": time.time() + ttl,
+                             "client": h.client_address[0]}
+    return (200, _env(t0, request_id=req_id,
+                      ok=True, session=tok, ttl_sec=ttl,
+                      expires_at=int(V4_TERM_SESSIONS[tok]["expires"]),
+                      note="Send header X-Term-Session on subsequent terminal/exec calls."))
 
 def v4_post_terminal_exec(h, hdrs, qs):
-    b = v4_body(h); pw = get_term_pw()
-    if not pw or b.get("password") != pw:
-        return (401, {"error": "unauthorized"})
+    t0 = time.time(); req_id = _req_id()
+    b = v4_body(h)
+    ok, err = _session_ok(hdrs, b)
+    if not ok:
+        return (401, _err("unauthorized", err, req_id))
     cmd = b.get("cmd", "")
-    if not cmd: return (400, {"error": "no cmd"})
-    sr = shell_run(cmd, timeout=30)
-    return (200, {"output": (sr["stdout"] or "") + (sr["stderr"] or "")})
+    if not cmd: return (400, _err("missing_input", "no cmd", req_id))
+    timeout = min(key_timeout(hdrs), max(1, int(b.get("timeout", 30) or 30)))
+    sr = shell_run(cmd, timeout=timeout)
+    return (200, _env(t0, request_id=req_id,
+                      cmd=cmd,
+                      stdout=sr["stdout"], stderr=sr["stderr"],
+                      rc=sr["rc"], ok=sr["rc"] == 0,
+                      output=(sr["stdout"] or "") + (sr["stderr"] or ""),
+                      timeout_sec=timeout))
 
 _BUDGET_RE = re.compile(r"^([0-9]+(?:\.[0-9]{1,2})?)(k|K|m|M|s|S|min|MIN|h|H)?$")
 
@@ -20714,16 +21624,16 @@ def _parse_budget(spec):
     return (None, None)
 
 def v4_post_auth_new(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
     # creating the first key is allowed without auth; after that, admin pw required
     existing = load_keys()
     if existing:
         pw = get_term_pw()
         if not pw or b.get("password") != pw:
-            return (401, {"error": "admin password required after first key"})
+            return (401, _err("admin_required",
+                              "admin password required after first key", req_id))
     name = b.get("name", "") or f"key-{int(time.time())}"
-    # Accept: tokens_budget / tokens, time_budget_sec / seconds, cycle_seconds,
-    # and the CLI-style "budget" string ("500k","1.5m","1h","30min","2min","45s").
     tokens = b.get("tokens_budget")
     seconds = b.get("time_budget_sec")
     for alias in ("tokens", "budget", "spec"):
@@ -20752,27 +21662,279 @@ def v4_post_auth_new(h, hdrs, qs):
         "revoked": False,
     }
     save_keys(existing)
-    return (200, {"key": newkey, "name": name,
-                  "tokens_budget": existing[newkey]["tokens_budget"],
-                  "time_budget_sec": existing[newkey]["time_budget_sec"],
-                  "max_request_sec": existing[newkey]["max_request_sec"],
-                  "note": "Send as header: X-API-Key: <key>  (or Authorization: Bearer <key>)"})
+    rec = existing[newkey]
+    return (200, _env(t0, request_id=req_id,
+                      key=newkey, name=name,
+                      tokens_budget=rec["tokens_budget"],
+                      time_budget_sec=rec["time_budget_sec"],
+                      max_request_sec=rec["max_request_sec"],
+                      cycle_seconds=rec["cycle_seconds"],
+                      hint=("Send as header:  X-API-Key: <key>  or  "
+                            "Authorization: Bearer <key>")))
 
 def v4_post_auth_revoke(h, hdrs, qs):
+    t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
     pw = get_term_pw()
     if pw and b.get("password") != pw:
-        return (401, {"error": "admin password required"})
-    k = b.get("key", "")
+        return (401, _err("admin_required", "admin password required", req_id))
+    # Accept key (full), key_prefix, name, or batch via keys[]/names[]
     keys = load_keys()
-    if k not in keys: return (404, {"error": "unknown key"})
-    keys[k]["revoked"] = True
+    targets = []
+    if b.get("keys") and isinstance(b["keys"], list): targets += b["keys"]
+    if b.get("names") and isinstance(b["names"], list):
+        for nm in b["names"]:
+            for k, v in keys.items():
+                if v.get("name") == nm: targets.append(k)
+    if b.get("key"): targets.append(b["key"])
+    if b.get("name"):
+        for k, v in keys.items():
+            if v.get("name") == b["name"]: targets.append(k)
+    if not targets:
+        return (400, _err("missing_input",
+                          "need key, name, keys[], or names[]", req_id))
+    revoked = []; missing = []
+    for t in targets:
+        if t in keys and not keys[t].get("revoked"):
+            keys[t]["revoked"] = True; revoked.append(t[:10] + "…")
+        elif t not in keys:
+            missing.append(t[:10] + "…" if len(t) > 14 else t)
     save_keys(keys)
-    return (200, {"ok": True, "key": k[:10] + "…"})
+    return (200, _env(t0, request_id=req_id,
+                      ok=bool(revoked), revoked=revoked, missing=missing,
+                      count=len(revoked)))
+
+def v4_get_jobs(h, hdrs, qs):
+    t0 = time.time()
+    jid = qs.get("id")
+    if jid:
+        job = V4_JOBS.get(jid)
+        if not job: return (404, _err("not_found", f"unknown job: {jid}"))
+        return (200, _env(t0, job_id=jid, **job))
+    status_filter = qs.get("status")
+    jobs = []
+    for j, info in V4_JOBS.items():
+        if status_filter and info.get("status") != status_filter: continue
+        row = dict(info); row["id"] = j
+        row.pop("output", None)  # omit large field from list view
+        jobs.append(row)
+    return (200, _env(t0, jobs=jobs, count=len(jobs),
+                      running=sum(1 for x in jobs if x.get("status") == "running")))
+
+def v4_get_files_fetch(h, hdrs, qs):
+    name = qs.get("name") or ""
+    if not name:
+        return (400, _err("missing_input", "missing name"))
+    # Allow one level of subdir (e.g. shares/slug.txt), but reject traversal.
+    safe = name.replace("\\", "/")
+    if ".." in safe.split("/"):
+        return (400, _err("bad_path", "path traversal not allowed"))
+    fp = os.path.join(UPLOADS_DIR, safe)
+    if not os.path.isfile(fp):
+        return (404, _err("not_found", f"no such file: {name}"))
+    try:
+        with open(fp, "rb") as f: data = f.read()
+    except Exception as e:
+        return (500, _err("io_error", str(e)))
+    # Send raw file (binary-safe) with a best-effort content-type.
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    mime = {"txt": "text/plain; charset=utf-8",
+            "json": "application/json",
+            "md": "text/markdown; charset=utf-8",
+            "wav": "audio/wav", "mp3": "audio/mpeg",
+            "png": "image/png", "jpg": "image/jpeg",
+            "jpeg": "image/jpeg", "pdf": "application/pdf",
+            }.get(ext, "application/octet-stream")
+    try:
+        h.send_response(200)
+        h.send_header("Content-Type", mime)
+        h.send_header("Content-Length", str(len(data)))
+        h.send_header("Content-Disposition",
+                      f'inline; filename="{os.path.basename(name)}"')
+        h.end_headers()
+        h.wfile.write(data)
+    except Exception:
+        pass
+    return None  # sentinel — we already wrote the response
+
+# ── hidden: /v4/_rdp — Tailscale-only remote desktop control ────────────────
+# This endpoint is intentionally NOT listed in /v4/endpoints. It is gated by:
+#   1. Terminal password (ai -apip PASSWORD), AND
+#   2. Caller must be on the local Tailnet (IP in 100.64.0.0/10 range), AND
+#   3. Tailscale must be running locally (`tailscale status` succeeds).
+# Actions: info / screenshot / type / key / click / mousemove.
+# Intent: owner-initiated remote control of their own machine over Tailscale.
+
+def _tailscale_up():
+    """Return True iff `tailscale status` reports the daemon running."""
+    try:
+        r = subprocess.run(["tailscale", "status", "--json"],
+                           capture_output=True, text=True, timeout=3)
+        if r.returncode != 0: return False
+        d = json.loads(r.stdout or "{}")
+        return bool(d.get("Self") and d.get("BackendState") == "Running")
+    except Exception:
+        return False
+
+def _tailscale_client(client_addr):
+    """Return True iff client_addr is inside 100.64.0.0/10 (Tailnet CGNAT)."""
+    try:
+        parts = client_addr.split(".")
+        if len(parts) != 4: return False
+        a, b = int(parts[0]), int(parts[1])
+        # 100.64.0.0/10 = 100.64.0.0 .. 100.127.255.255
+        return a == 100 and 64 <= b <= 127
+    except Exception:
+        return False
+
+def _have(*bins):
+    return [b for b in bins if shutil.which(b)]
+
+def v4_post_rdp(h, hdrs, qs):
+    """Hidden remote-desktop control. Requires Tailscale + terminal password."""
+    t0 = time.time(); req_id = _req_id()
+    client_ip = h.client_address[0]
+    b = v4_body(h)
+    pw = get_term_pw()
+    if not pw:
+        return (403, _err("not_configured",
+                          "no PC password set — run: ai -apip PASSWORD", req_id))
+    if b.get("password") != pw:
+        return (401, _err("wrong_password", "wrong PC password", req_id))
+    if not _tailscale_up():
+        return (403, _err("tailscale_down",
+                          "tailscale is not running on this host", req_id))
+    # Allow 127.0.0.1 for local testing; otherwise require Tailnet source.
+    if not (client_ip.startswith("127.") or _tailscale_client(client_ip)):
+        return (403, _err("not_tailnet",
+                          f"client {client_ip} is not on the Tailnet", req_id))
+    action = (b.get("action") or "info").lower()
+
+    # --- info: report screen capabilities ---------------------------------
+    if action == "info":
+        tools = {
+            "screenshot": _have("gnome-screenshot", "scrot", "grim", "screencapture", "import"),
+            "control":    _have("xdotool", "ydotool"),
+        }
+        dims = None
+        try:
+            r = subprocess.run(["xdpyinfo"], capture_output=True, text=True, timeout=2)
+            for line in r.stdout.splitlines():
+                if "dimensions" in line:
+                    dims = line.strip(); break
+        except Exception: pass
+        return (200, _env(t0, request_id=req_id,
+                          action="info",
+                          tailscale=True,
+                          client_ip=client_ip,
+                          dimensions=dims,
+                          tools_available=tools,
+                          platform=platform.system()))
+
+    # --- screenshot: capture and return a fetchable URL -------------------
+    if action == "screenshot":
+        out_name = f"rdp_{int(time.time())}_{secrets.token_hex(3)}.png"
+        out_path = os.path.join(UPLOADS_DIR, out_name)
+        engine = None
+        for bin in ("gnome-screenshot", "scrot", "grim", "screencapture", "import"):
+            if not shutil.which(bin): continue
+            try:
+                if bin == "gnome-screenshot":
+                    r = subprocess.run([bin, "-f", out_path],
+                                       capture_output=True, timeout=10)
+                elif bin == "scrot":
+                    r = subprocess.run([bin, out_path],
+                                       capture_output=True, timeout=10)
+                elif bin == "grim":
+                    r = subprocess.run([bin, out_path],
+                                       capture_output=True, timeout=10)
+                elif bin == "screencapture":
+                    r = subprocess.run([bin, "-x", out_path],
+                                       capture_output=True, timeout=10)
+                else:  # import (ImageMagick)
+                    r = subprocess.run([bin, "-window", "root", out_path],
+                                       capture_output=True, timeout=10)
+                if r.returncode == 0 and os.path.isfile(out_path):
+                    engine = bin; break
+            except Exception: continue
+        if not engine:
+            return (500, _err("no_screenshot_tool",
+                              "install one of: gnome-screenshot, scrot, grim, "
+                              "screencapture, imagemagick", req_id))
+        return (200, _env(t0, request_id=req_id,
+                          action="screenshot",
+                          engine=engine,
+                          path=out_path,
+                          size_bytes=os.path.getsize(out_path),
+                          url=f"/v4/files/fetch?name={out_name}"))
+
+    # --- control actions: type, key, click, mousemove ---------------------
+    ctl = shutil.which("xdotool") or shutil.which("ydotool")
+    if not ctl:
+        return (500, _err("no_control_tool",
+                          "install xdotool (X11) or ydotool (Wayland)", req_id))
+    if action == "type":
+        text = b.get("text", "")
+        if not text: return (400, _err("missing_input", "missing text", req_id))
+        if len(text) > 4000:
+            return (400, _err("too_large", "text must be ≤4000 chars", req_id))
+        r = subprocess.run([ctl, "type", "--delay", "15", text],
+                           capture_output=True, text=True, timeout=30)
+        return (200, _env(t0, request_id=req_id,
+                          action="type", tool=os.path.basename(ctl),
+                          chars=len(text),
+                          ok=r.returncode == 0,
+                          stderr=r.stderr[:200]))
+    if action == "key":
+        key = b.get("key", "")
+        if not key: return (400, _err("missing_input", "missing key", req_id))
+        # Accept either a single key ("Return") or combo ("ctrl+alt+t")
+        r = subprocess.run([ctl, "key", key],
+                           capture_output=True, text=True, timeout=5)
+        return (200, _env(t0, request_id=req_id,
+                          action="key", key=key,
+                          ok=r.returncode == 0,
+                          stderr=r.stderr[:200]))
+    if action == "click":
+        button = str(b.get("button", 1))
+        x = b.get("x"); y = b.get("y")
+        cmd = [ctl]
+        if x is not None and y is not None:
+            cmd += ["mousemove", str(int(x)), str(int(y))]
+        cmd += ["click", button]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        return (200, _env(t0, request_id=req_id,
+                          action="click", button=button,
+                          x=x, y=y,
+                          ok=r.returncode == 0,
+                          stderr=r.stderr[:200]))
+    if action == "mousemove":
+        x = int(b.get("x") or 0); y = int(b.get("y") or 0)
+        r = subprocess.run([ctl, "mousemove", str(x), str(y)],
+                           capture_output=True, text=True, timeout=5)
+        return (200, _env(t0, request_id=req_id,
+                          action="mousemove", x=x, y=y,
+                          ok=r.returncode == 0,
+                          stderr=r.stderr[:200]))
+    return (400, _err("unknown_action",
+                      "expected action: info|screenshot|type|key|click|mousemove",
+                      req_id))
+
 
 def v4_get_chat_stream(h, hdrs, qs):
-    """SSE streaming chat. Writes directly to the wire; returns None."""
+    """SSE streaming chat. Writes directly to the wire; returns None.
+
+    Emits events:
+      start     { request_id, model, timeout, ts }
+      delta     { text, tokens, seq }   ← one per line/chunk
+      heartbeat { t }                   ← every ~20s when idle
+      usage     { tokens_in, tokens_out, elapsed_ms }
+      done      { elapsed_ms, reason }
+      error     { code, message }
+    """
+    request_id = _req_id()
     q = qs.get("q") or qs.get("prompt") or ""
+    model_req = qs.get("model") or None
     try:
         import urllib.parse
         q = urllib.parse.unquote_plus(q)
@@ -20784,41 +21946,73 @@ def v4_get_chat_stream(h, hdrs, qs):
     h.send_header("Cache-Control", "no-cache")
     h.send_header("Connection", "keep-alive")
     h.send_header("X-Accel-Buffering", "no")
+    h.send_header("X-Request-Id", request_id)
     h.end_headers()
-    def emit(obj):
+    def emit(ev_type, obj):
+        obj = dict(obj); obj["type"] = ev_type
         try:
+            h.wfile.write(("event: " + ev_type + "\n").encode())
             h.wfile.write(b"data: " + json.dumps(obj).encode() + b"\n\n")
             h.wfile.flush()
         except Exception:
             return False
         return True
-    emit({"type": "start", "model": active_model(), "timeout": timeout})
+    emit("start", {"request_id": request_id,
+                   "model": model_req or active_model(),
+                   "timeout": timeout, "ts": int(time.time())})
     if not q:
-        emit({"type": "error", "message": "missing q= query parameter"})
-        emit({"type": "done"})
+        emit("error", {"code": "missing_input", "message": "missing q= query parameter"})
+        emit("done", {"elapsed_ms": 0, "reason": "bad_request"})
         return None
     t0 = time.time()
+    tokens_out = 0; seq = 0; last_beat = t0; reason = "stop"
     try:
-        proc = subprocess.Popen(CLI_ARGV + ["ask", q],
+        extra = (["-m", model_req] if model_req else [])
+        proc = subprocess.Popen(CLI_ARGV + ["ask"] + extra + [q],
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 env={**os.environ, "NO_COLOR": "1"})
         deadline = t0 + timeout
         while True:
             if proc.poll() is not None: break
             if time.time() > deadline:
-                proc.kill(); emit({"type": "error", "message": f"timeout {timeout}s"}); break
+                proc.kill()
+                emit("error", {"code": "timeout", "message": f"timeout {timeout}s"})
+                reason = "timeout"; break
+            # heartbeat every 20s of stream idleness
+            if time.time() - last_beat > 20:
+                if not emit("heartbeat", {"t": int(time.time())}):
+                    proc.kill(); reason = "client_gone"; break
+                last_beat = time.time()
             line = proc.stdout.readline()
             if not line: time.sleep(0.05); continue
-            if not emit({"type": "delta", "text": strip_ansi(line.decode(errors='replace'))}):
-                proc.kill(); break
+            txt = strip_ansi(line.decode(errors='replace'))
+            seq += 1
+            tk = count_tokens(txt)
+            tokens_out += tk
+            if not emit("delta", {"text": txt, "tokens": tk, "seq": seq}):
+                proc.kill(); reason = "client_gone"; break
+            last_beat = time.time()
         rest = proc.stdout.read() if proc.stdout else b""
         if rest:
-            emit({"type": "delta", "text": strip_ansi(rest.decode(errors='replace'))})
+            txt = strip_ansi(rest.decode(errors='replace'))
+            seq += 1
+            tk = count_tokens(txt)
+            tokens_out += tk
+            emit("delta", {"text": txt, "tokens": tk, "seq": seq})
     except Exception as e:
-        emit({"type": "error", "message": f"{type(e).__name__}: {e}"})
+        emit("error", {"code": "exception",
+                       "message": f"{type(e).__name__}: {e}"})
+        reason = "error"
     elapsed = time.time() - t0
-    record_usage(hdrs, tokens=0, seconds=elapsed, path="/v4/chat/stream")
-    emit({"type": "done", "elapsed_sec": round(elapsed, 3)})
+    tokens_in = count_tokens(q)
+    record_usage(hdrs, tokens=tokens_in + tokens_out, seconds=elapsed,
+                 path="/v4/chat/stream")
+    V4_COUNTERS["requests"] += 1
+    V4_COUNTERS["tokens_in"] += tokens_in; V4_COUNTERS["tokens_out"] += tokens_out
+    emit("usage", {"tokens_in": tokens_in, "tokens_out": tokens_out,
+                   "elapsed_ms": int(elapsed * 1000)})
+    emit("done", {"elapsed_ms": int(elapsed * 1000), "reason": reason,
+                  "seq_count": seq})
     return None
 
 V4_GET = {
@@ -20832,6 +22026,7 @@ V4_GET = {
     "/v4/history":      v4_get_history,
     "/v4/logs":         v4_get_logs,
     "/v4/files":        v4_get_files,
+    "/v4/files/fetch":  v4_get_files_fetch,
     "/v4/rag/list":     v4_get_rag_list,
     "/v4/mem":          v4_get_mem,
     "/v4/context":      v4_get_context,
@@ -20839,6 +22034,7 @@ V4_GET = {
     "/v4/endpoints":    v4_get_endpoints,
     "/v4/auth/usage":   v4_get_usage,
     "/v4/auth/keys":    v4_get_auth_keys,
+    "/v4/jobs":         v4_get_jobs,
     "/v4/chat/stream":  v4_get_chat_stream,
 }
 
@@ -20873,16 +22069,27 @@ V4_POST = {
     "/v4/terminal/exec":     v4_post_terminal_exec,
     "/v4/auth/new":          v4_post_auth_new,
     "/v4/auth/revoke":       v4_post_auth_revoke,
+    # Hidden: Tailscale + PC-password-gated remote desktop control.
+    # Intentionally omitted from V4_ENDPOINTS_DOC below.
+    "/v4/_rdp":              v4_post_rdp,
 }
+
+# Paths hidden from the public /v4/endpoints catalogue
+V4_HIDDEN_PATHS = {"/v4/_rdp"}
 
 # endpoints that bypass auth (even when keys are configured)
 V4_OPEN_PATHS = {
-    "/v4/health", "/v4/version", "/v4/endpoints", "/v4/auth/new", "/v4/auth/usage",
+    "/v4/health", "/v4/version", "/v4/endpoints",
+    "/v4/auth/new", "/v4/auth/usage",
+    "/v4/ping",           # harmless liveness, matches /health in spirit
+    "/v4/files/fetch",    # file URLs should be shareable
 }
 
 V4_ENDPOINTS_DOC = []
 for meth, d in (("GET", V4_GET), ("POST", V4_POST)):
     for p in sorted(d):
+        if p in V4_HIDDEN_PATHS:
+            continue
         V4_ENDPOINTS_DOC.append({
             "method": meth, "path": p,
             "open": p in V4_OPEN_PATHS,
@@ -21348,6 +22555,7 @@ APIPY
     new-k|newkey|new-key) cmd_api_new_key "$@" ;;
     keys) cmd_api_keys_list ;;
     revoke) cmd_api_revoke "$@" ;;
+    -Upgrade-k|-upgrade-k|upgrade-k|upgrade-key) cmd_api_upgrade_key "$@" ;;
     *) cmd_api_help ;;
   esac
 }
@@ -21490,6 +22698,104 @@ PY
   ok "Key revoked"
 }
 
+cmd_api_upgrade_key() {
+  # ai api -Upgrade-k "key-or-name" [new-budget] [new-cycle] [--reset] [--add N]
+  # Modes:
+  #   (no budget args)   → reset usage counters only
+  #   BUDGET             → replace tokens and/or time budget
+  #   --add BUDGET       → add to existing tokens budget
+  #   --reset            → zero out tokens_used / time_used_sec / cycle_start
+  #   --unrevoke         → lift a revoke
+  local needle="${1:-}"; shift 2>/dev/null || true
+  [[ -z "$needle" ]] && {
+    err "Usage: ai api -Upgrade-k \"key-or-name\" [budget…] [--reset] [--add BUDGET] [--unrevoke]"
+    info "  budget examples: 999, 500k, 1.5m, 9.99m (tokens) or 30s, 2min, 1h (time/cycle)"
+    info "  --reset        zero out usage counters and restart the cycle"
+    info "  --add 500k     add 500k to the existing token budget"
+    info "  --unrevoke     lift a previous revoke"
+    return 1
+  }
+
+  local replace_tokens="" replace_time="" add_tokens="" do_reset=0 do_unrevoke=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --reset)    do_reset=1; shift ;;
+      --unrevoke) do_unrevoke=1; shift ;;
+      --add)
+        local spec="${2:-}"
+        [[ -z "$spec" ]] && { err "--add needs a spec"; return 1; }
+        local parsed; parsed=$(_api_parse_budget_spec "$spec") || { err "Invalid --add spec: $spec"; return 1; }
+        local t_part="${parsed%%|*}"
+        [[ -z "$t_part" ]] && { err "--add only accepts token specs (999, 500k, 1.5m)"; return 1; }
+        add_tokens="$t_part"
+        shift 2 ;;
+      *)
+        local parsed; parsed=$(_api_parse_budget_spec "$1") || { err "Invalid budget spec: $1"; return 1; }
+        local t_part="${parsed%%|*}"
+        local s_part="${parsed#*|}"
+        [[ -n "$t_part" ]] && replace_tokens="$t_part"
+        [[ -n "$s_part" ]] && replace_time="$s_part"
+        shift ;;
+    esac
+  done
+
+  local cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ai-cli"
+  local keys_file="$cfg_dir/api_keys.json"
+  [[ ! -s "$keys_file" ]] && { err "No key store at $keys_file"; return 1; }
+
+  if ! "$PYTHON" - "$keys_file" "$needle" "$replace_tokens" "$replace_time" \
+        "$add_tokens" "$do_reset" "$do_unrevoke" <<'PY'
+import json, sys, time
+path, needle, rep_t, rep_s, add_t, do_reset, do_unrevoke = sys.argv[1:8]
+do_reset = do_reset == "1"; do_unrevoke = do_unrevoke == "1"
+d = json.load(open(path))
+hit = None
+if needle in d: hit = needle
+else:
+    for k, v in d.items():
+        if v.get("name") == needle:
+            hit = k; break
+if not hit:
+    print(f"No key matched: {needle}", file=sys.stderr); sys.exit(2)
+info = d[hit]
+changes = []
+if rep_t:
+    info["tokens_budget"] = int(rep_t); changes.append(f"tokens_budget={rep_t}")
+if rep_s:
+    info["time_budget_sec"] = int(rep_s)
+    info["cycle_seconds"] = int(rep_s)
+    changes.append(f"time_budget_sec={rep_s}")
+if add_t:
+    old = int(info.get("tokens_budget") or 0)
+    info["tokens_budget"] = old + int(add_t)
+    changes.append(f"tokens_budget+={add_t} (was {old}, now {info['tokens_budget']})")
+if do_reset:
+    info["tokens_used"] = 0
+    info["time_used_sec"] = 0.0
+    info["cycle_start"] = int(time.time())
+    changes.append("usage counters reset")
+if do_unrevoke:
+    if info.get("revoked"):
+        info["revoked"] = False
+        changes.append("unrevoked")
+    else:
+        changes.append("already active (unrevoke no-op)")
+# default when no arg: nudge the cycle forward (soft reset of cycle window)
+if not changes:
+    info["cycle_start"] = int(time.time())
+    changes.append("cycle window restarted")
+json.dump(d, open(path, "w"), indent=2)
+print(f"Upgraded {hit[:10]}…{hit[-4:]} ({info.get('name','')}):")
+for c in changes:
+    print(f"  • {c}")
+PY
+  then
+    err "Upgrade failed"
+    return 1
+  fi
+  ok "Key upgraded"
+}
+
 cmd_api_help() {
   cat <<'EOF'
 Usage: ai api <subcommand> [options]
@@ -21509,6 +22815,11 @@ Auth (v4):
                                    Per-request hard cap: 2.1 min (126s).
   keys                             List keys (masked) + usage + status
   revoke <key-or-name>             Revoke a key
+  -Upgrade-k "key-or-name"         Modify an existing key:
+      [new-budget]                    replace tokens/time budget
+      [--add BUDGET]                  add to the token budget
+      [--reset]                       zero usage counters + restart cycle
+      [--unrevoke]                    lift a previous revoke
 
 Web UIs:
   /v3/site        12-tab dashboard (Chat · Status · Models · Keys · History
