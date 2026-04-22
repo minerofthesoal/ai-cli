@@ -19572,6 +19572,122 @@ def shell_run(cmd, timeout=60):
     except Exception as e:
         return {"stdout": "", "stderr": str(e), "rc": 1}
 
+# ─── v4: API key store + auth + budgets ────────────────────────────────────
+KEYS_FILE = os.path.join(CFG_DIR, "api_keys.json")
+USAGE_FILE = os.path.join(CFG_DIR, "api_usage.jsonl")
+HARD_MAX_REQUEST_SEC = 126  # 2.1 min hard ceiling per request
+
+def load_keys():
+    try:
+        return json.load(open(KEYS_FILE))
+    except:
+        return {}
+
+def save_keys(d):
+    try:
+        with open(KEYS_FILE, "w") as f:
+            json.dump(d, f, indent=2)
+        os.chmod(KEYS_FILE, 0o600)
+    except Exception:
+        pass
+
+def key_from_headers(headers):
+    # Accept X-API-Key or Authorization: Bearer <key>
+    k = headers.get("X-API-Key") or headers.get("x-api-key")
+    if k:
+        return k.strip()
+    auth = headers.get("Authorization") or headers.get("authorization") or ""
+    if auth.lower().startswith("bearer "):
+        return auth.split(None, 1)[1].strip()
+    return None
+
+def auth_check(headers):
+    """Returns (ok, info, error). If keys exist, require a valid non-revoked
+    key that hasn't exceeded its budget. If no keys exist → open mode."""
+    keys = load_keys()
+    if not keys:
+        return True, None, None   # single-user / open mode
+    k = key_from_headers(headers)
+    if not k:
+        return False, None, "Missing X-API-Key header or Authorization: Bearer"
+    if k not in keys:
+        return False, None, "Invalid key"
+    info = keys[k]
+    if info.get("revoked"):
+        return False, None, "Key revoked"
+    # reset cycle if expired
+    now = time.time()
+    cy = int(info.get("cycle_seconds", 21600) or 21600)
+    if now - info.get("cycle_start", now) > cy:
+        info["cycle_start"] = now
+        info["tokens_used"] = 0
+        info["time_used_sec"] = 0.0
+        keys[k] = info
+        save_keys(keys)
+    tb = info.get("tokens_budget")
+    if tb and info.get("tokens_used", 0) >= tb:
+        return False, info, "Token budget exhausted — resets at next cycle"
+    tmb = info.get("time_budget_sec")
+    if tmb and info.get("time_used_sec", 0) >= tmb:
+        return False, info, "Time budget exhausted — resets at next cycle"
+    return True, info, None
+
+def record_usage(headers, tokens=0, seconds=0.0, path=""):
+    keys = load_keys()
+    k = key_from_headers(headers) if keys else None
+    if k and k in keys:
+        info = keys[k]
+        info["tokens_used"] = int(info.get("tokens_used", 0)) + int(tokens)
+        info["time_used_sec"] = round(float(info.get("time_used_sec", 0)) + float(seconds), 3)
+        info["last_used"] = int(time.time())
+        keys[k] = info
+        save_keys(keys)
+    try:
+        with open(USAGE_FILE, "a") as f:
+            f.write(json.dumps({"t": int(time.time()), "key": (k or "open"),
+                                "tokens": tokens, "sec": round(seconds, 3),
+                                "path": path}) + "\n")
+    except:
+        pass
+
+def key_timeout(headers):
+    """Return the per-request timeout for this caller, hard-capped at 126s."""
+    keys = load_keys()
+    if not keys:
+        return HARD_MAX_REQUEST_SEC
+    k = key_from_headers(headers)
+    if not k or k not in keys:
+        return HARD_MAX_REQUEST_SEC
+    info = keys[k]
+    cap = int(info.get("max_request_sec", HARD_MAX_REQUEST_SEC))
+    return min(HARD_MAX_REQUEST_SEC, max(5, cap))
+
+def ai_ask_timed(prompt, timeout=HARD_MAX_REQUEST_SEC):
+    try:
+        r = subprocess.run([CLI, "ask", prompt], capture_output=True, text=True,
+                           timeout=timeout, env={**os.environ, "NO_COLOR": "1"})
+        out = strip_ansi((r.stdout or "") + (r.stderr or "")).strip()
+        return out or "(no output from backend)"
+    except subprocess.TimeoutExpired:
+        return f"Timed out after {timeout}s (hard cap {HARD_MAX_REQUEST_SEC}s)"
+    except Exception as e:
+        return f"Error: {e}"
+
+def run_cmd_argv(argv, timeout=HARD_MAX_REQUEST_SEC):
+    """Run an `ai` subcommand as a proper argv list (no shell)."""
+    try:
+        r = subprocess.run([CLI] + list(argv), capture_output=True, text=True,
+                           timeout=timeout, env={**os.environ, "NO_COLOR": "1"})
+        return {"ok": r.returncode == 0,
+                "stdout": strip_ansi(r.stdout or ""),
+                "stderr": strip_ansi(r.stderr or ""),
+                "rc": r.returncode}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "stdout": "", "stderr": f"timeout after {timeout}s", "rc": 124}
+    except Exception as e:
+        return {"ok": False, "stdout": "", "stderr": str(e), "rc": 1}
+
+
 def estimate_cost(tokens, model_name):
     rates = {
         "gpt-4o": (0.0025, 0.01), "gpt-4o-mini": (0.00015, 0.0006),
@@ -20119,6 +20235,636 @@ def get_dash_html():
 
 DASH_HTML = get_dash_html()
 
+# ═══════════════════════════════════════════════════════════════════════════
+#  v4 API — clean, authenticated, budgeted
+# ═══════════════════════════════════════════════════════════════════════════
+def v4_reply(handler, code, data):
+    handler.send_response(code)
+    handler.send_header("Content-Type", "application/json")
+    handler.send_header("Access-Control-Allow-Origin", "*")
+    handler.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
+    handler.end_headers()
+    handler.wfile.write(json.dumps(data).encode())
+
+def v4_body(handler):
+    try:
+        l = int(handler.headers.get("Content-Length", 0))
+        raw = handler.rfile.read(l) if l else b""
+        return json.loads(raw) if raw else {}
+    except Exception:
+        return {}
+
+# ── v4 GET handlers (no body, no budget spend except maybe time) ──
+def v4_get_ping(h, hdrs, qs):
+    ok, info, err = auth_check(hdrs)
+    if not ok: return (401, {"error": err})
+    return (200, {"pong": True, "version": VERSION, "t": int(time.time()),
+                  "authenticated": info is not None})
+
+def v4_get_health(h, hdrs, qs):
+    return (200, {"status": "ok", "version": VERSION,
+                  "uptime_sec": int(time.time() - START_TIME),
+                  "auth_required": bool(load_keys())})
+
+def v4_get_status(h, hdrs, qs):
+    return (200, {"status": "ok", "version": VERSION,
+                  "active_model": active_model(),
+                  "uptime_seconds": int(time.time() - START_TIME),
+                  "mem_count": len(load_mem()),
+                  "ctx_msgs": len(load_ctx().get("messages", [])),
+                  "keys_configured": len(load_keys()),
+                  "hard_request_cap_sec": HARD_MAX_REQUEST_SEC})
+
+def v4_get_sysinfo(h, hdrs, qs):
+    return (200, sysinfo())
+
+def v4_get_version(h, hdrs, qs):
+    return (200, {"version": VERSION, "api": "v4", "cli": CLI})
+
+def v4_get_models(h, hdrs, qs):
+    return (200, {"active": active_model(), "local": list_gguf_models(),
+                  "data": [{"id": active_model()}] + [{"id": m["name"]} for m in list_gguf_models()]})
+
+def v4_get_keys(h, hdrs, qs):
+    ks = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY",
+          "GROQ_API_KEY", "MISTRAL_API_KEY", "TOGETHER_API_KEY",
+          "HF_TOKEN", "HF_API_KEY"]
+    return (200, {"keys": {k: {"set": bool(os.environ.get(k)),
+                               "masked": masked_key(k)} for k in ks}})
+
+def v4_get_history(h, hdrs, qs):
+    n = 50
+    try: n = max(1, min(500, int(qs.get("n", "50"))))
+    except: pass
+    return (200, {"history": read_history(n)})
+
+def v4_get_logs(h, hdrs, qs):
+    try:
+        data = open(LOG_FILE).read().splitlines()[-200:]
+    except:
+        data = []
+    return (200, {"log": data})
+
+def v4_get_files(h, hdrs, qs):
+    items = []
+    for n in os.listdir(UPLOADS_DIR):
+        fp = os.path.join(UPLOADS_DIR, n)
+        if os.path.isfile(fp):
+            items.append({"name": n, "size": os.path.getsize(fp),
+                          "mtime": int(os.path.getmtime(fp))})
+    return (200, {"files": items})
+
+def v4_get_rag_list(h, hdrs, qs):
+    return (200, {"corpora": [x[:-6] for x in os.listdir(RAG_DIR) if x.endswith(".jsonl")]})
+
+def v4_get_mem(h, hdrs, qs):
+    return (200, {"memory": load_mem()})
+
+def v4_get_context(h, hdrs, qs):
+    return (200, load_ctx())
+
+def v4_get_config(h, hdrs, qs):
+    cfg = {}
+    fp = os.path.expanduser("~/.config/ai-cli/config")
+    if os.path.isfile(fp):
+        try:
+            for line in open(fp):
+                if "=" in line and not line.strip().startswith("#"):
+                    k, v = line.strip().split("=", 1)
+                    if "KEY" in k or "TOKEN" in k or "SECRET" in k:
+                        continue
+                    cfg[k] = v.strip('"').strip("'")
+        except:
+            pass
+    return (200, {"config": cfg})
+
+def v4_get_endpoints(h, hdrs, qs):
+    return (200, {"endpoints": V4_ENDPOINTS_DOC})
+
+def v4_get_usage(h, hdrs, qs):
+    # per-caller usage
+    k = key_from_headers(hdrs)
+    keys = load_keys()
+    if k and k in keys:
+        info = dict(keys[k])
+        info["key_prefix"] = k[:10] + "…"
+        info.pop("name_display", None)
+        return (200, {"key": info})
+    return (200, {"key": None, "note": "Open mode (no keys configured) — no per-caller usage tracked"})
+
+def v4_get_auth_keys(h, hdrs, qs):
+    # admin-only: requires terminal password in X-Admin-PW header
+    pw = get_term_pw()
+    if pw and hdrs.get("X-Admin-PW", "") != pw:
+        return (401, {"error": "admin password required (X-Admin-PW)"})
+    out = {}
+    for k, info in load_keys().items():
+        out[k[:10] + "…"] = {kk: vv for kk, vv in info.items()}
+    return (200, {"keys": out, "count": len(out)})
+
+# ── v4 POST handlers ──
+def v4_post_chat(h, hdrs, qs):
+    b = v4_body(h)
+    msgs = b.get("messages") or []
+    prm = msgs[-1]["content"] if msgs else b.get("prompt", "")
+    if not prm:
+        return (400, {"error": "missing prompt / messages"})
+    t0 = time.time()
+    tmo = key_timeout(hdrs)
+    r = ai_ask_timed(prm, timeout=tmo)
+    elapsed = time.time() - t0
+    append_history("user", prm); append_history("assistant", r)
+    tks = count_tokens(prm) + count_tokens(r)
+    record_usage(hdrs, tokens=tks, seconds=elapsed, path="/v4/chat")
+    return (200, {"id": f"c-{secrets.token_hex(6)}",
+                  "object": "chat.completion", "model": active_model(),
+                  "choices": [{"index": 0,
+                               "message": {"role": "assistant", "content": r},
+                               "finish_reason": "stop"}],
+                  "usage": {"prompt_tokens": count_tokens(prm),
+                            "completion_tokens": count_tokens(r),
+                            "total_tokens": tks},
+                  "elapsed_sec": round(elapsed, 3)})
+
+def v4_post_complete(h, hdrs, qs):
+    b = v4_body(h)
+    prm = b.get("prompt", "")
+    if not prm:
+        return (400, {"error": "missing prompt"})
+    t0 = time.time()
+    r = ai_ask_timed(prm, timeout=key_timeout(hdrs))
+    elapsed = time.time() - t0
+    record_usage(hdrs, tokens=count_tokens(prm) + count_tokens(r),
+                 seconds=elapsed, path="/v4/complete")
+    return (200, {"text": r, "model": active_model(),
+                  "elapsed_sec": round(elapsed, 3)})
+
+def v4_post_batch(h, hdrs, qs):
+    b = v4_body(h)
+    prompts = b.get("prompts") or []
+    if not isinstance(prompts, list) or not prompts:
+        return (400, {"error": "missing prompts[]"})
+    if len(prompts) > 20:
+        return (400, {"error": "max 20 prompts per batch"})
+    tmo = key_timeout(hdrs)
+    results = [None] * len(prompts)
+    def _work(i, p):
+        results[i] = ai_ask_timed(p, timeout=tmo)
+    ts = []
+    t0 = time.time()
+    for i, p in enumerate(prompts):
+        t = threading.Thread(target=_work, args=(i, p), daemon=True)
+        t.start(); ts.append(t)
+    for t in ts: t.join(timeout=tmo + 5)
+    elapsed = time.time() - t0
+    tks = sum(count_tokens(p) + count_tokens(r or "") for p, r in zip(prompts, results))
+    record_usage(hdrs, tokens=tks, seconds=elapsed, path="/v4/batch")
+    return (200, {"results": results, "elapsed_sec": round(elapsed, 3)})
+
+def v4_post_compare(h, hdrs, qs):
+    b = v4_body(h)
+    prm = b.get("prompt", ""); models = b.get("models") or []
+    if not prm or not models:
+        return (400, {"error": "missing prompt and models[]"})
+    if len(models) > 6:
+        return (400, {"error": "max 6 models per compare"})
+    tmo = key_timeout(hdrs); out = {}
+    t0 = time.time()
+    for m in models:
+        env = {**os.environ, "NO_COLOR": "1"}
+        try:
+            r = subprocess.run([CLI, "ask", "-m", m, prm], capture_output=True,
+                               text=True, timeout=tmo, env=env)
+            out[m] = strip_ansi((r.stdout or "") + (r.stderr or "")).strip()
+        except Exception as e:
+            out[m] = f"Error: {e}"
+    elapsed = time.time() - t0
+    tks = count_tokens(prm) * len(models) + sum(count_tokens(v) for v in out.values())
+    record_usage(hdrs, tokens=tks, seconds=elapsed, path="/v4/compare")
+    return (200, {"results": out, "elapsed_sec": round(elapsed, 3)})
+
+def v4_post_tokens(h, hdrs, qs):
+    b = v4_body(h)
+    t = b.get("text", "") or b.get("prompt", "")
+    return (200, {"tokens": count_tokens(t), "chars": len(t)})
+
+def v4_post_cost(h, hdrs, qs):
+    b = v4_body(h)
+    t = b.get("text", "") or b.get("prompt", "")
+    m = b.get("model", active_model())
+    tok = count_tokens(t)
+    return (200, {"tokens": tok, "model": m, "estimated_usd": estimate_cost(tok, m)})
+
+def v4_post_embed(h, hdrs, qs):
+    b = v4_body(h)
+    t = b.get("text", "") or b.get("input", "")
+    return (200, {"embedding": simple_embed(t), "dim": 64})
+
+def v4_post_benchmark(h, hdrs, qs):
+    t0 = time.time()
+    r = ai_ask_timed("Say 'ready' in one word.", timeout=min(30, key_timeout(hdrs)))
+    dt = time.time() - t0
+    record_usage(hdrs, tokens=count_tokens(r) + 5, seconds=dt, path="/v4/benchmark")
+    return (200, {"latency_sec": round(dt, 3), "reply": r[:120], "model": active_model()})
+
+def v4_post_web(h, hdrs, qs):
+    b = v4_body(h); q = b.get("query", "")
+    if not q: return (400, {"error": "missing query"})
+    t0 = time.time()
+    r = run_cmd_argv(["ask-web", q], timeout=key_timeout(hdrs))
+    elapsed = time.time() - t0
+    record_usage(hdrs, tokens=count_tokens(q) + count_tokens(r.get("stdout", "")),
+                 seconds=elapsed, path="/v4/web")
+    return (200, {"query": q, "answer": r.get("stdout") or r.get("stderr"),
+                  "elapsed_sec": round(elapsed, 3)})
+
+def v4_post_agent(h, hdrs, qs):
+    b = v4_body(h)
+    goal = b.get("goal", ""); steps = int(b.get("steps", 3) or 3)
+    if not goal: return (400, {"error": "missing goal"})
+    t0 = time.time()
+    r = run_cmd_argv(["agent", goal, "--steps", str(steps)], timeout=key_timeout(hdrs))
+    elapsed = time.time() - t0
+    record_usage(hdrs, tokens=count_tokens(goal) + count_tokens(r.get("stdout", "")),
+                 seconds=elapsed, path="/v4/agent")
+    return (200, {"goal": goal, "steps": steps,
+                  "result": r.get("stdout") or r.get("stderr"),
+                  "elapsed_sec": round(elapsed, 3)})
+
+def v4_post_diff_review(h, hdrs, qs):
+    b = v4_body(h)
+    diff = b.get("diff", "")
+    if not diff: return (400, {"error": "missing diff"})
+    t0 = time.time()
+    prm = ("Review this unified diff. Flag bugs, logic errors, and missing "
+           "tests. Be concise.\n\n" + diff[:20000])
+    r = ai_ask_timed(prm, timeout=key_timeout(hdrs))
+    elapsed = time.time() - t0
+    record_usage(hdrs, tokens=count_tokens(prm) + count_tokens(r),
+                 seconds=elapsed, path="/v4/diff/review")
+    return (200, {"review": r, "elapsed_sec": round(elapsed, 3)})
+
+def v4_post_voice_tts(h, hdrs, qs):
+    b = v4_body(h); text = b.get("text", "")
+    if not text: return (400, {"error": "missing text"})
+    r = run_cmd_argv(["voice", "tts", text], timeout=min(30, key_timeout(hdrs)))
+    return (200, {"ok": r.get("ok", False),
+                  "result": r.get("stdout") or r.get("stderr")})
+
+def v4_post_share(h, hdrs, qs):
+    # Non-blocking: return a hint; real command must be run from TTY
+    return (200, {"hint": "Run `ai share` in a terminal — cloudflared/ngrok "
+                          "needs a foreground process to stream the URL."})
+
+def v4_post_models_activate(h, hdrs, qs):
+    b = v4_body(h); m = b.get("model", "")
+    if not m: return (400, {"error": "missing model"})
+    r = run_cmd_argv(["recommended", "use", m], timeout=30)
+    return (200, {"active": active_model(), "result": r})
+
+def v4_post_models_download(h, hdrs, qs):
+    b = v4_body(h); m = b.get("model", "")
+    if not m: return (400, {"error": "missing model"})
+    # Download can take minutes — fire-and-forget via background thread
+    def _dl():
+        run_cmd_argv(["recommended", "download", m], timeout=3600)
+    threading.Thread(target=_dl, daemon=True).start()
+    return (202, {"accepted": True, "model": m,
+                  "note": "download started in background; poll /v4/models to see when it lands"})
+
+def v4_post_keys_set(h, hdrs, qs):
+    b = v4_body(h)
+    # require admin password (terminal pw)
+    pw = get_term_pw()
+    if pw and b.get("password") != pw:
+        return (401, {"error": "admin password required"})
+    name = b.get("name", ""); value = b.get("value", "")
+    if not name or not value:
+        return (400, {"error": "missing name/value"})
+    r = run_cmd_argv(["keys", "set", name, value], timeout=10)
+    return (200, {"ok": r.get("ok", False), "name": name})
+
+def v4_post_history_search(h, hdrs, qs):
+    b = v4_body(h); q = (b.get("query") or "").lower()
+    hist = read_history(500)
+    hits = [x for x in hist if q in json.dumps(x).lower()] if q else hist
+    return (200, {"hits": hits[-100:], "count": len(hits)})
+
+def v4_post_history_clear(h, hdrs, qs):
+    try: open(HIST_FILE, "w").close()
+    except: pass
+    return (200, {"ok": True})
+
+def v4_post_files_upload(h, hdrs, qs):
+    b = v4_body(h)
+    pw = get_term_pw()
+    if pw and b.get("password") != pw:
+        return (401, {"error": "password required"})
+    name = (b.get("name") or f"upload_{int(time.time())}.txt").replace("/", "_")
+    content = b.get("content", "")
+    fp = os.path.join(UPLOADS_DIR, name)
+    with open(fp, "w") as f:
+        f.write(content)
+    return (200, {"ok": True, "path": fp, "size": len(content)})
+
+def v4_post_files_delete(h, hdrs, qs):
+    b = v4_body(h)
+    pw = get_term_pw()
+    if pw and b.get("password") != pw:
+        return (401, {"error": "password required"})
+    name = (b.get("name") or "").replace("/", "_")
+    fp = os.path.join(UPLOADS_DIR, name)
+    if os.path.isfile(fp):
+        os.remove(fp); return (200, {"ok": True})
+    return (404, {"error": "not found"})
+
+def v4_post_rag_add(h, hdrs, qs):
+    b = v4_body(h)
+    corpus = (b.get("corpus") or "default").replace("/", "_")
+    text = b.get("text", "")
+    if not text: return (400, {"error": "missing text"})
+    fp = os.path.join(RAG_DIR, corpus + ".jsonl")
+    with open(fp, "a") as f:
+        f.write(json.dumps({"t": int(time.time()), "text": text,
+                            "emb": simple_embed(text)}) + "\n")
+    return (200, {"ok": True, "corpus": corpus})
+
+def v4_post_rag_query(h, hdrs, qs):
+    b = v4_body(h)
+    corpus = (b.get("corpus") or "default").replace("/", "_")
+    q = b.get("query", ""); k = int(b.get("k", 3) or 3)
+    fp = os.path.join(RAG_DIR, corpus + ".jsonl")
+    if not os.path.isfile(fp):
+        return (404, {"error": "unknown corpus"})
+    qv = simple_embed(q); items = []
+    for line in open(fp):
+        try:
+            d = json.loads(line)
+            d["score"] = round(cosine(qv, d.get("emb", [])), 4)
+            d.pop("emb", None)
+            items.append(d)
+        except: pass
+    items.sort(key=lambda d: d.get("score", 0), reverse=True)
+    top = items[:k]
+    ctx = "\n\n".join(d.get("text", "") for d in top)
+    answer = ai_ask_timed(f"Use only this context to answer:\n{ctx}\n\nQuestion: {q}",
+                          timeout=key_timeout(hdrs)) if q else ""
+    return (200, {"top": top, "answer": answer})
+
+def v4_post_run(h, hdrs, qs):
+    b = v4_body(h)
+    pw = get_term_pw()
+    if not pw or b.get("password") != pw:
+        return (401, {"error": "terminal password required"})
+    cmd = b.get("cmd", "")
+    if not cmd: return (400, {"error": "missing cmd"})
+    return (200, shell_run(cmd, timeout=int(b.get("timeout", 60))))
+
+def v4_post_mem(h, hdrs, qs):
+    b = v4_body(h); action = b.get("action", "list")
+    if action == "add":
+        items = load_mem(); items.append(b.get("fact", ""))
+        save_mem(items); return (200, {"ok": True, "count": len(items)})
+    if action == "delete":
+        items = load_mem(); idx = b.get("index", -1)
+        if 0 <= idx < len(items):
+            items.pop(idx); save_mem(items)
+        return (200, {"ok": True, "memory": items})
+    if action == "clear":
+        save_mem([]); return (200, {"ok": True})
+    return (200, {"memory": load_mem()})
+
+def v4_post_context(h, hdrs, qs):
+    b = v4_body(h); action = b.get("action", "get")
+    if action == "add":
+        ctx = load_ctx()
+        ctx["messages"].append({"role": b.get("role", "user"),
+                                "content": b.get("content", "")})
+        if ctx_is_full(ctx): ctx = compress_ctx(ctx)
+        save_ctx(ctx)
+        return (200, {"ok": True, "full": ctx_is_full(ctx),
+                      "msg_count": len(ctx["messages"])})
+    if action == "clear":
+        save_ctx({"messages": [], "compressed": ""})
+        return (200, {"ok": True})
+    return (200, load_ctx())
+
+def v4_post_comp_context(h, hdrs, qs):
+    ctx = compress_ctx(load_ctx())
+    return (200, {"ok": True, "compressed": ctx.get("compressed", ""),
+                  "remaining_msgs": len(ctx["messages"])})
+
+def v4_post_terminal_auth(h, hdrs, qs):
+    b = v4_body(h); pw = get_term_pw()
+    if not pw:
+        return (403, {"error": "no password set — run: ai -apip PASSWORD"})
+    return (200, {"ok": True}) if b.get("password") == pw else (401, {"error": "wrong password"})
+
+def v4_post_terminal_exec(h, hdrs, qs):
+    b = v4_body(h); pw = get_term_pw()
+    if not pw or b.get("password") != pw:
+        return (401, {"error": "unauthorized"})
+    cmd = b.get("cmd", "")
+    if not cmd: return (400, {"error": "no cmd"})
+    sr = shell_run(cmd, timeout=30)
+    return (200, {"output": (sr["stdout"] or "") + (sr["stderr"] or "")})
+
+_BUDGET_RE = re.compile(r"^([0-9]+(?:\.[0-9]{1,2})?)(k|K|m|M|s|S|min|MIN|h|H)?$")
+
+def _parse_budget(spec):
+    """Return (tokens, seconds) — either may be None. Accepts ints too."""
+    if spec is None: return (None, None)
+    if isinstance(spec, (int, float)):
+        return (int(spec), None)
+    s = str(spec).strip()
+    if not s: return (None, None)
+    m = _BUDGET_RE.match(s)
+    if not m: return (None, None)
+    num = float(m.group(1)); unit = (m.group(2) or "").lower()
+    if unit in ("", "k", "m"):
+        mult = 1 if unit == "" else (1000 if unit == "k" else 1_000_000)
+        return (int(num * mult), None)
+    if unit == "s":   return (None, int(num))
+    if unit == "min": return (None, int(num * 60))
+    if unit == "h":   return (None, int(num * 3600))
+    return (None, None)
+
+def v4_post_auth_new(h, hdrs, qs):
+    b = v4_body(h)
+    # creating the first key is allowed without auth; after that, admin pw required
+    existing = load_keys()
+    if existing:
+        pw = get_term_pw()
+        if not pw or b.get("password") != pw:
+            return (401, {"error": "admin password required after first key"})
+    name = b.get("name", "") or f"key-{int(time.time())}"
+    # Accept: tokens_budget / tokens, time_budget_sec / seconds, cycle_seconds,
+    # and the CLI-style "budget" string ("500k","1.5m","1h","30min","2min","45s").
+    tokens = b.get("tokens_budget")
+    seconds = b.get("time_budget_sec")
+    for alias in ("tokens", "budget", "spec"):
+        if alias in b and b[alias] not in (None, ""):
+            t, s = _parse_budget(b[alias])
+            if tokens is None and t is not None: tokens = t
+            if seconds is None and s is not None: seconds = s
+    if seconds is None and "seconds" in b and b["seconds"] not in (None, ""):
+        try: seconds = int(b["seconds"])
+        except Exception: seconds = None
+    if tokens is not None and seconds is None:
+        seconds = 21600  # default 6 h cycle when only tokens given
+    if seconds is None:
+        seconds = int(b.get("cycle_seconds") or 21600)
+    newkey = "sk-ai-" + secrets.token_urlsafe(24)
+    existing[newkey] = {
+        "name": name, "created": int(time.time()),
+        "tokens_budget": int(tokens) if tokens else None,
+        "tokens_used": 0,
+        "time_budget_sec": int(seconds),
+        "time_used_sec": 0.0,
+        "max_request_sec": min(HARD_MAX_REQUEST_SEC,
+                               int(b.get("max_request_sec") or HARD_MAX_REQUEST_SEC)),
+        "cycle_start": int(time.time()),
+        "cycle_seconds": int(b.get("cycle_seconds") or seconds),
+        "revoked": False,
+    }
+    save_keys(existing)
+    return (200, {"key": newkey, "name": name,
+                  "tokens_budget": existing[newkey]["tokens_budget"],
+                  "time_budget_sec": existing[newkey]["time_budget_sec"],
+                  "max_request_sec": existing[newkey]["max_request_sec"],
+                  "note": "Send as header: X-API-Key: <key>  (or Authorization: Bearer <key>)"})
+
+def v4_post_auth_revoke(h, hdrs, qs):
+    b = v4_body(h)
+    pw = get_term_pw()
+    if pw and b.get("password") != pw:
+        return (401, {"error": "admin password required"})
+    k = b.get("key", "")
+    keys = load_keys()
+    if k not in keys: return (404, {"error": "unknown key"})
+    keys[k]["revoked"] = True
+    save_keys(keys)
+    return (200, {"ok": True, "key": k[:10] + "…"})
+
+def v4_get_chat_stream(h, hdrs, qs):
+    """SSE streaming chat. Writes directly to the wire; returns None."""
+    q = qs.get("q") or qs.get("prompt") or ""
+    try:
+        import urllib.parse
+        q = urllib.parse.unquote_plus(q)
+    except Exception:
+        pass
+    timeout = key_timeout(hdrs)
+    h.send_response(200)
+    h.send_header("Content-Type", "text/event-stream")
+    h.send_header("Cache-Control", "no-cache")
+    h.send_header("Connection", "keep-alive")
+    h.send_header("X-Accel-Buffering", "no")
+    h.end_headers()
+    def emit(obj):
+        try:
+            h.wfile.write(b"data: " + json.dumps(obj).encode() + b"\n\n")
+            h.wfile.flush()
+        except Exception:
+            return False
+        return True
+    emit({"type": "start", "model": active_model(), "timeout": timeout})
+    if not q:
+        emit({"type": "error", "message": "missing q= query parameter"})
+        emit({"type": "done"})
+        return None
+    t0 = time.time()
+    try:
+        proc = subprocess.Popen([CLI, "ask", q],
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                env={**os.environ, "NO_COLOR": "1"})
+        deadline = t0 + timeout
+        while True:
+            if proc.poll() is not None: break
+            if time.time() > deadline:
+                proc.kill(); emit({"type": "error", "message": f"timeout {timeout}s"}); break
+            line = proc.stdout.readline()
+            if not line: time.sleep(0.05); continue
+            if not emit({"type": "delta", "text": strip_ansi(line.decode(errors='replace'))}):
+                proc.kill(); break
+        rest = proc.stdout.read() if proc.stdout else b""
+        if rest:
+            emit({"type": "delta", "text": strip_ansi(rest.decode(errors='replace'))})
+    except Exception as e:
+        emit({"type": "error", "message": f"{type(e).__name__}: {e}"})
+    elapsed = time.time() - t0
+    record_usage(hdrs, tokens=0, seconds=elapsed, path="/v4/chat/stream")
+    emit({"type": "done", "elapsed_sec": round(elapsed, 3)})
+    return None
+
+V4_GET = {
+    "/v4/ping":         v4_get_ping,
+    "/v4/health":       v4_get_health,
+    "/v4/status":       v4_get_status,
+    "/v4/sysinfo":      v4_get_sysinfo,
+    "/v4/version":      v4_get_version,
+    "/v4/models":       v4_get_models,
+    "/v4/keys":         v4_get_keys,
+    "/v4/history":      v4_get_history,
+    "/v4/logs":         v4_get_logs,
+    "/v4/files":        v4_get_files,
+    "/v4/rag/list":     v4_get_rag_list,
+    "/v4/mem":          v4_get_mem,
+    "/v4/context":      v4_get_context,
+    "/v4/config":       v4_get_config,
+    "/v4/endpoints":    v4_get_endpoints,
+    "/v4/auth/usage":   v4_get_usage,
+    "/v4/auth/keys":    v4_get_auth_keys,
+    "/v4/chat/stream":  v4_get_chat_stream,
+}
+
+V4_POST = {
+    "/v4/chat":              v4_post_chat,
+    "/v4/complete":          v4_post_complete,
+    "/v4/batch":             v4_post_batch,
+    "/v4/compare":           v4_post_compare,
+    "/v4/tokens":            v4_post_tokens,
+    "/v4/cost":              v4_post_cost,
+    "/v4/embed":             v4_post_embed,
+    "/v4/benchmark":         v4_post_benchmark,
+    "/v4/web":               v4_post_web,
+    "/v4/agent":             v4_post_agent,
+    "/v4/diff/review":       v4_post_diff_review,
+    "/v4/voice/tts":         v4_post_voice_tts,
+    "/v4/share":             v4_post_share,
+    "/v4/models/activate":   v4_post_models_activate,
+    "/v4/models/download":   v4_post_models_download,
+    "/v4/keys/set":          v4_post_keys_set,
+    "/v4/history/search":    v4_post_history_search,
+    "/v4/history/clear":     v4_post_history_clear,
+    "/v4/files/upload":      v4_post_files_upload,
+    "/v4/files/delete":      v4_post_files_delete,
+    "/v4/rag/add":           v4_post_rag_add,
+    "/v4/rag/query":         v4_post_rag_query,
+    "/v4/run":               v4_post_run,
+    "/v4/mem":               v4_post_mem,
+    "/v4/context":           v4_post_context,
+    "/v4/comp/context":      v4_post_comp_context,
+    "/v4/terminal/auth":     v4_post_terminal_auth,
+    "/v4/terminal/exec":     v4_post_terminal_exec,
+    "/v4/auth/new":          v4_post_auth_new,
+    "/v4/auth/revoke":       v4_post_auth_revoke,
+}
+
+# endpoints that bypass auth (even when keys are configured)
+V4_OPEN_PATHS = {
+    "/v4/health", "/v4/version", "/v4/endpoints", "/v4/auth/new", "/v4/auth/usage",
+}
+
+V4_ENDPOINTS_DOC = []
+for meth, d in (("GET", V4_GET), ("POST", V4_POST)):
+    for p in sorted(d):
+        V4_ENDPOINTS_DOC.append({
+            "method": meth, "path": p,
+            "open": p in V4_OPEN_PATHS,
+            "func": d[p].__name__,
+        })
+
 ENDPOINTS = [
     {"method": "GET",  "path": "/health",              "desc": "Server health + version"},
     {"method": "GET",  "path": "/v1/models",           "desc": "OpenAI-compatible model list"},
@@ -20180,12 +20926,50 @@ class H(http.server.BaseHTTPRequestHandler):
             return False
         return body.get("password") == pw
     def do_OPTIONS(self): self._j(200, {})
+
+    def _parse_qs(self, raw):
+        out = {}
+        if not raw: return out
+        for kv in raw.split("&"):
+            if "=" in kv:
+                k, v = kv.split("=", 1)
+                out[k] = v
+        return out
+
+    def _v4_dispatch(self, method, path, qs):
+        table = V4_GET if method == "GET" else V4_POST
+        if path not in table:
+            v4_reply(self, 404, {"error": f"unknown v4 {method} endpoint",
+                                 "path": path, "hint": "GET /v4/endpoints"})
+            return True
+        # auth check
+        if path not in V4_OPEN_PATHS:
+            ok, info, err = auth_check(self.headers)
+            if not ok:
+                v4_reply(self, 401, {"error": err})
+                return True
+        try:
+            res = table[path](self, self.headers, qs)
+        except Exception as e:
+            v4_reply(self, 500, {"error": f"{type(e).__name__}: {e}"})
+            return True
+        # A handler may return None to signal "I already wrote the response"
+        # (used by streaming endpoints).
+        if res is None:
+            return True
+        code, body = res
+        v4_reply(self, code, body)
+        return True
+
     def do_GET(self):
         try:
             log_request(self.path, self.client_address[0])
         except:
             pass
-        p = self.path.split("?", 1)[0]
+        p, _, qs_raw = self.path.partition("?")
+        qs = self._parse_qs(qs_raw)
+        if p.startswith("/v4/") or p == "/v4":
+            self._v4_dispatch("GET", p, qs); return
         if p == "/health": self._j(200, {"status":"ok","version":VERSION,"uptime":int(time.time()-START_TIME)})
         elif p == "/v1/models":
             gguf = list_gguf_models()
@@ -20269,13 +21053,15 @@ class H(http.server.BaseHTTPRequestHandler):
             log_request(self.path, self.client_address[0])
         except:
             pass
+        p = self.path.split("?", 1)[0]
+        if p.startswith("/v4/"):
+            self._v4_dispatch("POST", p, {}); return
         l = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(l) if l else b""
         try:
             b = json.loads(raw) if raw else {}
         except:
             b = {}
-        p = self.path
         if p in ("/v1/chat/completions", "/v1/completions"):
             msgs = b.get("messages", [])
             prm = msgs[-1]["content"] if msgs else b.get("prompt", "")
@@ -20532,25 +21318,180 @@ APIPY
     status) [[ -f "$API_PID_FILE" ]] && kill -0 "$(cat "$API_PID_FILE" 2>/dev/null)" 2>/dev/null && ok "Running" || info "Not running" ;;
     test) curl -sS "http://localhost:${1:-8080}/health" 2>/dev/null | grep -q ok && ok "Healthy" || err "Not responding" ;;
     endpoints|ep|list) cmd_api_endpoints ;;
+    new-k|newkey|new-key) cmd_api_new_key "$@" ;;
+    keys) cmd_api_keys_list ;;
+    revoke) cmd_api_revoke "$@" ;;
     *) cmd_api_help ;;
   esac
+}
+
+# Parse a budget spec. Echoes "tokens|seconds" (either may be empty). Returns 1 on parse error.
+#   999, 500k, 1.5m, 9.99m  → tokens  (k=1e3, m=1e6, max 2 decimals)
+#   30s, 2min, 1h           → seconds
+_api_parse_budget_spec() {
+  local s="${1:-}" num unit tokens="" seconds=""
+  [[ -z "$s" ]] && { echo "|"; return 0; }
+  if [[ "$s" =~ ^([0-9]+(\.[0-9]{1,2})?)(k|K|m|M|s|S|min|MIN|h|H)?$ ]]; then
+    num="${BASH_REMATCH[1]}"; unit="${BASH_REMATCH[3]:-}"
+  else
+    return 1
+  fi
+  case "$unit" in
+    ""|k|K|m|M)
+      local mult=1
+      [[ "$unit" = k || "$unit" = K ]] && mult=1000
+      [[ "$unit" = m || "$unit" = M ]] && mult=1000000
+      tokens=$(awk "BEGIN{printf \"%d\", ($num) * $mult}")
+      ;;
+    s|S)   seconds=$(awk "BEGIN{printf \"%d\", $num}") ;;
+    min|MIN) seconds=$(awk "BEGIN{printf \"%d\", $num * 60}") ;;
+    h|H)   seconds=$(awk "BEGIN{printf \"%d\", $num * 3600}") ;;
+  esac
+  echo "${tokens}|${seconds}"
+}
+
+cmd_api_new_key() {
+  local name="${1:-}"; shift 2>/dev/null || true
+  [[ -z "$name" ]] && { err "Usage: ai api new-k \"name\" [budget1] [budget2]"; info "  budget examples: 999, 500k, 1.5m, 9.99m (tokens) or 30s, 2min, 1h (time/cycle)"; return 1; }
+  local tokens="" time_sec=""
+  local spec
+  for spec in "$@"; do
+    local parsed; parsed=$(_api_parse_budget_spec "$spec") || { err "Invalid budget spec: $spec"; return 1; }
+    local t_part="${parsed%%|*}"
+    local s_part="${parsed#*|}"
+    [[ -n "$t_part" ]] && tokens="$t_part"
+    [[ -n "$s_part" ]] && time_sec="$s_part"
+  done
+  # If tokens given but no cycle time → default 6 hours
+  if [[ -n "$tokens" && -z "$time_sec" ]]; then
+    time_sec=21600
+  fi
+  # No budgets at all → still create key with 6h cycle, no caps
+  [[ -z "$time_sec" ]] && time_sec=21600
+  local max_request=126  # 2.1 min hard cap per request
+  local key_body
+  if command -v openssl >/dev/null 2>&1; then
+    key_body=$(openssl rand -base64 24 2>/dev/null | tr -d '/+=\n' | cut -c1-32)
+  else
+    key_body=$(head -c 48 /dev/urandom | base64 | tr -d '/+=\n' | cut -c1-32)
+  fi
+  local key="sk-ai-${key_body}"
+  local cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ai-cli"
+  mkdir -p "$cfg_dir"
+  local keys_file="$cfg_dir/api_keys.json"
+  [[ -s "$keys_file" ]] || echo '{}' > "$keys_file"
+  chmod 600 "$keys_file" 2>/dev/null || true
+  if ! command -v "$PYTHON" >/dev/null 2>&1; then err "Python required to update key store"; return 1; fi
+  "$PYTHON" - "$keys_file" "$key" "$name" "$tokens" "$time_sec" "$max_request" <<'PY' || { err "Failed to write key"; return 1; }
+import json, sys, time, os
+path, key, name, tokens, time_sec, max_req = sys.argv[1:7]
+try:
+    with open(path) as f: d = json.load(f)
+except Exception:
+    d = {}
+d[key] = {
+    "name": name,
+    "created": int(time.time()),
+    "tokens_budget": int(tokens) if tokens else None,
+    "tokens_used": 0,
+    "time_budget_sec": int(time_sec) if time_sec else None,
+    "time_used_sec": 0.0,
+    "max_request_sec": int(max_req),
+    "cycle_start": int(time.time()),
+    "cycle_seconds": int(time_sec) if time_sec else 21600,
+    "revoked": False,
+}
+with open(path, "w") as f: json.dump(d, f, indent=2)
+os.chmod(path, 0o600)
+PY
+  ok "API key created"
+  printf "  Name:            %s\n" "$name"
+  printf "  Key:             %s\n" "$key"
+  [[ -n "$tokens" ]] && printf "  Tokens/cycle:    %s\n" "$tokens" || printf "  Tokens/cycle:    unlimited\n"
+  printf "  Cycle length:    %ss\n" "$time_sec"
+  printf "  Max per request: %ss (hard-capped at 126s = 2.1 min)\n" "$max_request"
+  printf "\n  Use with:\n    curl -H \"X-API-Key: %s\" http://localhost:8080/v4/health\n" "$key"
+  printf "    curl -H \"Authorization: Bearer %s\" http://localhost:8080/v4/health\n" "$key"
+}
+
+cmd_api_keys_list() {
+  local cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ai-cli"
+  local keys_file="$cfg_dir/api_keys.json"
+  [[ ! -s "$keys_file" ]] && { info "No API keys defined — server runs in open mode"; info "Create one:  ai api new-k \"my-key\" 500k"; return 0; }
+  "$PYTHON" - "$keys_file" <<'PY'
+import json, sys, time
+try: d = json.load(open(sys.argv[1]))
+except Exception: d = {}
+if not d:
+    print("No API keys defined."); sys.exit(0)
+print(f"{'NAME':<20} {'KEY (masked)':<24} {'TOKENS':<18} {'TIME':<14} {'STATUS':<10}")
+print("─" * 86)
+for k, v in d.items():
+    name = v.get("name","")[:20]
+    masked = k[:10] + "…" + k[-4:]
+    tb = v.get("tokens_budget"); tu = v.get("tokens_used",0)
+    tok = f"{tu}/{tb}" if tb else f"{tu}/∞"
+    mb = v.get("time_budget_sec"); mu = v.get("time_used_sec",0)
+    tm = f"{mu:.0f}s/{mb}s" if mb else f"{mu:.0f}s/∞"
+    st = "revoked" if v.get("revoked") else "active"
+    print(f"{name:<20} {masked:<24} {tok:<18} {tm:<14} {st:<10}")
+PY
+}
+
+cmd_api_revoke() {
+  local key="$1"
+  [[ -z "$key" ]] && { err "Usage: ai api revoke <key-or-name>"; return 1; }
+  local cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ai-cli"
+  local keys_file="$cfg_dir/api_keys.json"
+  [[ ! -s "$keys_file" ]] && { err "No key store at $keys_file"; return 1; }
+  "$PYTHON" - "$keys_file" "$key" <<'PY' || { err "Revoke failed"; return 1; }
+import json, sys
+path, needle = sys.argv[1], sys.argv[2]
+d = json.load(open(path))
+hit = None
+if needle in d: hit = needle
+else:
+    for k, v in d.items():
+        if v.get("name") == needle:
+            hit = k; break
+if not hit:
+    print(f"No key matched: {needle}", file=sys.stderr); sys.exit(2)
+d[hit]["revoked"] = True
+json.dump(d, open(path,"w"), indent=2)
+print(f"Revoked {hit[:10]}…{hit[-4:]} ({d[hit].get('name','')})")
+PY
+  ok "Key revoked"
 }
 
 cmd_api_help() {
   cat <<'EOF'
 Usage: ai api <subcommand> [options]
 
-Subcommands:
+Server:
   start [--port N] [--host H] [--public] [--tailscale]   Start server
   stop                                                    Stop server
   status                                                  Show if running
   test                                                    Curl /health
-  endpoints (ep|list)                                     List all 44 endpoints
+  endpoints (ep|list)                                     List all endpoints
+
+Auth (v4):
+  new-k "name" [budget] [cycle]    Create API key. Budget examples:
+                                     500k, 1.5m, 9.99m   (tokens, k=1e3, m=1e6)
+                                     30s, 2min, 1h       (time per cycle)
+                                   If only tokens given, cycle defaults to 6h.
+                                   Per-request hard cap: 2.1 min (126s).
+  keys                             List keys (masked) + usage + status
+  revoke <key-or-name>             Revoke a key
 
 Web UIs:
   /v3/site        12-tab dashboard (Chat · Status · Models · Keys · History
                   · Tools · Agent · Voice · RAG · Share · API Docs · Terminal)
   /chat           Minimal chat UI
+
+Auth headers (v4 endpoints):
+  X-API-Key: sk-ai-...
+  Authorization: Bearer sk-ai-...
+  If no keys are defined, /v4/* runs in open mode.
 EOF
   cmd_api_endpoints
 }
@@ -20558,72 +21499,92 @@ EOF
 cmd_api_endpoints() {
   cat <<'EOF'
 
-AI CLI API v3.2 — 44 HTTP endpoints
-───────────────────────────────────
+AI CLI API v3.2.0.1 — endpoint catalogue
+════════════════════════════════════════
 
-  Core & OpenAI-compatible
+OpenAI-compatible (no auth required)
     GET  /health                     Server health + version
-    GET  /v1/models                  OpenAI-compatible model list
-    POST /v1/chat/completions        OpenAI-compatible chat completion
-    POST /v1/completions             OpenAI-compatible text completion
+    GET  /v1/models                  OpenAI-style model list
+    POST /v1/chat/completions        OpenAI-style chat completion
+    POST /v1/completions             OpenAI-style text completion
     GET  /chat                       Minimal chat web UI
     GET  /v3/site                    Full 12-tab dashboard
 
-  Server status & introspection
-    GET  /v3/status                  Running status summary
-    GET  /v3/sysinfo                 CPU, RAM, GPU, disk, load
-    GET  /v3/version                 Version string
-    GET  /v3/endpoints               This catalogue
-    GET  /v3/config                  Safe config values (no secrets)
-    GET  /v3/logs                    Recent access log
+v4  (recommended — auth + per-key budgets + hard 2.1 min cap)
+    Auth header:   X-API-Key: sk-ai-…   OR   Authorization: Bearer sk-ai-…
+    Open endpoints (no auth): /v4/health /v4/version /v4/endpoints
+                              /v4/auth/new /v4/auth/usage
+
+  Status & introspection
+    GET  /v4/ping                    Fast liveness ping
+    GET  /v4/health                  Uptime, model, load (open)
+    GET  /v4/status                  Running status summary
+    GET  /v4/sysinfo                 CPU, RAM, GPU, disk, load
+    GET  /v4/version                 Version string (open)
+    GET  /v4/endpoints               This catalogue (open)
+    GET  /v4/config                  Safe config values
+    GET  /v4/logs                    Recent access log
 
   Models
-    GET  /v3/models                  Active model + local GGUF files
-    POST /v3/models/activate         Switch active model  {model}
-    POST /v3/models/download         Download recommended {model}
-
-  Backend API keys (masked; set requires password)
-    GET  /v3/keys                    Which keys are set (masked)
-    POST /v3/keys/set                Set a key  {name,value,password}
+    GET  /v4/models                  Active + local GGUF files
+    POST /v4/models/activate         Switch active  {model}
+    POST /v4/models/download         Download recommended (async 202)
 
   Chat, streaming & conversation
-    POST /v3/chat/stream             SSE streaming chat
-    GET  /v3/history?n=N             Recent chat history
-    POST /v3/history/search          Search chat history  {query}
-    POST /v3/history/clear           Wipe chat history
-    GET  /v3/mem                     Memory contents
-    POST /v3/mem                     add/delete/clear memory
-    GET  /v3/context                 Conversation context
-    POST /v3/context                 add/clear context
-    POST /v3/comp/context            Force-compress context
+    POST /v4/chat                    Single-shot chat  {prompt|messages}
+    POST /v4/complete                Text completion  {prompt}
+    GET  /v4/chat/stream             SSE streaming  ?q=... (auth via header)
+    GET  /v4/history                 Recent chat history  ?n=N
+    POST /v4/history/search          Search history  {query}
+    POST /v4/history/clear           Wipe history
+    GET  /v4/mem                     Memory contents
+    POST /v4/mem                     add/delete/clear  {op,key,value}
+    GET  /v4/context                 Conversation context
+    POST /v4/context                 add/clear  {op,text}
+    POST /v4/comp/context            Force-compress context
 
-  Analysis
-    POST /v3/tokens                  Estimate token count of text
-    POST /v3/cost                    Estimate USD cost of text
-    POST /v3/embed                   64-dim text embedding
+  Parallel & analysis
+    POST /v4/batch                   Up to 20 prompts in parallel  {prompts}
+    POST /v4/compare                 One prompt across up to 6 models
+    POST /v4/tokens                  Token count of text
+    POST /v4/cost                    USD cost estimate
+    POST /v4/embed                   64-dim text embedding
 
-  Features (v3.2)
-    POST /v3/web                     Web-search-augmented ask  {query}
-    POST /v3/benchmark               Round-trip latency test
-    POST /v3/agent                   Autonomous task agent  {goal,steps}
-    POST /v3/diff/review             AI review of a unified diff  {diff}
-    POST /v3/voice/tts               Text-to-speech  {text}
-    POST /v3/share                   Create public share link
+  Features
+    POST /v4/web                     Web-search-augmented ask  {query}
+    POST /v4/benchmark               Round-trip latency test
+    POST /v4/agent                   Autonomous task agent  {goal,steps}
+    POST /v4/diff/review             Review a unified diff  {diff}
+    POST /v4/voice/tts               Text-to-speech  {text}
+    POST /v4/share                   Create public share link (async)
 
-  Files & RAG (upload/delete require password)
-    GET  /v3/files                   List uploaded files
-    POST /v3/files/upload            Upload JSON/text  {name,content,password}
-    POST /v3/files/delete            Delete uploaded file  {name,password}
-    GET  /v3/rag/list                List RAG corpora
-    POST /v3/rag/add                 Add text to corpus  {corpus,text}
-    POST /v3/rag/query               Query corpus + answer  {corpus,query,k}
+  Backend keys (masked)
+    GET  /v4/keys                    Which backend keys are set
+    POST /v4/keys/set                Set a backend key  {name,value,password}
 
-  Protected terminal (password via: ai -apip SECRET)
-    POST /v3/terminal/auth           Unlock terminal  {password}
-    POST /v3/terminal/exec           Execute command  {cmd,password}
-    POST /v3/run                     Run shell command  {cmd,password}
+  Files & RAG
+    GET  /v4/files                   List uploaded files
+    POST /v4/files/upload            Upload  {name,content,password}
+    POST /v4/files/delete            Delete  {name,password}
+    GET  /v4/rag/list                List RAG corpora
+    POST /v4/rag/add                 Add text to corpus  {corpus,text}
+    POST /v4/rag/query               Query + answer  {corpus,query,k}
 
-Browse live list: curl http://localhost:8080/v3/endpoints | jq
+  Protected terminal
+    POST /v4/terminal/auth           Unlock  {password}
+    POST /v4/terminal/exec           Execute  {cmd,password}
+    POST /v4/run                     Run shell  {cmd,password}
+
+  API key management (v4 API keys, not backend keys)
+    GET  /v4/auth/keys               List your keys (masked, requires auth)
+    GET  /v4/auth/usage              Usage for the calling key (open)
+    POST /v4/auth/new                Create a new key  {name,tokens?,seconds?}
+    POST /v4/auth/revoke             Revoke a key  {key}
+
+v3  (legacy — still served for existing clients; prefer v4)
+    Same endpoint shapes under /v3/... See: curl /v3/endpoints
+
+Browse live list: curl http://localhost:8080/v4/endpoints | jq
 EOF
 }
 
