@@ -12,7 +12,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.2.1.0.1"
+VERSION="3.2.1.0.2"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -21791,6 +21791,42 @@ def _tailscale_client(client_addr):
 def _have(*bins):
     return [b for b in bins if shutil.which(b)]
 
+def _rdp_env():
+    """Build an env dict with DISPLAY / XAUTHORITY / WAYLAND_DISPLAY set
+    so xdotool + screenshot tools work even when the API server was
+    launched outside a graphical session. Tries common defaults.
+    """
+    env = dict(os.environ)
+    if not env.get("DISPLAY"):
+        # :0 / :1 are the near-universal defaults on Linux desktops.
+        for cand in (":0", ":1"):
+            env["DISPLAY"] = cand
+            break
+    # Try to discover XAUTHORITY for the desktop user when unset
+    if not env.get("XAUTHORITY"):
+        user_home = env.get("HOME") or "/root"
+        candidates = [
+            os.path.join(user_home, ".Xauthority"),
+            f"/run/user/{os.getuid()}/gdm/Xauthority",
+        ]
+        # common uids
+        for uid in ("1000", "1001"):
+            candidates.append(f"/run/user/{uid}/gdm/Xauthority")
+            candidates.append(f"/home/{env.get('USER','')}/.Xauthority")
+        for fp in candidates:
+            if fp and os.path.isfile(fp):
+                env["XAUTHORITY"] = fp; break
+    # Wayland
+    if not env.get("WAYLAND_DISPLAY"):
+        for uid in (str(os.getuid()), "1000", "1001"):
+            sock = f"/run/user/{uid}/wayland-0"
+            if os.path.exists(sock):
+                env["WAYLAND_DISPLAY"] = "wayland-0"
+                env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{uid}")
+                break
+    env["NO_COLOR"] = "1"
+    return env
+
 _RDP_LOGIN_HTML = """<!doctype html>
 <html><head><meta charset="utf-8"><title>RDP · login</title>
 <style>
@@ -21818,50 +21854,71 @@ _RDP_LOGIN_HTML = """<!doctype html>
 _RDP_PANEL_HTML = """<!doctype html>
 <html><head><meta charset="utf-8"><title>RDP · __HOST__</title>
 <style>
-  :root{--bg:#0b1020;--card:#131a33;--ink:#d7e1ff;--mute:#8a95c0;--acc:#3d5afe;--ok:#27c28a;--err:#e95d5d}
+  :root{--bg:#0b1020;--card:#131a33;--ink:#d7e1ff;--mute:#8a95c0;--acc:#3d5afe;--ok:#27c28a;--warn:#e8a93d;--err:#e95d5d}
   *{box-sizing:border-box}
-  body{margin:0;font:14px/1.4 -apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--ink)}
-  header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:#0a0f1d;border-bottom:1px solid #1e2a4a}
-  header h1{font-size:15px;margin:0;font-weight:600}
+  body{margin:0;font:14px/1.4 -apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--ink);overflow:hidden}
+  header{display:flex;align-items:center;gap:10px;padding:8px 14px;background:#0a0f1d;border-bottom:1px solid #1e2a4a;flex-wrap:wrap}
+  header h1{font-size:14px;margin:0;font-weight:600}
   header .sp{flex:1}
   .pill{font-size:11px;padding:3px 8px;border-radius:999px;background:#22305a;color:#b9c4ea}
   .pill.ok{background:#123f2f;color:#27c28a}
+  .pill.warn{background:#3a2b10;color:#e8a93d}
   .pill.err{background:#3f1b1b;color:#e95d5d}
-  .wrap{padding:14px 16px;display:grid;grid-template-columns:1fr 320px;gap:14px}
-  .shot{background:var(--card);border-radius:10px;padding:8px;position:relative;overflow:auto}
-  .shot img{max-width:100%;display:block;border-radius:6px;cursor:crosshair;user-select:none}
-  aside{background:var(--card);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:12px}
-  aside h3{margin:0;font-size:12px;letter-spacing:.5px;text-transform:uppercase;color:var(--mute)}
+  .sps{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mute)}
+  .sps input[type=range]{accent-color:var(--acc);width:110px}
+  .sps b{color:var(--ink);min-width:54px;display:inline-block;text-align:right}
+  .wrap{padding:10px 12px;display:grid;grid-template-columns:1fr 300px;gap:10px;height:calc(100vh - 46px)}
+  .shot{background:var(--card);border-radius:10px;padding:6px;overflow:auto;position:relative}
+  .shot img{max-width:100%;display:block;border-radius:6px;user-select:none;-webkit-user-drag:none}
+  .shot.grab img{cursor:none}
+  .shot .overlay{position:absolute;top:12px;right:12px;padding:4px 8px;border-radius:6px;background:#0008;
+                 color:#fff;font:11px ui-monospace,monospace;opacity:.8;pointer-events:none}
+  aside{background:var(--card);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px;overflow:auto}
+  aside h3{margin:0 0 2px;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--mute)}
   label{font-size:12px;color:var(--mute);margin-bottom:4px;display:block}
-  input[type=text],select,textarea{width:100%;padding:8px 10px;border-radius:6px;border:1px solid #2a3660;
+  input[type=text],select,textarea{width:100%;padding:7px 9px;border-radius:6px;border:1px solid #2a3660;
     background:#0b1020;color:#fff;font:13px ui-monospace,monospace}
-  textarea{min-height:70px;resize:vertical}
-  button{padding:8px 12px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600;cursor:pointer}
+  textarea{min-height:60px;resize:vertical}
+  button{padding:7px 10px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600;cursor:pointer;font-size:12px}
   button.ghost{background:#22305a}
+  button.warn{background:#b9821f}
+  button.grabbed{background:var(--err);color:#fff;animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{50%{filter:brightness(1.3)}}
   .row{display:flex;gap:6px}
   .row > *{flex:1}
-  .log{font:11px ui-monospace,monospace;background:#0b1020;padding:8px;border-radius:6px;max-height:140px;overflow:auto;color:#94a2d2}
+  .log{font:11px ui-monospace,monospace;background:#0b1020;padding:8px;border-radius:6px;max-height:110px;overflow:auto;color:#94a2d2}
   .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
   .grid3 button{background:#22305a}
   .meta{font-size:11px;color:var(--mute)}
+  .kbd{padding:1px 5px;background:#22305a;border-radius:4px;font:11px ui-monospace,monospace}
 </style></head><body>
 <header>
-  <h1>🖥 ai-cli · Remote Desktop</h1>
+  <h1>🖥 __HOST__</h1>
   <span class="pill ok" id="st-ts">Tailscale OK</span>
+  <span class="pill" id="st-eng">engine —</span>
+  <span class="pill" id="st-dpy">display —</span>
   <span class="pill" id="st-last">—</span>
   <div class="sp"></div>
-  <label style="margin:0"><input type="checkbox" id="auto" checked> auto-refresh</label>
-  <select id="refresh" style="width:90px">
-    <option value="1000">1s</option><option value="2000" selected>2s</option>
-    <option value="5000">5s</option><option value="10000">10s</option>
-  </select>
-  <button class="ghost" onclick="shot()">↻ Refresh</button>
+  <div class="sps">
+    <label style="margin:0">auto <input type="checkbox" id="auto" checked></label>
+    <input type="range" id="sps" min="1" max="30" value="15" step="1">
+    <b id="spsv">15 sps</b>
+  </div>
+  <button class="ghost" onclick="shot()">↻</button>
+  <button id="kbBtn" class="ghost" onclick="toggleKbGrab()">⌨ Capture keyboard</button>
 </header>
 <div class="wrap">
   <div class="shot" id="shotbox">
-    <img id="shot" alt="screenshot will appear here" onclick="onClickShot(event)">
+    <img id="shotA" alt="" draggable="false">
+    <img id="shotB" alt="" style="display:none" draggable="false">
+    <div class="overlay" id="ov">no frame yet</div>
   </div>
   <aside>
+    <div>
+      <h3>Keyboard grab</h3>
+      <div class="meta">While grabbed, every key you press is forwarded to the remote PC.<br>
+        Exit chord: <span class="kbd">L-Ctrl</span> + <span class="kbd">L-Alt</span> + <span class="kbd">R-Shift</span> + <span class="kbd">.</span></div>
+    </div>
     <div>
       <h3>Type text</h3>
       <textarea id="text" placeholder="Type into the focused window…"></textarea>
@@ -21869,7 +21926,7 @@ _RDP_PANEL_HTML = """<!doctype html>
         <button class="ghost" onclick="document.getElementById('text').value=''">Clear</button></div>
     </div>
     <div>
-      <h3>Key / combo</h3>
+      <h3>Quick keys</h3>
       <div class="row"><input type="text" id="key" placeholder="Return, ctrl+alt+t…">
         <button onclick="sendKey()">Press</button></div>
       <div class="grid3" style="margin-top:6px">
@@ -21882,14 +21939,15 @@ _RDP_PANEL_HTML = """<!doctype html>
       </div>
     </div>
     <div>
-      <h3>Click at coordinates</h3>
-      <div class="row">
+      <h3>Mouse</h3>
+      <div class="meta">Move the cursor over the screen above; mousedown/up and scroll are forwarded live.<br>
+        To click without moving: fill x/y below.</div>
+      <div class="row" style="margin-top:6px">
         <input type="text" id="cx" placeholder="x">
         <input type="text" id="cy" placeholder="y">
         <select id="cb"><option value="1">left</option><option value="2">mid</option><option value="3">right</option></select>
         <button onclick="sendClick()">Click</button>
       </div>
-      <div class="meta">Or click directly on the screenshot.</div>
     </div>
     <div>
       <h3>Log</h3>
@@ -21899,63 +21957,231 @@ _RDP_PANEL_HTML = """<!doctype html>
 </div>
 <script>
 const PW = __PW_JSON__;
-let lastInfo = null, busy = false;
 
+// ─── rendering: double-buffered image swap ────────────────────────────────
+const imgs = [document.getElementById('shotA'), document.getElementById('shotB')];
+let front = 0;  // which img is currently visible
+const ov = document.getElementById('ov');
+let natW = 0, natH = 0;
+
+function swapTo(b64DataUrlOrUrl){
+  // Preload onto the back buffer, then reveal it and hide the front buffer.
+  // This removes the previous frame right before the next appears — no ghost.
+  const back = imgs[1 - front];
+  const next = () => {
+    natW = back.naturalWidth || natW;
+    natH = back.naturalHeight || natH;
+    imgs[front].style.display = 'none';
+    imgs[front].src = '';
+    back.style.display = 'block';
+    front = 1 - front;
+  };
+  back.onload = next;
+  back.onerror = () => { logMsg('img load err'); };
+  back.src = b64DataUrlOrUrl;
+}
+
+// ─── api helpers ──────────────────────────────────────────────────────────
 function ts(){return new Date().toLocaleTimeString();}
-function logMsg(m){const el=document.getElementById('log');el.textContent=ts()+"  "+m+"\\n"+el.textContent;}
-
+function logMsg(m){const el=document.getElementById('log');el.textContent=ts()+'  '+m+'\\n'+el.textContent;}
 async function api(action, extra){
   const body = Object.assign({action, password: PW}, extra||{});
   const r = await fetch('/v4/_rdp', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const j = await r.json(); return {code:r.status, j};
+  const j = await r.json().catch(()=>({error:{message:'bad json'}}));
+  return {code:r.status, j};
 }
+
+// ─── screenshot loop ──────────────────────────────────────────────────────
+let inFlight = false, lastFrameMs = 0;
 async function shot(){
-  if (busy) return; busy = true;
+  if (inFlight) return;
+  inFlight = true;
+  const t0 = performance.now();
   try {
     const {code, j} = await api('screenshot');
-    if (code !== 200) { logMsg('screenshot '+code+': '+(j.error&&j.error.message||JSON.stringify(j))); return; }
-    const url = j.url + '&t=' + Date.now();
-    document.getElementById('shot').src = url;
-    document.getElementById('st-last').textContent = 'updated '+ts();
-    if (!lastInfo) { const i = await api('info'); lastInfo = i.j; logMsg('info: '+(i.j.dimensions||'?')); }
+    if (code !== 200) { logMsg('shot '+code+': '+(j.error&&j.error.message||'err')); return; }
+    swapTo(j.url + '&t=' + Date.now());
+    const took = Math.round(performance.now() - t0);
+    lastFrameMs = took;
+    document.getElementById('st-last').textContent = took + 'ms';
+    document.getElementById('st-eng').textContent = 'engine '+(j.engine||'?');
+    document.getElementById('st-dpy').textContent = 'DISPLAY='+(j.display||'-');
+    ov.textContent = natW+'×'+natH+'  ·  '+took+'ms  ·  '+j.engine;
   } catch(e) { logMsg('err '+e); }
-  finally { busy = false; }
+  finally { inFlight = false; }
 }
+
+// Adjustable SPS (screenshots per second), 1..30
+const spsEl = document.getElementById('sps');
+const spsvEl = document.getElementById('spsv');
+function currentSps(){ return +spsEl.value || 15; }
+spsEl.addEventListener('input', () => spsvEl.textContent = currentSps()+' sps');
+spsvEl.textContent = currentSps()+' sps';
+
+(async function loop(){
+  while (true) {
+    const on = document.getElementById('auto').checked;
+    const sps = currentSps();
+    const interval = Math.max(30, Math.floor(1000/sps));  // 30ms floor (~33 fps)
+    if (on) { await shot(); }
+    await new Promise(r => setTimeout(r, interval));
+  }
+})();
+
+// ─── mouse capture (move + down/up + wheel + click-on-image) ──────────────
+const box = document.getElementById('shotbox');
+let mouseInside = false;
+let lastMoveSent = 0;
+const MOVE_THROTTLE_MS = 60;  // don't flood server; ~16 moves/sec max
+
+function imgCoords(ev){
+  const img = imgs[front];
+  const r = img.getBoundingClientRect();
+  if (r.width <= 0 || !img.naturalWidth) return null;
+  const sx = Math.round((ev.clientX - r.left) * (img.naturalWidth  / r.width));
+  const sy = Math.round((ev.clientY - r.top)  * (img.naturalHeight / r.height));
+  if (sx < 0 || sy < 0 || sx > img.naturalWidth || sy > img.naturalHeight) return null;
+  return {x: sx, y: sy};
+}
+
+box.addEventListener('mouseenter', () => { mouseInside = true; });
+box.addEventListener('mouseleave', () => { mouseInside = false; });
+box.addEventListener('contextmenu', ev => { ev.preventDefault(); });
+box.addEventListener('mousemove', ev => {
+  if (!mouseInside) return;
+  const now = performance.now();
+  if (now - lastMoveSent < MOVE_THROTTLE_MS) return;
+  const p = imgCoords(ev); if (!p) return;
+  lastMoveSent = now;
+  api('mousemove', p).catch(()=>{});
+});
+box.addEventListener('mousedown', ev => {
+  ev.preventDefault();
+  const p = imgCoords(ev) || {};
+  const btn = ev.button === 2 ? 3 : ev.button === 1 ? 2 : 1;
+  api('mousedown', Object.assign({button:btn}, p));
+});
+box.addEventListener('mouseup', ev => {
+  ev.preventDefault();
+  const p = imgCoords(ev) || {};
+  const btn = ev.button === 2 ? 3 : ev.button === 1 ? 2 : 1;
+  api('mouseup', Object.assign({button:btn}, p));
+});
+box.addEventListener('wheel', ev => {
+  ev.preventDefault();
+  api('scroll', {dy: ev.deltaY});
+}, {passive:false});
+
+// ─── text / key / manual click buttons ─────────────────────────────────────
 async function sendType(){
   const t = document.getElementById('text').value; if (!t) return;
-  const {j} = await api('type', {text:t}); logMsg('type '+t.length+' chars · ok='+(j.ok?'yes':'no'));
+  const {j} = await api('type', {text:t});
+  logMsg('type '+t.length+'c · '+(j.ok?'ok':('FAIL '+(j.stderr||''))));
 }
 async function sendKey(){
-  const k = document.getElementById('key').value; if (!k) return;
-  const {j} = await api('key', {key:k}); logMsg('key '+k+' · ok='+(j.ok?'yes':'no'));
+  const v = document.getElementById('key').value; if (!v) return;
+  const {j} = await api('key', {key:v});
+  logMsg('key '+v+' · '+(j.ok?'ok':('FAIL '+(j.stderr||''))));
 }
 async function k(combo){
-  const {j} = await api('key', {key:combo}); logMsg('key '+combo+' · ok='+(j.ok?'yes':'no'));
+  const {j} = await api('key', {key:combo});
+  logMsg('key '+combo+' · '+(j.ok?'ok':('FAIL '+(j.stderr||''))));
 }
 async function sendClick(){
   const x = +document.getElementById('cx').value || 0;
   const y = +document.getElementById('cy').value || 0;
   const btn = +document.getElementById('cb').value || 1;
-  const {j} = await api('click', {x, y, button:btn}); logMsg('click '+x+','+y+' btn='+btn+' · ok='+(j.ok?'yes':'no'));
-  setTimeout(shot, 250);
+  const {j} = await api('click', {x, y, button:btn});
+  logMsg('click '+x+','+y+' b'+btn+' · '+(j.ok?'ok':('FAIL '+(j.stderr||''))));
 }
-function onClickShot(ev){
-  const img = ev.target;
-  const r = img.getBoundingClientRect();
-  // Map click coords back to screen pixels via natural size
-  const sx = Math.round((ev.clientX - r.left) * (img.naturalWidth  / r.width));
-  const sy = Math.round((ev.clientY - r.top)  * (img.naturalHeight / r.height));
-  document.getElementById('cx').value = sx; document.getElementById('cy').value = sy;
-  sendClick();
+
+// ─── keyboard grab ────────────────────────────────────────────────────────
+let kbGrabbed = false;
+const held = new Set();   // event.code for currently pressed keys
+
+function kbCode(ev){
+  const c = ev.code || "";
+  if (/^Key[A-Z]$/.test(c))  return c.slice(3).toLowerCase();
+  if (/^Digit\\d$/.test(c))   return c.slice(5);
+  if (/^F\\d+$/.test(c))      return c;
+  if (/^Numpad\\d$/.test(c))  return 'KP_'+c.slice(6);
+  const map = {
+    Enter:'Return', NumpadEnter:'Return', Escape:'Escape', Backspace:'BackSpace',
+    Tab:'Tab', Space:'space', Delete:'Delete', Insert:'Insert',
+    ArrowUp:'Up', ArrowDown:'Down', ArrowLeft:'Left', ArrowRight:'Right',
+    Home:'Home', End:'End', PageUp:'Page_Up', PageDown:'Page_Down',
+    Period:'period', Comma:'comma', Slash:'slash', Semicolon:'semicolon',
+    Quote:'apostrophe', Backquote:'grave', Minus:'minus', Equal:'equal',
+    BracketLeft:'bracketleft', BracketRight:'bracketright', Backslash:'backslash',
+    CapsLock:'Caps_Lock', ContextMenu:'Menu',
+    NumpadAdd:'KP_Add', NumpadSubtract:'KP_Subtract',
+    NumpadMultiply:'KP_Multiply', NumpadDivide:'KP_Divide',
+    NumpadDecimal:'KP_Decimal'
+  };
+  return map[c] || null;
 }
-// auto-refresh loop
-(function tick(){
-  const on = document.getElementById('auto').checked;
-  const ms = +document.getElementById('refresh').value || 2000;
-  if (on) shot();
-  setTimeout(tick, ms);
+
+function toggleKbGrab(){
+  kbGrabbed = !kbGrabbed;
+  const btn = document.getElementById('kbBtn');
+  if (kbGrabbed) {
+    btn.className = 'grabbed';
+    btn.textContent = '⌨ grabbed — L-Ctrl+L-Alt+R-Shift+. to release';
+    held.clear();
+    logMsg('keyboard grabbed');
+  } else {
+    btn.className = 'ghost';
+    btn.textContent = '⌨ Capture keyboard';
+    held.clear();
+    logMsg('keyboard released');
+  }
+}
+
+window.addEventListener('keydown', ev => {
+  if (!kbGrabbed) return;
+  held.add(ev.code);
+  // Exit chord: LCtrl + LAlt + RShift + Period
+  if (held.has('ControlLeft') && held.has('AltLeft') &&
+      held.has('ShiftRight')  && held.has('Period')) {
+    ev.preventDefault();
+    toggleKbGrab();
+    return;
+  }
+  // Don't forward pure modifier keys (they'd be redundant)
+  if (['ControlLeft','ControlRight','AltLeft','AltRight',
+       'ShiftLeft','ShiftRight','MetaLeft','MetaRight'].includes(ev.code)) {
+    ev.preventDefault();
+    return;
+  }
+  ev.preventDefault();
+  const base = kbCode(ev);
+  if (!base) return;
+  const mods = [];
+  if (ev.ctrlKey)  mods.push('ctrl');
+  if (ev.altKey)   mods.push('alt');
+  if (ev.shiftKey) mods.push('shift');
+  if (ev.metaKey)  mods.push('super');
+  api('key', {key: mods.concat(base).join('+')});
+}, true);
+
+window.addEventListener('keyup', ev => {
+  if (!kbGrabbed) return;
+  held.delete(ev.code);
+  ev.preventDefault();
+}, true);
+
+window.addEventListener('blur', () => { held.clear(); });
+
+// Initial kick: one shot + info request
+(async () => {
+  const {j} = await api('info');
+  if (j && j.dimensions) logMsg('info: '+j.dimensions+' · control='+(j.control_works?'OK':'broken: '+(j.control_err||'')));
+  if (j && j.control_works === false) {
+    document.getElementById('st-ts').className = 'pill warn';
+    document.getElementById('st-ts').textContent = 'control broken — see log';
+  }
+  shot();
 })();
-shot();
 </script>
 </body></html>"""
 
@@ -22029,108 +22255,198 @@ def v4_post_rdp(h, hdrs, qs):
             "screenshot": _have("gnome-screenshot", "scrot", "grim", "screencapture", "import"),
             "control":    _have("xdotool", "ydotool"),
         }
+        env = _rdp_env()
         dims = None
         try:
-            r = subprocess.run(["xdpyinfo"], capture_output=True, text=True, timeout=2)
+            r = subprocess.run(["xdpyinfo"], capture_output=True, text=True,
+                               timeout=2, env=env)
             for line in r.stdout.splitlines():
                 if "dimensions" in line:
                     dims = line.strip(); break
         except Exception: pass
+        # Quick test: can xdotool actually drive the display?
+        ctl_ok = None; ctl_err = ""
+        ctl = shutil.which("xdotool") or shutil.which("ydotool")
+        if ctl:
+            try:
+                r = subprocess.run([ctl, "getmouselocation"],
+                                   capture_output=True, text=True, timeout=2, env=env)
+                ctl_ok = r.returncode == 0
+                ctl_err = (r.stderr or "")[:200]
+            except Exception as e: ctl_err = str(e)
         return (200, _env(t0, request_id=req_id,
                           action="info",
                           tailscale=True,
                           client_ip=client_ip,
                           dimensions=dims,
                           tools_available=tools,
+                          display=env.get("DISPLAY"),
+                          wayland=env.get("WAYLAND_DISPLAY"),
+                          xauthority=env.get("XAUTHORITY"),
+                          control_works=ctl_ok,
+                          control_err=ctl_err,
                           platform=platform.system()))
 
     # --- screenshot: capture and return a fetchable URL -------------------
     if action == "screenshot":
-        out_name = f"rdp_{int(time.time())}_{secrets.token_hex(3)}.png"
+        # Always overwrite a single fixed file — no accumulation on disk,
+        # no pile-up in the uploads dir. Old unique rdp_*.png files (from
+        # pre-v3.2.1.0.2 screenshots) are swept on each call.
+        out_name = "rdp_latest.png"
         out_path = os.path.join(UPLOADS_DIR, out_name)
+        # Sweep stale screenshots on a best-effort basis
+        try:
+            for f in os.listdir(UPLOADS_DIR):
+                if f.startswith("rdp_") and f.endswith(".png") and f != out_name:
+                    try: os.remove(os.path.join(UPLOADS_DIR, f))
+                    except Exception: pass
+        except Exception: pass
+        # Always remove the previous frame right before grabbing the next
+        try: os.remove(out_path)
+        except FileNotFoundError: pass
+        except Exception: pass
+
         engine = None
+        quality = int(b.get("quality", 70) or 70)
+        scale = float(b.get("scale", 1.0) or 1.0)
+        env = _rdp_env()
+        last_err = ""
         for bin in ("gnome-screenshot", "scrot", "grim", "screencapture", "import"):
             if not shutil.which(bin): continue
             try:
                 if bin == "gnome-screenshot":
                     r = subprocess.run([bin, "-f", out_path],
-                                       capture_output=True, timeout=10)
+                                       capture_output=True, text=True, timeout=10, env=env)
                 elif bin == "scrot":
-                    r = subprocess.run([bin, out_path],
-                                       capture_output=True, timeout=10)
+                    r = subprocess.run([bin, "-q", str(max(1, min(100, quality))), out_path],
+                                       capture_output=True, text=True, timeout=10, env=env)
                 elif bin == "grim":
-                    r = subprocess.run([bin, out_path],
-                                       capture_output=True, timeout=10)
+                    cmd = [bin]
+                    if scale and scale != 1.0: cmd += ["-s", f"{scale:.2f}"]
+                    cmd += [out_path]
+                    r = subprocess.run(cmd, capture_output=True, text=True, timeout=10, env=env)
                 elif bin == "screencapture":
                     r = subprocess.run([bin, "-x", out_path],
-                                       capture_output=True, timeout=10)
+                                       capture_output=True, text=True, timeout=10, env=env)
                 else:  # import (ImageMagick)
                     r = subprocess.run([bin, "-window", "root", out_path],
-                                       capture_output=True, timeout=10)
+                                       capture_output=True, text=True, timeout=10, env=env)
                 if r.returncode == 0 and os.path.isfile(out_path):
                     engine = bin; break
-            except Exception: continue
+                last_err = (r.stderr or "")[:200]
+            except Exception as e:
+                last_err = str(e); continue
         if not engine:
             return (500, _err("no_screenshot_tool",
                               "install one of: gnome-screenshot, scrot, grim, "
-                              "screencapture, imagemagick", req_id))
+                              "screencapture, imagemagick", req_id,
+                              last_stderr=last_err,
+                              display=env.get("DISPLAY"),
+                              wayland=env.get("WAYLAND_DISPLAY")))
+        # Cache-bust using a frame counter (the client appends ?t= anyway)
+        frame = int((time.time() - START_TIME) * 1000)
         return (200, _env(t0, request_id=req_id,
                           action="screenshot",
                           engine=engine,
                           path=out_path,
                           size_bytes=os.path.getsize(out_path),
-                          url=f"/v4/files/fetch?name={out_name}"))
+                          frame=frame,
+                          display=env.get("DISPLAY"),
+                          wayland=env.get("WAYLAND_DISPLAY"),
+                          url=f"/v4/files/fetch?name={out_name}&f={frame}"))
 
-    # --- control actions: type, key, click, mousemove ---------------------
+    # --- control actions: type, key, click, mousemove, mousedown, mouseup, scroll
     ctl = shutil.which("xdotool") or shutil.which("ydotool")
     if not ctl:
         return (500, _err("no_control_tool",
                           "install xdotool (X11) or ydotool (Wayland)", req_id))
+    env = _rdp_env()
     if action == "type":
         text = b.get("text", "")
         if not text: return (400, _err("missing_input", "missing text", req_id))
         if len(text) > 4000:
             return (400, _err("too_large", "text must be ≤4000 chars", req_id))
         r = subprocess.run([ctl, "type", "--delay", "15", text],
-                           capture_output=True, text=True, timeout=30)
+                           capture_output=True, text=True, timeout=30, env=env)
         return (200, _env(t0, request_id=req_id,
                           action="type", tool=os.path.basename(ctl),
                           chars=len(text),
                           ok=r.returncode == 0,
+                          display=env.get("DISPLAY"),
                           stderr=r.stderr[:200]))
     if action == "key":
         key = b.get("key", "")
         if not key: return (400, _err("missing_input", "missing key", req_id))
         # Accept either a single key ("Return") or combo ("ctrl+alt+t")
         r = subprocess.run([ctl, "key", key],
-                           capture_output=True, text=True, timeout=5)
+                           capture_output=True, text=True, timeout=5, env=env)
         return (200, _env(t0, request_id=req_id,
                           action="key", key=key,
                           ok=r.returncode == 0,
+                          display=env.get("DISPLAY"),
                           stderr=r.stderr[:200]))
     if action == "click":
         button = str(b.get("button", 1))
         x = b.get("x"); y = b.get("y")
         cmd = [ctl]
         if x is not None and y is not None:
-            cmd += ["mousemove", str(int(x)), str(int(y))]
+            cmd += ["mousemove", "--sync", str(int(x)), str(int(y))]
         cmd += ["click", button]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=env)
         return (200, _env(t0, request_id=req_id,
                           action="click", button=button,
                           x=x, y=y,
                           ok=r.returncode == 0,
+                          display=env.get("DISPLAY"),
                           stderr=r.stderr[:200]))
     if action == "mousemove":
         x = int(b.get("x") or 0); y = int(b.get("y") or 0)
-        r = subprocess.run([ctl, "mousemove", str(x), str(y)],
-                           capture_output=True, text=True, timeout=5)
+        cmd = [ctl, "mousemove", str(x), str(y)]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=env)
         return (200, _env(t0, request_id=req_id,
                           action="mousemove", x=x, y=y,
                           ok=r.returncode == 0,
+                          display=env.get("DISPLAY"),
                           stderr=r.stderr[:200]))
+    if action in ("mousedown", "mouseup"):
+        button = str(b.get("button", 1))
+        x = b.get("x"); y = b.get("y")
+        cmd = [ctl]
+        if x is not None and y is not None:
+            cmd += ["mousemove", "--sync", str(int(x)), str(int(y))]
+        cmd += ["mousedown" if action == "mousedown" else "mouseup", button]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=env)
+        return (200, _env(t0, request_id=req_id,
+                          action=action, button=button, x=x, y=y,
+                          ok=r.returncode == 0,
+                          stderr=r.stderr[:200]))
+    if action == "scroll":
+        dy = float(b.get("dy", 0) or 0)
+        steps = max(1, min(10, int(abs(dy) / 40) or 1))
+        btn = "4" if dy < 0 else "5"
+        for _ in range(steps):
+            subprocess.run([ctl, "click", btn],
+                           capture_output=True, text=True, timeout=3, env=env)
+        return (200, _env(t0, request_id=req_id,
+                          action="scroll", dy=dy, steps=steps, button=btn))
+    if action == "keys_sequence":
+        seq = b.get("keys") or []
+        if not isinstance(seq, list) or not seq:
+            return (400, _err("missing_input", "missing keys[]", req_id))
+        if len(seq) > 64:
+            return (400, _err("too_large", "max 64 keys per batch", req_id))
+        ok = True; errs = []
+        for k in seq:
+            r = subprocess.run([ctl, "key", str(k)],
+                               capture_output=True, text=True, timeout=3, env=env)
+            if r.returncode != 0:
+                ok = False; errs.append(f"{k}: {r.stderr.strip()[:80]}")
+        return (200, _env(t0, request_id=req_id,
+                          action="keys_sequence", count=len(seq), ok=ok,
+                          errors=errs[:5]))
     return (400, _err("unknown_action",
-                      "expected action: info|screenshot|type|key|click|mousemove",
+                      "expected action: info|screenshot|type|key|keys_sequence|"
+                      "click|mousedown|mouseup|mousemove|scroll",
                       req_id))
 
 
