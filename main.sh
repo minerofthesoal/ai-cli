@@ -12,7 +12,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.2.1"
+VERSION="3.2.1.0.1"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
