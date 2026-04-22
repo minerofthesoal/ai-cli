@@ -12,7 +12,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.2.1"
+VERSION="3.2.1.0.1"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -21762,7 +21762,8 @@ def v4_get_files_fetch(h, hdrs, qs):
 #   1. Terminal password (ai -apip PASSWORD), AND
 #   2. Caller must be on the local Tailnet (IP in 100.64.0.0/10 range), AND
 #   3. Tailscale must be running locally (`tailscale status` succeeds).
-# Actions: info / screenshot / type / key / click / mousemove.
+# GET  /v4/_rdp — serves a minimal browser control panel (HTML UI).
+# POST /v4/_rdp — JSON API; actions: info / screenshot / type / key / click / mousemove.
 # Intent: owner-initiated remote control of their own machine over Tailscale.
 
 def _tailscale_up():
@@ -21789,6 +21790,218 @@ def _tailscale_client(client_addr):
 
 def _have(*bins):
     return [b for b in bins if shutil.which(b)]
+
+_RDP_LOGIN_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><title>RDP · login</title>
+<style>
+  body{font:15px/1.4 -apple-system,Segoe UI,sans-serif;background:#0b1020;color:#d7e1ff;
+       min-height:100vh;margin:0;display:flex;align-items:center;justify-content:center}
+  form{background:#131a33;padding:28px 32px;border-radius:10px;box-shadow:0 10px 40px #0008;min-width:320px}
+  h1{font-size:18px;margin:0 0 16px;letter-spacing:.3px}
+  label{display:block;font-size:12px;opacity:.7;margin:10px 0 4px}
+  input{width:100%;box-sizing:border-box;padding:9px 11px;border-radius:6px;border:1px solid #2a3660;
+        background:#0b1020;color:#fff;font:14px ui-monospace,monospace}
+  button{margin-top:16px;width:100%;padding:10px;border:0;border-radius:6px;background:#3d5afe;
+         color:#fff;font-weight:600;cursor:pointer}
+  .err{background:#5a1a1a;padding:8px 10px;border-radius:6px;margin-top:10px;font-size:13px}
+  .note{opacity:.55;font-size:12px;margin-top:14px}
+</style></head><body>
+<form method="get" action="/v4/_rdp">
+  <h1>🖥  Remote Desktop</h1>
+  <label>PC password</label>
+  <input type="password" name="password" autofocus required>
+  __ERR__
+  <button type="submit">Unlock</button>
+  <div class="note">Gated by password · Tailscale · Tailnet source IP.</div>
+</form></body></html>"""
+
+_RDP_PANEL_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><title>RDP · __HOST__</title>
+<style>
+  :root{--bg:#0b1020;--card:#131a33;--ink:#d7e1ff;--mute:#8a95c0;--acc:#3d5afe;--ok:#27c28a;--err:#e95d5d}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.4 -apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--ink)}
+  header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:#0a0f1d;border-bottom:1px solid #1e2a4a}
+  header h1{font-size:15px;margin:0;font-weight:600}
+  header .sp{flex:1}
+  .pill{font-size:11px;padding:3px 8px;border-radius:999px;background:#22305a;color:#b9c4ea}
+  .pill.ok{background:#123f2f;color:#27c28a}
+  .pill.err{background:#3f1b1b;color:#e95d5d}
+  .wrap{padding:14px 16px;display:grid;grid-template-columns:1fr 320px;gap:14px}
+  .shot{background:var(--card);border-radius:10px;padding:8px;position:relative;overflow:auto}
+  .shot img{max-width:100%;display:block;border-radius:6px;cursor:crosshair;user-select:none}
+  aside{background:var(--card);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:12px}
+  aside h3{margin:0;font-size:12px;letter-spacing:.5px;text-transform:uppercase;color:var(--mute)}
+  label{font-size:12px;color:var(--mute);margin-bottom:4px;display:block}
+  input[type=text],select,textarea{width:100%;padding:8px 10px;border-radius:6px;border:1px solid #2a3660;
+    background:#0b1020;color:#fff;font:13px ui-monospace,monospace}
+  textarea{min-height:70px;resize:vertical}
+  button{padding:8px 12px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600;cursor:pointer}
+  button.ghost{background:#22305a}
+  .row{display:flex;gap:6px}
+  .row > *{flex:1}
+  .log{font:11px ui-monospace,monospace;background:#0b1020;padding:8px;border-radius:6px;max-height:140px;overflow:auto;color:#94a2d2}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .grid3 button{background:#22305a}
+  .meta{font-size:11px;color:var(--mute)}
+</style></head><body>
+<header>
+  <h1>🖥 ai-cli · Remote Desktop</h1>
+  <span class="pill ok" id="st-ts">Tailscale OK</span>
+  <span class="pill" id="st-last">—</span>
+  <div class="sp"></div>
+  <label style="margin:0"><input type="checkbox" id="auto" checked> auto-refresh</label>
+  <select id="refresh" style="width:90px">
+    <option value="1000">1s</option><option value="2000" selected>2s</option>
+    <option value="5000">5s</option><option value="10000">10s</option>
+  </select>
+  <button class="ghost" onclick="shot()">↻ Refresh</button>
+</header>
+<div class="wrap">
+  <div class="shot" id="shotbox">
+    <img id="shot" alt="screenshot will appear here" onclick="onClickShot(event)">
+  </div>
+  <aside>
+    <div>
+      <h3>Type text</h3>
+      <textarea id="text" placeholder="Type into the focused window…"></textarea>
+      <div class="row" style="margin-top:6px"><button onclick="sendType()">Send type</button>
+        <button class="ghost" onclick="document.getElementById('text').value=''">Clear</button></div>
+    </div>
+    <div>
+      <h3>Key / combo</h3>
+      <div class="row"><input type="text" id="key" placeholder="Return, ctrl+alt+t…">
+        <button onclick="sendKey()">Press</button></div>
+      <div class="grid3" style="margin-top:6px">
+        <button onclick="k('Return')">Enter</button>
+        <button onclick="k('Escape')">Esc</button>
+        <button onclick="k('Tab')">Tab</button>
+        <button onclick="k('BackSpace')">Back</button>
+        <button onclick="k('super')">Super</button>
+        <button onclick="k('ctrl+alt+t')">⎋ Term</button>
+      </div>
+    </div>
+    <div>
+      <h3>Click at coordinates</h3>
+      <div class="row">
+        <input type="text" id="cx" placeholder="x">
+        <input type="text" id="cy" placeholder="y">
+        <select id="cb"><option value="1">left</option><option value="2">mid</option><option value="3">right</option></select>
+        <button onclick="sendClick()">Click</button>
+      </div>
+      <div class="meta">Or click directly on the screenshot.</div>
+    </div>
+    <div>
+      <h3>Log</h3>
+      <div class="log" id="log">ready</div>
+    </div>
+  </aside>
+</div>
+<script>
+const PW = __PW_JSON__;
+let lastInfo = null, busy = false;
+
+function ts(){return new Date().toLocaleTimeString();}
+function logMsg(m){const el=document.getElementById('log');el.textContent=ts()+"  "+m+"\\n"+el.textContent;}
+
+async function api(action, extra){
+  const body = Object.assign({action, password: PW}, extra||{});
+  const r = await fetch('/v4/_rdp', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j = await r.json(); return {code:r.status, j};
+}
+async function shot(){
+  if (busy) return; busy = true;
+  try {
+    const {code, j} = await api('screenshot');
+    if (code !== 200) { logMsg('screenshot '+code+': '+(j.error&&j.error.message||JSON.stringify(j))); return; }
+    const url = j.url + '&t=' + Date.now();
+    document.getElementById('shot').src = url;
+    document.getElementById('st-last').textContent = 'updated '+ts();
+    if (!lastInfo) { const i = await api('info'); lastInfo = i.j; logMsg('info: '+(i.j.dimensions||'?')); }
+  } catch(e) { logMsg('err '+e); }
+  finally { busy = false; }
+}
+async function sendType(){
+  const t = document.getElementById('text').value; if (!t) return;
+  const {j} = await api('type', {text:t}); logMsg('type '+t.length+' chars · ok='+(j.ok?'yes':'no'));
+}
+async function sendKey(){
+  const k = document.getElementById('key').value; if (!k) return;
+  const {j} = await api('key', {key:k}); logMsg('key '+k+' · ok='+(j.ok?'yes':'no'));
+}
+async function k(combo){
+  const {j} = await api('key', {key:combo}); logMsg('key '+combo+' · ok='+(j.ok?'yes':'no'));
+}
+async function sendClick(){
+  const x = +document.getElementById('cx').value || 0;
+  const y = +document.getElementById('cy').value || 0;
+  const btn = +document.getElementById('cb').value || 1;
+  const {j} = await api('click', {x, y, button:btn}); logMsg('click '+x+','+y+' btn='+btn+' · ok='+(j.ok?'yes':'no'));
+  setTimeout(shot, 250);
+}
+function onClickShot(ev){
+  const img = ev.target;
+  const r = img.getBoundingClientRect();
+  // Map click coords back to screen pixels via natural size
+  const sx = Math.round((ev.clientX - r.left) * (img.naturalWidth  / r.width));
+  const sy = Math.round((ev.clientY - r.top)  * (img.naturalHeight / r.height));
+  document.getElementById('cx').value = sx; document.getElementById('cy').value = sy;
+  sendClick();
+}
+// auto-refresh loop
+(function tick(){
+  const on = document.getElementById('auto').checked;
+  const ms = +document.getElementById('refresh').value || 2000;
+  if (on) shot();
+  setTimeout(tick, ms);
+})();
+shot();
+</script>
+</body></html>"""
+
+def v4_get_rdp(h, hdrs, qs):
+    """HTML browser UI for the remote-desktop endpoint.
+    Gates: Tailscale up + caller on Tailnet (or 127.0.0.1) + password in ?password=."""
+    client_ip = h.client_address[0]
+    pw = get_term_pw()
+    # First: surface environment-level failures with friendly HTML
+    def _html(status, body):
+        try:
+            h.send_response(status)
+            h.send_header("Content-Type", "text/html; charset=utf-8")
+            h.send_header("Cache-Control", "no-store")
+            h.end_headers()
+            h.wfile.write(body.encode())
+        except Exception: pass
+        return None
+    if not pw:
+        _html(403, _RDP_LOGIN_HTML.replace("__ERR__",
+              '<div class="err">No PC password set on this host. Run:<br>'
+              '<code>ai -apip YOUR_PASSWORD</code> then reload.</div>'))
+        return None
+    if not _tailscale_up():
+        _html(403, _RDP_LOGIN_HTML.replace("__ERR__",
+              '<div class="err">Tailscale is not running on this host.<br>'
+              'Start it:  <code>sudo tailscale up</code></div>'))
+        return None
+    if not (client_ip.startswith("127.") or _tailscale_client(client_ip)):
+        _html(403, _RDP_LOGIN_HTML.replace("__ERR__",
+              f'<div class="err">Your IP ({client_ip}) is not on the Tailnet.<br>'
+              'Connect via your Tailscale VPN first.</div>'))
+        return None
+    supplied = qs.get("password") or ""
+    if supplied != pw:
+        _html(200 if not supplied else 401,
+              _RDP_LOGIN_HTML.replace("__ERR__",
+                  '<div class="err">Wrong password.</div>' if supplied else ""))
+        return None
+    # Authenticated. Serve the control panel. Password embedded client-side so
+    # JS can POST it back — hidden endpoint + Tailscale gating keeps it contained.
+    panel = (_RDP_PANEL_HTML
+             .replace("__HOST__", platform.node().replace("<", ""))
+             .replace("__PW_JSON__", json.dumps(pw)))
+    _html(200, panel)
+    return None
 
 def v4_post_rdp(h, hdrs, qs):
     """Hidden remote-desktop control. Requires Tailscale + terminal password."""
@@ -22036,6 +22249,7 @@ V4_GET = {
     "/v4/auth/keys":    v4_get_auth_keys,
     "/v4/jobs":         v4_get_jobs,
     "/v4/chat/stream":  v4_get_chat_stream,
+    "/v4/_rdp":         v4_get_rdp,
 }
 
 V4_POST = {
