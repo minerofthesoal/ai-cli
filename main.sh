@@ -21854,232 +21854,233 @@ _RDP_LOGIN_HTML = """<!doctype html>
 _RDP_PANEL_HTML = """<!doctype html>
 <html><head><meta charset="utf-8"><title>RDP · __HOST__</title>
 <style>
-  :root{--bg:#0b1020;--card:#131a33;--ink:#d7e1ff;--mute:#8a95c0;--acc:#3d5afe;--ok:#27c28a;--warn:#e8a93d;--err:#e95d5d}
+  :root{--bg:#0b1020;--card:#131a33;--card2:#0f152b;--ink:#d7e1ff;--mute:#8a95c0;
+        --acc:#3d5afe;--ok:#27c28a;--warn:#e8a93d;--err:#e95d5d;--line:#1e2a4a}
   *{box-sizing:border-box}
   body{margin:0;font:14px/1.4 -apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--ink);overflow:hidden}
-  header{display:flex;align-items:center;gap:10px;padding:8px 14px;background:#0a0f1d;border-bottom:1px solid #1e2a4a;flex-wrap:wrap}
+  header{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#0a0f1d;border-bottom:1px solid var(--line);flex-wrap:wrap}
   header h1{font-size:14px;margin:0;font-weight:600}
   header .sp{flex:1}
-  .pill{font-size:11px;padding:3px 8px;border-radius:999px;background:#22305a;color:#b9c4ea}
+  .pill{font-size:11px;padding:3px 8px;border-radius:999px;background:#22305a;color:#b9c4ea;white-space:nowrap;max-width:340px;overflow:hidden;text-overflow:ellipsis}
   .pill.ok{background:#123f2f;color:#27c28a}
   .pill.warn{background:#3a2b10;color:#e8a93d}
   .pill.err{background:#3f1b1b;color:#e95d5d}
-  .sps{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mute)}
-  .sps input[type=range]{accent-color:var(--acc);width:110px}
-  .sps b{color:var(--ink);min-width:54px;display:inline-block;text-align:right}
-  .wrap{padding:10px 12px;display:grid;grid-template-columns:1fr 300px;gap:10px;height:calc(100vh - 46px)}
-  .shot{background:var(--card);border-radius:10px;padding:6px;overflow:auto;position:relative}
-  .shot img{max-width:100%;display:block;border-radius:6px;user-select:none;-webkit-user-drag:none}
-  .shot.grab img{cursor:none}
-  .shot .overlay{position:absolute;top:12px;right:12px;padding:4px 8px;border-radius:6px;background:#0008;
-                 color:#fff;font:11px ui-monospace,monospace;opacity:.8;pointer-events:none}
-  aside{background:var(--card);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px;overflow:auto}
-  aside h3{margin:0 0 2px;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--mute)}
-  label{font-size:12px;color:var(--mute);margin-bottom:4px;display:block}
-  input[type=text],select,textarea{width:100%;padding:7px 9px;border-radius:6px;border:1px solid #2a3660;
+  .rate{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mute)}
+  .rate input[type=range]{accent-color:var(--acc);width:90px}
+  .rate b{color:var(--ink);min-width:52px;display:inline-block;text-align:right}
+  .wrap{padding:10px;display:grid;grid-template-columns:280px 1fr 300px;gap:10px;height:calc(100vh - 46px)}
+  .col{background:var(--card);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:10px;overflow:auto;min-height:0}
+  .col h3{margin:0;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--mute)}
+  .wins{display:flex;flex-direction:column;gap:4px;overflow:auto;flex:1}
+  .win{padding:7px 9px;background:var(--card2);border-radius:6px;cursor:pointer;font-size:12px;line-height:1.3;border:1px solid transparent}
+  .win:hover{background:#1a2550}
+  .win.active{border-color:var(--acc);background:#1b2754}
+  .win .t{font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .win .m{font-size:10.5px;color:var(--mute);margin-top:2px}
+  .active-card{background:var(--card2);border-radius:8px;padding:10px;border:1px solid var(--line)}
+  .active-card .at{font-weight:700;font-size:14px;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .active-card .am{font-size:11px;color:var(--mute);font-family:ui-monospace,monospace}
+  textarea,input[type=text],select{width:100%;padding:7px 9px;border-radius:6px;border:1px solid #2a3660;
     background:#0b1020;color:#fff;font:13px ui-monospace,monospace}
   textarea{min-height:60px;resize:vertical}
   button{padding:7px 10px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600;cursor:pointer;font-size:12px}
   button.ghost{background:#22305a}
-  button.warn{background:#b9821f}
-  button.grabbed{background:var(--err);color:#fff;animation:pulse 1.4s ease-in-out infinite}
+  button.grabbed{background:var(--err);animation:pulse 1.4s ease-in-out infinite}
   @keyframes pulse{50%{filter:brightness(1.3)}}
   .row{display:flex;gap:6px}
   .row > *{flex:1}
-  .log{font:11px ui-monospace,monospace;background:#0b1020;padding:8px;border-radius:6px;max-height:110px;overflow:auto;color:#94a2d2}
   .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
   .grid3 button{background:#22305a}
-  .meta{font-size:11px;color:var(--mute)}
+  .procs{font:11px ui-monospace,monospace;max-height:220px;overflow:auto}
+  .procs table{width:100%;border-collapse:collapse}
+  .procs td{padding:3px 4px;border-bottom:1px solid #1a2346}
+  .procs td.c{color:var(--warn)} .procs td.m{color:#7ad6ff}
+  .log{font:11px ui-monospace,monospace;background:#0b1020;padding:8px;border-radius:6px;max-height:130px;overflow:auto;color:#94a2d2}
   .kbd{padding:1px 5px;background:#22305a;border-radius:4px;font:11px ui-monospace,monospace}
+  .shell{font:12px ui-monospace,monospace;background:#000;color:#bef7b0;padding:8px;border-radius:6px;min-height:100px;max-height:200px;overflow:auto;white-space:pre-wrap}
 </style></head><body>
 <header>
   <h1>🖥 __HOST__</h1>
   <span class="pill ok" id="st-ts">Tailscale OK</span>
-  <span class="pill" id="st-eng">engine —</span>
   <span class="pill" id="st-dpy">display —</span>
-  <span class="pill" id="st-last">—</span>
+  <span class="pill" id="st-active" title="active window">active —</span>
+  <span class="pill" id="st-cur">cursor —</span>
   <div class="sp"></div>
-  <div class="sps">
+  <div class="rate">
     <label style="margin:0">auto <input type="checkbox" id="auto" checked></label>
-    <input type="range" id="sps" min="1" max="30" value="15" step="1">
-    <b id="spsv">15 sps</b>
+    <input type="range" id="rate" min="200" max="3000" value="1000" step="100">
+    <b id="ratev">1.0 s</b>
   </div>
-  <button class="ghost" onclick="shot()">↻</button>
   <button id="kbBtn" class="ghost" onclick="toggleKbGrab()">⌨ Capture keyboard</button>
 </header>
+
 <div class="wrap">
-  <div class="shot" id="shotbox">
-    <img id="shotA" alt="" draggable="false">
-    <img id="shotB" alt="" style="display:none" draggable="false">
-    <div class="overlay" id="ov">no frame yet</div>
+  <!-- ─── Left: Window list ───────────────────────────────────────────── -->
+  <div class="col">
+    <h3>Windows <span id="winct" style="color:var(--mute)">(0)</span></h3>
+    <div class="wins" id="wins"></div>
+    <h3>Cursor</h3>
+    <div class="active-card"><div class="am" id="curline">–</div></div>
+    <h3>Log</h3>
+    <div class="log" id="log">ready</div>
   </div>
-  <aside>
-    <div>
-      <h3>Keyboard grab</h3>
-      <div class="meta">While grabbed, every key you press is forwarded to the remote PC.<br>
-        Exit chord: <span class="kbd">L-Ctrl</span> + <span class="kbd">L-Alt</span> + <span class="kbd">R-Shift</span> + <span class="kbd">.</span></div>
+
+  <!-- ─── Middle: Active window + type + shell ────────────────────────── -->
+  <div class="col">
+    <h3>Active window</h3>
+    <div class="active-card">
+      <div class="at" id="actTitle">—</div>
+      <div class="am" id="actMeta">—</div>
     </div>
-    <div>
-      <h3>Type text</h3>
-      <textarea id="text" placeholder="Type into the focused window…"></textarea>
-      <div class="row" style="margin-top:6px"><button onclick="sendType()">Send type</button>
-        <button class="ghost" onclick="document.getElementById('text').value=''">Clear</button></div>
+    <h3>Type into active window</h3>
+    <textarea id="text" placeholder="Type text to send…"></textarea>
+    <div class="row">
+      <button onclick="sendType()">Send type</button>
+      <button class="ghost" onclick="document.getElementById('text').value=''">Clear</button>
+      <button class="ghost" onclick="pasteFromClipboard()">Paste clipboard</button>
     </div>
-    <div>
-      <h3>Quick keys</h3>
-      <div class="row"><input type="text" id="key" placeholder="Return, ctrl+alt+t…">
-        <button onclick="sendKey()">Press</button></div>
-      <div class="grid3" style="margin-top:6px">
-        <button onclick="k('Return')">Enter</button>
-        <button onclick="k('Escape')">Esc</button>
-        <button onclick="k('Tab')">Tab</button>
-        <button onclick="k('BackSpace')">Back</button>
-        <button onclick="k('super')">Super</button>
-        <button onclick="k('ctrl+alt+t')">⎋ Term</button>
-      </div>
+    <h3>Quick keys</h3>
+    <div class="row">
+      <input type="text" id="key" placeholder="Return, ctrl+alt+t, super+d…">
+      <button onclick="sendKey()">Press</button>
     </div>
-    <div>
-      <h3>Mouse</h3>
-      <div class="meta">Move the cursor over the screen above; mousedown/up and scroll are forwarded live.<br>
-        To click without moving: fill x/y below.</div>
-      <div class="row" style="margin-top:6px">
-        <input type="text" id="cx" placeholder="x">
-        <input type="text" id="cy" placeholder="y">
-        <select id="cb"><option value="1">left</option><option value="2">mid</option><option value="3">right</option></select>
-        <button onclick="sendClick()">Click</button>
-      </div>
+    <div class="grid3">
+      <button onclick="k('Return')">Enter</button>
+      <button onclick="k('Escape')">Esc</button>
+      <button onclick="k('Tab')">Tab</button>
+      <button onclick="k('BackSpace')">Back</button>
+      <button onclick="k('super')">Super</button>
+      <button onclick="k('ctrl+alt+t')">⎋ Term</button>
+      <button onclick="k('alt+F4')">Alt+F4</button>
+      <button onclick="k('super+d')">Show Desktop</button>
+      <button onclick="k('ctrl+alt+Delete')">C+A+Del</button>
     </div>
-    <div>
-      <h3>Log</h3>
-      <div class="log" id="log">ready</div>
+    <h3>Shell</h3>
+    <div class="row">
+      <input type="text" id="cmd" placeholder="shell command (needs PC password)">
+      <button onclick="runCmd()">Run</button>
     </div>
-  </aside>
+    <div class="shell" id="shellout">$ _</div>
+  </div>
+
+  <!-- ─── Right: Clipboard + processes + keyboard grab info ───────────── -->
+  <div class="col">
+    <h3>Keyboard grab</h3>
+    <div style="font-size:12px;color:var(--mute)">
+      Press <b>⌨ Capture keyboard</b> above and every key you press is forwarded to the remote PC.<br>
+      Exit chord: <span class="kbd">L-Ctrl</span> + <span class="kbd">L-Alt</span> + <span class="kbd">R-Shift</span> + <span class="kbd">.</span>
+    </div>
+    <h3>Clipboard (remote)</h3>
+    <textarea id="clip" placeholder="Remote clipboard contents…"></textarea>
+    <div class="row">
+      <button onclick="getClip()">Read</button>
+      <button onclick="setClip()">Write</button>
+    </div>
+    <h3>Top processes</h3>
+    <div class="procs"><table id="procs"><tbody></tbody></table></div>
+  </div>
 </div>
+
 <script>
 const PW = __PW_JSON__;
-
-// ─── rendering: double-buffered image swap ────────────────────────────────
-const imgs = [document.getElementById('shotA'), document.getElementById('shotB')];
-let front = 0;  // which img is currently visible
-const ov = document.getElementById('ov');
-let natW = 0, natH = 0;
-
-function swapTo(b64DataUrlOrUrl){
-  // Preload onto the back buffer, then reveal it and hide the front buffer.
-  // This removes the previous frame right before the next appears — no ghost.
-  const back = imgs[1 - front];
-  const next = () => {
-    natW = back.naturalWidth || natW;
-    natH = back.naturalHeight || natH;
-    imgs[front].style.display = 'none';
-    imgs[front].src = '';
-    back.style.display = 'block';
-    front = 1 - front;
-  };
-  back.onload = next;
-  back.onerror = () => { logMsg('img load err'); };
-  back.src = b64DataUrlOrUrl;
-}
-
-// ─── api helpers ──────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
 function ts(){return new Date().toLocaleTimeString();}
-function logMsg(m){const el=document.getElementById('log');el.textContent=ts()+'  '+m+'\\n'+el.textContent;}
+function logMsg(m){const el=$('log');el.textContent=ts()+'  '+m+'\\n'+el.textContent;}
+
 async function api(action, extra){
   const body = Object.assign({action, password: PW}, extra||{});
-  const r = await fetch('/v4/_rdp', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const r = await fetch('/v4/_rdp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const j = await r.json().catch(()=>({error:{message:'bad json'}}));
   return {code:r.status, j};
 }
 
-// ─── screenshot loop ──────────────────────────────────────────────────────
-let inFlight = false, lastFrameMs = 0;
-async function shot(){
-  if (inFlight) return;
-  inFlight = true;
-  const t0 = performance.now();
-  try {
-    const {code, j} = await api('screenshot');
-    if (code !== 200) { logMsg('shot '+code+': '+(j.error&&j.error.message||'err')); return; }
-    swapTo(j.url + '&t=' + Date.now());
-    const took = Math.round(performance.now() - t0);
-    lastFrameMs = took;
-    document.getElementById('st-last').textContent = took + 'ms';
-    document.getElementById('st-eng').textContent = 'engine '+(j.engine||'?');
-    document.getElementById('st-dpy').textContent = 'DISPLAY='+(j.display||'-');
-    ov.textContent = natW+'×'+natH+'  ·  '+took+'ms  ·  '+j.engine;
-  } catch(e) { logMsg('err '+e); }
-  finally { inFlight = false; }
+// ─── polling loop ─────────────────────────────────────────────────────────
+const rateEl = $('rate'), ratevEl = $('ratev');
+function rateMs(){ return +rateEl.value || 1000; }
+rateEl.addEventListener('input', ()=> ratevEl.textContent = (rateMs()/1000).toFixed(1)+' s');
+ratevEl.textContent = (rateMs()/1000).toFixed(1)+' s';
+
+let activeId = null;
+
+async function refreshAll(){
+  // active window
+  const a = (await api('active')).j;
+  if (a && a.window_id){
+    activeId = a.window_id;
+    $('actTitle').textContent = a.title || '(untitled)';
+    const g = a.geometry || {};
+    $('actMeta').textContent =
+      `id=${a.window_id}  pid=${a.pid||'?'}  geom=${g.x||0},${g.y||0} ${g.w||0}×${g.h||0}`;
+    $('st-active').textContent = 'active: ' + (a.title||'').slice(0,60);
+  }
+  // windows list
+  const w = (await api('windows')).j;
+  const wins = (w && w.windows) || [];
+  $('winct').textContent = `(${wins.length})`;
+  const box = $('wins');
+  box.innerHTML = '';
+  for (const win of wins){
+    const div = document.createElement('div');
+    div.className = 'win' + (win.id === activeId ? ' active' : '');
+    const t = document.createElement('div'); t.className = 't'; t.textContent = win.title||'(untitled)';
+    const m = document.createElement('div'); m.className = 'm';
+    m.textContent = (win.w? `${win.w}×${win.h}  ` : '') + (win.pid? `pid ${win.pid}` : '');
+    div.appendChild(t); div.appendChild(m);
+    div.onclick = async ()=>{
+      const r = await api('activate', {id: win.id});
+      logMsg('activate '+win.id+' · '+(r.j.ok?'ok':'FAIL'));
+      refreshAll();
+    };
+    box.appendChild(div);
+  }
+  // cursor
+  const c = (await api('cursor')).j;
+  if (c && c.x !== null){
+    $('st-cur').textContent = `cursor ${c.x},${c.y}`;
+    $('curline').textContent = `x=${c.x}  y=${c.y}  screen=${c.screen}  window=${c.window}`;
+  }
 }
 
-// Adjustable SPS (screenshots per second), 1..30
-const spsEl = document.getElementById('sps');
-const spsvEl = document.getElementById('spsv');
-function currentSps(){ return +spsEl.value || 15; }
-spsEl.addEventListener('input', () => spsvEl.textContent = currentSps()+' sps');
-spsvEl.textContent = currentSps()+' sps';
+async function refreshProcs(){
+  const p = (await api('processes',{limit:25})).j;
+  const tb = $('procs').querySelector('tbody');
+  tb.innerHTML = '';
+  for (const r of (p.processes||[])){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.pid}</td><td class="c">${r.cpu.toFixed(1)}</td>`
+                 + `<td class="m">${r.mem.toFixed(1)}</td><td>${r.cmd.slice(0,40)}</td>`;
+    tb.appendChild(tr);
+  }
+}
 
 (async function loop(){
-  while (true) {
-    const on = document.getElementById('auto').checked;
-    const sps = currentSps();
-    const interval = Math.max(30, Math.floor(1000/sps));  // 30ms floor (~33 fps)
-    if (on) { await shot(); }
-    await new Promise(r => setTimeout(r, interval));
+  while (true){
+    const on = $('auto').checked;
+    const ms = rateMs();
+    if (on){
+      try { await refreshAll(); } catch(e){ logMsg('poll err '+e); }
+    }
+    await new Promise(r=>setTimeout(r, ms));
+  }
+})();
+// processes poll — slower by design
+(async function procLoop(){
+  while (true){
+    if ($('auto').checked){
+      try { await refreshProcs(); } catch{}
+    }
+    await new Promise(r=>setTimeout(r, Math.max(2000, rateMs()*2)));
   }
 })();
 
-// ─── mouse capture (move + down/up + wheel + click-on-image) ──────────────
-const box = document.getElementById('shotbox');
-let mouseInside = false;
-let lastMoveSent = 0;
-const MOVE_THROTTLE_MS = 60;  // don't flood server; ~16 moves/sec max
-
-function imgCoords(ev){
-  const img = imgs[front];
-  const r = img.getBoundingClientRect();
-  if (r.width <= 0 || !img.naturalWidth) return null;
-  const sx = Math.round((ev.clientX - r.left) * (img.naturalWidth  / r.width));
-  const sy = Math.round((ev.clientY - r.top)  * (img.naturalHeight / r.height));
-  if (sx < 0 || sy < 0 || sx > img.naturalWidth || sy > img.naturalHeight) return null;
-  return {x: sx, y: sy};
-}
-
-box.addEventListener('mouseenter', () => { mouseInside = true; });
-box.addEventListener('mouseleave', () => { mouseInside = false; });
-box.addEventListener('contextmenu', ev => { ev.preventDefault(); });
-box.addEventListener('mousemove', ev => {
-  if (!mouseInside) return;
-  const now = performance.now();
-  if (now - lastMoveSent < MOVE_THROTTLE_MS) return;
-  const p = imgCoords(ev); if (!p) return;
-  lastMoveSent = now;
-  api('mousemove', p).catch(()=>{});
-});
-box.addEventListener('mousedown', ev => {
-  ev.preventDefault();
-  const p = imgCoords(ev) || {};
-  const btn = ev.button === 2 ? 3 : ev.button === 1 ? 2 : 1;
-  api('mousedown', Object.assign({button:btn}, p));
-});
-box.addEventListener('mouseup', ev => {
-  ev.preventDefault();
-  const p = imgCoords(ev) || {};
-  const btn = ev.button === 2 ? 3 : ev.button === 1 ? 2 : 1;
-  api('mouseup', Object.assign({button:btn}, p));
-});
-box.addEventListener('wheel', ev => {
-  ev.preventDefault();
-  api('scroll', {dy: ev.deltaY});
-}, {passive:false});
-
-// ─── text / key / manual click buttons ─────────────────────────────────────
+// ─── actions ──────────────────────────────────────────────────────────────
 async function sendType(){
-  const t = document.getElementById('text').value; if (!t) return;
+  const t = $('text').value; if (!t) return;
   const {j} = await api('type', {text:t});
   logMsg('type '+t.length+'c · '+(j.ok?'ok':('FAIL '+(j.stderr||''))));
 }
 async function sendKey(){
-  const v = document.getElementById('key').value; if (!v) return;
+  const v = $('key').value; if (!v) return;
   const {j} = await api('key', {key:v});
   logMsg('key '+v+' · '+(j.ok?'ok':('FAIL '+(j.stderr||''))));
 }
@@ -22087,18 +22088,37 @@ async function k(combo){
   const {j} = await api('key', {key:combo});
   logMsg('key '+combo+' · '+(j.ok?'ok':('FAIL '+(j.stderr||''))));
 }
-async function sendClick(){
-  const x = +document.getElementById('cx').value || 0;
-  const y = +document.getElementById('cy').value || 0;
-  const btn = +document.getElementById('cb').value || 1;
-  const {j} = await api('click', {x, y, button:btn});
-  logMsg('click '+x+','+y+' b'+btn+' · '+(j.ok?'ok':('FAIL '+(j.stderr||''))));
+async function getClip(){
+  const {j} = await api('clipboard_get');
+  $('clip').value = j.text||'';
+  logMsg('clip read '+(j.bytes||0)+' bytes');
+}
+async function setClip(){
+  const txt = $('clip').value;
+  const {j} = await api('clipboard_set', {text: txt});
+  logMsg('clip write '+(j.bytes||0)+' bytes');
+}
+async function pasteFromClipboard(){
+  // First ensure remote clipboard has our typed text, then ctrl+v
+  const txt = $('text').value || '';
+  if (txt){ await api('clipboard_set', {text: txt}); }
+  await api('key', {key:'ctrl+v'});
+  logMsg('paste '+txt.length+' chars via ctrl+v');
+}
+async function runCmd(){
+  const c = $('cmd').value.trim(); if (!c) return;
+  const out = $('shellout');
+  out.textContent = '$ '+c+'\\n…running…';
+  const r = await fetch('/v4/run',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({cmd:c, password:PW, timeout:15})});
+  const j = await r.json().catch(()=>({}));
+  out.textContent = '$ '+c+'\\n'+(j.stdout||'')+(j.stderr?'\\n[stderr]\\n'+j.stderr:'')+`\\nrc=${j.rc??'?'}`;
+  logMsg('cmd rc='+(j.rc??'?'));
 }
 
 // ─── keyboard grab ────────────────────────────────────────────────────────
 let kbGrabbed = false;
-const held = new Set();   // event.code for currently pressed keys
-
+const held = new Set();
 function kbCode(ev){
   const c = ev.code || "";
   if (/^Key[A-Z]$/.test(c))  return c.slice(3).toLowerCase();
@@ -22115,72 +22135,58 @@ function kbCode(ev){
     BracketLeft:'bracketleft', BracketRight:'bracketright', Backslash:'backslash',
     CapsLock:'Caps_Lock', ContextMenu:'Menu',
     NumpadAdd:'KP_Add', NumpadSubtract:'KP_Subtract',
-    NumpadMultiply:'KP_Multiply', NumpadDivide:'KP_Divide',
-    NumpadDecimal:'KP_Decimal'
+    NumpadMultiply:'KP_Multiply', NumpadDivide:'KP_Divide', NumpadDecimal:'KP_Decimal'
   };
   return map[c] || null;
 }
-
 function toggleKbGrab(){
   kbGrabbed = !kbGrabbed;
-  const btn = document.getElementById('kbBtn');
-  if (kbGrabbed) {
-    btn.className = 'grabbed';
-    btn.textContent = '⌨ grabbed — L-Ctrl+L-Alt+R-Shift+. to release';
-    held.clear();
-    logMsg('keyboard grabbed');
+  const b = $('kbBtn');
+  if (kbGrabbed){
+    b.className='grabbed';
+    b.textContent='⌨ grabbed — L-Ctrl+L-Alt+R-Shift+. to release';
+    held.clear(); logMsg('keyboard grabbed');
   } else {
-    btn.className = 'ghost';
-    btn.textContent = '⌨ Capture keyboard';
-    held.clear();
-    logMsg('keyboard released');
+    b.className='ghost'; b.textContent='⌨ Capture keyboard';
+    held.clear(); logMsg('keyboard released');
   }
 }
-
-window.addEventListener('keydown', ev => {
+window.addEventListener('keydown', ev=>{
   if (!kbGrabbed) return;
   held.add(ev.code);
-  // Exit chord: LCtrl + LAlt + RShift + Period
   if (held.has('ControlLeft') && held.has('AltLeft') &&
-      held.has('ShiftRight')  && held.has('Period')) {
-    ev.preventDefault();
-    toggleKbGrab();
-    return;
+      held.has('ShiftRight')  && held.has('Period')){
+    ev.preventDefault(); toggleKbGrab(); return;
   }
-  // Don't forward pure modifier keys (they'd be redundant)
   if (['ControlLeft','ControlRight','AltLeft','AltRight',
-       'ShiftLeft','ShiftRight','MetaLeft','MetaRight'].includes(ev.code)) {
-    ev.preventDefault();
-    return;
+       'ShiftLeft','ShiftRight','MetaLeft','MetaRight'].includes(ev.code)){
+    ev.preventDefault(); return;
   }
   ev.preventDefault();
-  const base = kbCode(ev);
-  if (!base) return;
-  const mods = [];
+  const base = kbCode(ev); if (!base) return;
+  const mods=[];
   if (ev.ctrlKey)  mods.push('ctrl');
   if (ev.altKey)   mods.push('alt');
   if (ev.shiftKey) mods.push('shift');
   if (ev.metaKey)  mods.push('super');
-  api('key', {key: mods.concat(base).join('+')});
+  api('key',{key: mods.concat(base).join('+')});
 }, true);
-
-window.addEventListener('keyup', ev => {
+window.addEventListener('keyup', ev=>{
   if (!kbGrabbed) return;
-  held.delete(ev.code);
-  ev.preventDefault();
+  held.delete(ev.code); ev.preventDefault();
 }, true);
+window.addEventListener('blur', ()=>held.clear());
 
-window.addEventListener('blur', () => { held.clear(); });
-
-// Initial kick: one shot + info request
-(async () => {
+// Initial info
+(async()=>{
   const {j} = await api('info');
-  if (j && j.dimensions) logMsg('info: '+j.dimensions+' · control='+(j.control_works?'OK':'broken: '+(j.control_err||'')));
-  if (j && j.control_works === false) {
-    document.getElementById('st-ts').className = 'pill warn';
-    document.getElementById('st-ts').textContent = 'control broken — see log';
+  if (j && j.display) $('st-dpy').textContent = 'DISPLAY='+j.display;
+  if (j && j.control_works === false){
+    $('st-ts').className = 'pill warn';
+    $('st-ts').textContent = 'control broken — see log';
+    logMsg('control err: '+(j.control_err||''));
   }
-  shot();
+  refreshAll(); refreshProcs();
 })();
 </script>
 </body></html>"""
@@ -22444,9 +22450,180 @@ def v4_post_rdp(h, hdrs, qs):
         return (200, _env(t0, request_id=req_id,
                           action="keys_sequence", count=len(seq), ok=ok,
                           errors=errs[:5]))
+
+    # ── screenshot-free desktop state actions ─────────────────────────────
+    if action == "windows":
+        wmctrl = shutil.which("wmctrl")
+        out = []
+        if wmctrl:
+            r = subprocess.run([wmctrl, "-l", "-G", "-p"],
+                               capture_output=True, text=True, timeout=3, env=env)
+            for line in (r.stdout or "").splitlines():
+                # wmctrl format:  WID  DESK  PID  X  Y  W  H  HOST  TITLE
+                parts = line.split(None, 8)
+                if len(parts) >= 9:
+                    out.append({"id": parts[0], "desktop": int(parts[1]),
+                                "pid": int(parts[2]),
+                                "x": int(parts[3]), "y": int(parts[4]),
+                                "w": int(parts[5]), "h": int(parts[6]),
+                                "host": parts[7], "title": parts[8]})
+        else:
+            # Fall back to xdotool — less detail, just IDs + names
+            r = subprocess.run([ctl, "search", "--onlyvisible", "--name", ""],
+                               capture_output=True, text=True, timeout=3, env=env)
+            for wid in (r.stdout or "").split():
+                try:
+                    n = subprocess.run([ctl, "getwindowname", wid],
+                                       capture_output=True, text=True, timeout=1, env=env)
+                    out.append({"id": wid, "title": (n.stdout or "").strip()})
+                except Exception: pass
+        return (200, _env(t0, request_id=req_id,
+                          action="windows", windows=out, count=len(out),
+                          tool=("wmctrl" if wmctrl else "xdotool")))
+
+    if action == "active":
+        wid = None; name = ""; geom = None; pid = None
+        try:
+            r = subprocess.run([ctl, "getactivewindow"],
+                               capture_output=True, text=True, timeout=2, env=env)
+            wid = (r.stdout or "").strip() or None
+            if wid:
+                n = subprocess.run([ctl, "getwindowname", wid],
+                                   capture_output=True, text=True, timeout=2, env=env)
+                name = (n.stdout or "").strip()
+                g = subprocess.run([ctl, "getwindowgeometry", wid],
+                                   capture_output=True, text=True, timeout=2, env=env)
+                # parse "Position: X,Y  Geometry: WxH"
+                pos = re.search(r"Position:\s*(\d+),(\d+)", g.stdout or "")
+                sz  = re.search(r"Geometry:\s*(\d+)x(\d+)", g.stdout or "")
+                if pos and sz:
+                    geom = {"x": int(pos.group(1)), "y": int(pos.group(2)),
+                            "w": int(sz.group(1)),  "h": int(sz.group(2))}
+                p = subprocess.run([ctl, "getwindowpid", wid],
+                                   capture_output=True, text=True, timeout=2, env=env)
+                try: pid = int((p.stdout or "").strip())
+                except Exception: pid = None
+        except Exception: pass
+        return (200, _env(t0, request_id=req_id,
+                          action="active", window_id=wid, title=name,
+                          geometry=geom, pid=pid))
+
+    if action == "cursor":
+        r = subprocess.run([ctl, "getmouselocation", "--shell"],
+                           capture_output=True, text=True, timeout=2, env=env)
+        d = {"x": None, "y": None, "screen": None, "window": None}
+        for line in (r.stdout or "").splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1); k = k.strip(); v = v.strip()
+                if k == "X": d["x"] = int(v)
+                elif k == "Y": d["y"] = int(v)
+                elif k == "SCREEN": d["screen"] = int(v)
+                elif k == "WINDOW": d["window"] = v
+        return (200, _env(t0, request_id=req_id, action="cursor", **d))
+
+    if action == "activate":
+        wid = b.get("id") or b.get("window_id") or ""
+        title = b.get("title") or ""
+        if not wid and not title:
+            return (400, _err("missing_input", "need id or title", req_id))
+        if wid:
+            r = subprocess.run([ctl, "windowactivate", "--sync", str(wid)],
+                               capture_output=True, text=True, timeout=3, env=env)
+        else:
+            r = subprocess.run([ctl, "search", "--name", title,
+                                "windowactivate", "--sync"],
+                               capture_output=True, text=True, timeout=3, env=env)
+        return (200, _env(t0, request_id=req_id, action="activate",
+                          window_id=wid or None, title=title or None,
+                          ok=r.returncode == 0,
+                          stderr=(r.stderr or "")[:200]))
+
+    if action == "clipboard_get":
+        for sel in ("clipboard", "primary"):
+            tool = shutil.which("xclip") or shutil.which("xsel")
+            if not tool: break
+            try:
+                if tool.endswith("xclip"):
+                    r = subprocess.run([tool, "-selection", sel, "-o"],
+                                       capture_output=True, text=True, timeout=2, env=env)
+                else:
+                    r = subprocess.run([tool, "--output",
+                                        "--clipboard" if sel == "clipboard" else "--primary"],
+                                       capture_output=True, text=True, timeout=2, env=env)
+                if r.returncode == 0:
+                    return (200, _env(t0, request_id=req_id,
+                                      action="clipboard_get", selection=sel,
+                                      tool=os.path.basename(tool),
+                                      text=r.stdout,
+                                      bytes=len(r.stdout)))
+            except Exception: pass
+        return (500, _err("no_clipboard_tool", "install xclip or xsel", req_id))
+
+    if action == "clipboard_set":
+        text = b.get("text", "")
+        if text is None: text = ""
+        tool = shutil.which("xclip") or shutil.which("xsel")
+        if not tool: return (500, _err("no_clipboard_tool", "install xclip or xsel", req_id))
+        try:
+            if tool.endswith("xclip"):
+                p = subprocess.Popen([tool, "-selection", "clipboard"],
+                                     stdin=subprocess.PIPE, env=env)
+            else:
+                p = subprocess.Popen([tool, "--input", "--clipboard"],
+                                     stdin=subprocess.PIPE, env=env)
+            p.communicate(input=text.encode(), timeout=5)
+            return (200, _env(t0, request_id=req_id,
+                              action="clipboard_set",
+                              tool=os.path.basename(tool), bytes=len(text)))
+        except Exception as e:
+            return (500, _err("clipboard_set_failed", str(e), req_id))
+
+    if action == "processes":
+        top = max(5, min(100, int(b.get("limit", 25) or 25)))
+        try:
+            r = subprocess.run(["ps", "-eo", "pid,pcpu,pmem,comm", "--sort=-pcpu"],
+                               capture_output=True, text=True, timeout=3, env=env)
+            rows = []
+            for line in (r.stdout or "").splitlines()[1:top + 1]:
+                parts = line.strip().split(None, 3)
+                if len(parts) == 4:
+                    rows.append({"pid": int(parts[0]),
+                                 "cpu": float(parts[1]),
+                                 "mem": float(parts[2]),
+                                 "cmd": parts[3]})
+            return (200, _env(t0, request_id=req_id,
+                              action="processes", processes=rows,
+                              count=len(rows)))
+        except Exception as e:
+            return (500, _err("ps_failed", str(e), req_id))
+
+    if action == "volume":
+        # Best-effort master volume via amixer / pactl / osascript
+        get = bool(b.get("get", True))
+        set_pct = b.get("set")
+        mute = b.get("mute")
+        try:
+            if shutil.which("pactl"):
+                if set_pct is not None:
+                    subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@",
+                                    f"{int(set_pct)}%"], timeout=3, env=env)
+                if mute is not None:
+                    subprocess.run(["pactl", "set-sink-mute", "@DEFAULT_SINK@",
+                                    "1" if mute else "0"], timeout=3, env=env)
+                r = subprocess.run(["pactl", "get-sink-volume", "@DEFAULT_SINK@"],
+                                   capture_output=True, text=True, timeout=3, env=env)
+                m = re.search(r"(\d+)%", r.stdout or "")
+                pct = int(m.group(1)) if m else None
+                return (200, _env(t0, request_id=req_id,
+                                  action="volume", percent=pct, tool="pactl"))
+        except Exception: pass
+        return (404, _err("no_volume_tool", "no volume control tool found", req_id))
+
     return (400, _err("unknown_action",
                       "expected action: info|screenshot|type|key|keys_sequence|"
-                      "click|mousedown|mouseup|mousemove|scroll",
+                      "click|mousedown|mouseup|mousemove|scroll|"
+                      "windows|active|cursor|activate|clipboard_get|clipboard_set|"
+                      "processes|volume",
                       req_id))
 
 
