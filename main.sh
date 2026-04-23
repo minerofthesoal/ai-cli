@@ -12,7 +12,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.2.1.3"
+VERSION="3.2.1.4"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -14609,6 +14609,7 @@ $(cat)" ;;
     agent|loop|auto)                cmd_agent "$@" ;;
     rag-quick|rq|quick-rag)         cmd_rag_quick "$@" ;;
     hy|hypernix)                    cmd_hy "$@" ;;
+    rdp|remote|remote-desktop)      cmd_rdp "$@" ;;
 
     # ── GUI / GUI+ / Bench / Serve ────────────────────────────────────────────
     -gui|--gui|gui)            cmd_gui ;;
@@ -19595,6 +19596,82 @@ ANSWER:"
   dispatch_ask "$prompt"
 }
 
+cmd_rdp() {
+  # Shortcut: print (and optionally open) the remote-desktop URL.
+  #   ai rdp              → prints the URL + password hint
+  #   ai rdp open         → also tries to open it via xdg-open / open
+  #   ai rdp url          → just the raw URL
+  #   ai rdp status       → server + tailscale status
+  #   ai rdp passwd PW    → set the PC password (alias for ai -apip PW)
+  local sub="${1:-url}"
+  local cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ai-cli"
+  local pid_file="$cfg_dir/api.pid"
+  local port; port=$(
+    [[ -f "$cfg_dir/api.port" ]] && cat "$cfg_dir/api.port" 2>/dev/null || echo "${API_PORT:-8080}"
+  )
+  local host="localhost"
+  if command -v tailscale >/dev/null 2>&1; then
+    local ts; ts=$(tailscale ip -4 2>/dev/null | head -1 | tr -d '[:space:]')
+    [[ -n "$ts" ]] && host="$ts"
+  fi
+  local url="http://${host}:${port}/v4/_rdp"
+  case "$sub" in
+    help|-h|--help)
+      cat <<EOF
+Usage: ai rdp <subcommand>
+  url            Print the /v4/_rdp URL (default)
+  open           Print + open in browser (xdg-open / open / start)
+  status         Server + tailscale + password status
+  passwd PW      Set PC password used by the RDP panel (max 8 chars)
+
+URL: ${url}
+EOF
+      ;;
+    url|"") echo "$url" ;;
+    open)
+      echo "$url"
+      if   command -v xdg-open >/dev/null 2>&1; then xdg-open "$url" >/dev/null 2>&1 &
+      elif command -v open     >/dev/null 2>&1; then open     "$url" >/dev/null 2>&1 &
+      elif command -v start    >/dev/null 2>&1; then start    "$url" >/dev/null 2>&1 &
+      else err "No URL opener found (xdg-open / open / start)"; return 1
+      fi
+      ok "Opened in browser"
+      ;;
+    status)
+      local running=0 pw_set=0
+      if [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file" 2>/dev/null)" 2>/dev/null; then
+        running=1
+      fi
+      [[ -s "$cfg_dir/.api_terminal_pw" ]] && pw_set=1
+      echo "  API server:  $([[ $running -eq 1 ]] && echo 'running' || echo 'not running — run: ai api start')"
+      echo "  Port:        $port"
+      echo "  Host:        $host"
+      echo "  PC password: $([[ $pw_set -eq 1 ]] && echo 'set' || echo 'NOT SET — run: ai rdp passwd YOURPW')"
+      if command -v tailscale >/dev/null 2>&1; then
+        local up ip
+        up=$(tailscale status --json 2>/dev/null | grep -c '"BackendState":"Running"' || true)
+        ip=$(tailscale ip -4 2>/dev/null | head -1 | tr -d '[:space:]')
+        echo "  Tailscale:   $([[ $up -gt 0 ]] && echo "up ($ip)" || echo 'not running — run: sudo tailscale up')"
+      else
+        echo "  Tailscale:   not installed — run: sudo pacman -S tailscale / apt install tailscale"
+      fi
+      echo "  URL:         $url"
+      ;;
+    passwd|password|pw)
+      local pw="${2:-}"
+      [[ -z "$pw" ]] && { err "Usage: ai rdp passwd <password>"; return 1; }
+      mkdir -p "$cfg_dir"
+      echo -n "$pw" > "$cfg_dir/.api_terminal_pw"
+      chmod 600 "$cfg_dir/.api_terminal_pw" 2>/dev/null
+      ok "PC password set (length ${#pw}). Visit: ${url}?password=${pw}"
+      ;;
+    *)
+      err "Unknown rdp subcommand: $sub"
+      cmd_rdp help
+      return 1 ;;
+  esac
+}
+
 cmd_hy() {
   # HyperNix integration — https://pypi.org/project/hypernix/
   # Full toolkit wrapper: chat, generate, download, convert, quantize,
@@ -20000,9 +20077,28 @@ cmd_api_v3() {
     start)
       local port="${API_PORT:-8080}" host="${API_HOST:-0.0.0.0}"
       while [[ $# -gt 0 ]]; do
-        case "$1" in --port) port="$2"; shift 2 ;; --host) host="$2"; shift 2 ;; --public) host="0.0.0.0"; shift ;; --tailscale|--ts) local ts; ts=$(tailscale ip -4 2>/dev/null); [[ -n "$ts" ]] && host="$ts" && info "Tailscale: $ts"; shift ;; *) shift ;; esac
+        case "$1" in
+          --port) port="$2"; shift 2 ;;
+          --host) host="$2"; shift 2 ;;
+          --public) host="0.0.0.0"; shift ;;
+          --tailscale|--ts)
+            if ! command -v tailscale >/dev/null 2>&1; then
+              err "--tailscale: tailscale not installed — run: sudo pacman -S tailscale / apt install tailscale"
+              info "Falling back to ${host}"
+            else
+              local ts; ts=$(tailscale ip -4 2>/dev/null | head -1 | tr -d '[:space:]')
+              if [[ -z "$ts" ]]; then
+                err "--tailscale: tailscale daemon isn't up — run: sudo tailscale up"
+                info "Falling back to ${host}"
+              else
+                host="$ts"; info "Tailscale: $ts"
+              fi
+            fi
+            shift ;;
+          *) shift ;;
+        esac
       done
-      [[ -z "$PYTHON" ]] && { err "Python required"; return 0; }
+      [[ -z "$PYTHON" ]] && { err "Python required — run: ai install-deps"; return 1; }
       if [[ -f "$API_PID_FILE" ]] && kill -0 "$(cat "$API_PID_FILE" 2>/dev/null)" 2>/dev/null; then
         warn "Already running"; return 0
       fi
@@ -20561,6 +20657,23 @@ def get_dash_html():
         "function shareStop(){j('/v4/share',{action:'stop'},function(d){put('shOut',d);shareStatus()})}"
         "function ttsSay(){var t=document.getElementById('vT').value;"
         "j('/v3/voice/tts',{text:t},function(d){put('vOut',d)})}"
+        # Remote Desktop tab helpers
+        "function rdpOpen(){var p=document.getElementById('rdpPw').value;"
+        "if(!p){put('rdpOut','Error: enter the PC password first');return}"
+        "var u='/v4/_rdp?password='+encodeURIComponent(p);"
+        "put('rdpOut','Opening '+u+' in new tab...');"
+        "window.open(u,'_blank')}"
+        "function rdpStatus(){j('/v4/health',null,function(d){"
+        "var msg='API: '+d.status+'\\nversion: '+d.version+'\\nuptime: '+d.uptime_sec+'s';"
+        "put('rdpOut',msg)})}"
+        "function _rdpPw(){return document.getElementById('rdpPw').value||''}"
+        "function rdpNotify(){var t=document.getElementById('rdpNotif').value;"
+        "j('/v4/_rdp',{action:'notify',summary:'ai-cli dashboard',body:t,password:_rdpPw()},"
+        "function(d){put('rdpQOut',d)})}"
+        "function rdpLaunch(){var a=document.getElementById('rdpApp').value;"
+        "j('/v4/_rdp',{action:'launch',app:a,password:_rdpPw()},function(d){put('rdpQOut',d)})}"
+        "function rdpLock(){if(!confirm('Lock the screen?'))return;"
+        "j('/v4/_rdp',{action:'lock',password:_rdpPw()},function(d){put('rdpQOut',d)})}"
     )
     # endpoints browser
     js_parts.append(
@@ -20591,6 +20704,7 @@ def get_dash_html():
         ("Chat", 0), ("Status", 1), ("Models", 2), ("Keys", 3),
         ("History", 4), ("Tools", 5), ("Agent", 6), ("Voice", 7),
         ("RAG", 8), ("Share", 9), ("API Docs", 10), ("Terminal", 11),
+        ("🖥 Remote", 12),
     ]
 
     h = ["<!DOCTYPE html><html><head><meta charset=utf-8><title>AI CLI v", VERSION,
@@ -20774,6 +20888,36 @@ def get_dash_html():
         "<span style='color:#00ff41;padding:10px'>$</span>"
         "<input type=text id=tcmd placeholder=Command... style=font-family:monospace>"
         "<button class=b onclick=texec()>Run</button></div></div></div>"
+    )
+
+    # Tab 12: Remote Desktop (link-only; the full UI is at /v4/_rdp and
+    # requires the PC password as a query parameter for security).
+    h.append(
+        "<div id=p12 class=p><h3>🖥 Remote Desktop</h3>"
+        "<p style='color:#a6adc8'>Full remote-control panel at <code>/v4/_rdp</code>. "
+        "Requires the PC password (<code>ai -apip PW</code> or <code>ai rdp passwd PW</code>) "
+        "and an active Tailscale connection from a tailnet IP.</p>"
+        "<div class=row>"
+        "<input type=password id=rdpPw placeholder='PC password (max 8 chars)' maxlength=8 "
+        "style=max-width:260px>"
+        "<button class='b g' onclick=rdpOpen()>Open Remote Desktop</button>"
+        "<button class='b bs' onclick=rdpStatus()>Status</button>"
+        "</div>"
+        "<pre id=rdpOut class=o>(enter password and click Open)</pre>"
+        "<h3 style=margin-top:14px>Quick actions (no password prompt)</h3>"
+        "<div class=row>"
+        "<input type=text id=rdpNotif placeholder='notification text'>"
+        "<button class='b bs' onclick=rdpNotify()>Notify</button>"
+        "</div>"
+        "<div class=row>"
+        "<input type=text id=rdpApp placeholder='launch app (e.g. firefox)'>"
+        "<button class='b bs' onclick=rdpLaunch()>Launch</button>"
+        "</div>"
+        "<div class=row>"
+        "<button class='b r bs' onclick=rdpLock()>🔒 Lock screen</button>"
+        "</div>"
+        "<pre id=rdpQOut class=o></pre>"
+        "</div>"
     )
 
     h.append("<script>" + js + "\n")
@@ -22789,10 +22933,14 @@ let ptySid = null, ptyPoll = null;
 const ptyHistory = []; let ptyHistIdx = 0;
 
 function ptyEsc(s){
-  // Minimal ANSI strip for readability
-  return s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
-          .replace(/\x1b\]0;[^\x07]*\x07/g,'')
-          .replace(/\r(?!\n)/g,'');
+  // Minimal ANSI strip for readability. The backslashes in the regex
+  // source are doubled so Python's triple-quoted string passes a literal
+  // \\x1b / \\[ / \\] / \\x07 through to the JS regex parser (which then
+  // interprets \\x1b as the ESC byte). Without the doubling, Python 3.12
+  // raises SyntaxWarning: invalid escape sequence.
+  return s.replace(/\\x1b\\[[0-9;?]*[ -/]*[@-~]/g, '')
+          .replace(/\\x1b\\]0;[^\\x07]*\\x07/g,'')
+          .replace(/\\r(?!\\n)/g,'');
 }
 function ptyAppend(t){
   const el = $('ptyOut');
@@ -24577,20 +24725,35 @@ s = ThreadedHTTPServer((HOST, PORT), H)
 try: s.serve_forever()
 except KeyboardInterrupt: print("\nStopped")
 APIPY
+      local _api_log; _api_log=$(mktemp /tmp/ai_api_log_XXXX)
       AI_CLI_BIN="$_cli_bin" API_HOST="$host" API_PORT="$port" \
         AI_MODEL="${ACTIVE_MODEL:-auto}" AI_VERSION="$VERSION" \
-        "$PYTHON" "$_api_script" &
+        "$PYTHON" "$_api_script" >"$_api_log" 2>&1 &
       local pid=$!; echo "$pid" > "$API_PID_FILE"; sleep 1
       if kill -0 "$pid" 2>/dev/null; then
         ok "API v3 + v4 running on http://${host}:${port}"
-        info "Dashboard: http://${host}:${port}/v3/site"
-        info "Chat:      http://${host}:${port}/chat"
-        info "v4 health: http://${host}:${port}/v4/health"
-        info "v4 docs:   http://${host}:${port}/v4/endpoints"
-        info "Create v4 key:  ai api new-k \"my-key\" 500k"
-        info "Stop:      ai api stop"
+        info "Dashboard:       http://${host}:${port}/v3/site"
+        info "Chat:            http://${host}:${port}/chat"
+        info "Remote desktop:  http://${host}:${port}/v4/_rdp    (needs PC password + Tailscale)"
+        info "v4 health:       http://${host}:${port}/v4/health"
+        info "v4 docs:         http://${host}:${port}/v4/endpoints"
+        info "Create v4 key:   ai api new-k \"my-key\" 500k"
+        info "Public share:    ai share            (auto-downloads cloudflared)"
+        info "Server log:      $_api_log"
+        info "Stop:            ai api stop"
       else
-        err "Server failed to start"; rm -f "$API_PID_FILE" "$_api_script"
+        err "Server failed to start on ${host}:${port}"
+        if [[ -s "$_api_log" ]]; then
+          err "— server log (last 20 lines) —"
+          tail -n 20 "$_api_log" | sed 's/^/    /' >&2
+        fi
+        # Bind failure is the #1 cause — hint that the port might be taken
+        if grep -qE 'Address (already in use|in use)|Errno 98' "$_api_log" 2>/dev/null; then
+          info "Port ${port} is already bound. Stop the existing server first:"
+          info "    ai api stop    # or   fuser -k ${port}/tcp"
+        fi
+        rm -f "$API_PID_FILE" "$_api_script"
+        return 1
       fi ;;
     stop) [[ -f "$API_PID_FILE" ]] && { kill "$(cat "$API_PID_FILE")" 2>/dev/null; rm -f "$API_PID_FILE"; ok "Stopped"; } || info "Not running" ;;
     status) [[ -f "$API_PID_FILE" ]] && kill -0 "$(cat "$API_PID_FILE" 2>/dev/null)" 2>/dev/null && ok "Running" || info "Not running" ;;
