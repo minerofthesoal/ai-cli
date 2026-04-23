@@ -12,7 +12,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.2.1.0.2"
+VERSION="3.2.1.1"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -7512,26 +7512,42 @@ cmd_install_deps() {
       info "Detected APT (Debian/Ubuntu/Mint)..."
       sudo apt-get update -q 2>/dev/null || true
       sudo apt-get install -y -q python3 python3-pip python3-dev git cmake \
-        build-essential ffmpeg curl jq espeak libsndfile1 \
+        build-essential ffmpeg curl jq espeak-ng libsndfile1 \
         libssl-dev libffi-dev tk-dev 2>/dev/null || true
+      # RDP + automation (X11 + Wayland where available)
+      sudo apt-get install -y -q xdotool xclip xsel wmctrl scrot libnotify-bin \
+        wl-clipboard grim slurp ydotool 2>/dev/null || true
     elif command -v pacman &>/dev/null; then
       info "Detected Pacman (Arch/Manjaro/EndeavourOS)..."
       sudo pacman -Sy --noconfirm --needed 2>/dev/null || true
+      # Core build + python + media stack (Arch package names: espeak-ng not
+      # espeak, libsndfile not libsndfile1, python-pip not python3-pip, etc.)
       sudo pacman -S --noconfirm --needed \
         python python-pip git cmake base-devel \
-        ffmpeg curl jq espeak libsndfile \
-        openssl python-tkinter 2>/dev/null || true
-      # AUR helper for yay or paru (optional extras)
+        ffmpeg curl jq espeak-ng libsndfile \
+        openssl tk 2>/dev/null || true
+      # RDP + automation stack (X11 path). Wayland users get the second group.
+      sudo pacman -S --noconfirm --needed \
+        xdotool xclip xsel wmctrl scrot libnotify \
+        2>/dev/null || true
+      # Wayland / Hyprland / Sway friends — installed alongside on Arch because
+      # the same box often has both sessions available
+      sudo pacman -S --noconfirm --needed \
+        wl-clipboard grim slurp 2>/dev/null || true
+      # cloudflared is in AUR; try AUR helpers first, then fall back to the
+      # GitHub-hosted binary (handled later by _ensure_cloudflared).
       if command -v yay &>/dev/null; then
-        yay -S --noconfirm --needed python-soundfile 2>/dev/null || true
+        yay -S --noconfirm --needed python-soundfile cloudflared ydotool 2>/dev/null || true
       elif command -v paru &>/dev/null; then
-        paru -S --noconfirm --needed python-soundfile 2>/dev/null || true
+        paru -S --noconfirm --needed python-soundfile cloudflared ydotool 2>/dev/null || true
       fi
     elif command -v dnf &>/dev/null; then
       info "Detected DNF (Fedora/RHEL)..."
       sudo dnf install -y python3 python3-pip python3-devel git cmake \
-        gcc gcc-c++ ffmpeg curl jq espeak libsndfile-devel \
+        gcc gcc-c++ ffmpeg curl jq espeak-ng libsndfile-devel \
         openssl-devel python3-tkinter 2>/dev/null || true
+      sudo dnf install -y xdotool xclip xsel wmctrl scrot libnotify \
+        wl-clipboard grim slurp ydotool 2>/dev/null || true
     elif command -v zypper &>/dev/null; then
       info "Detected Zypper (openSUSE)..."
       sudo zypper install -y python3 python3-pip python3-devel git cmake \
@@ -19354,29 +19370,122 @@ _play_audio() {
 }
 
 # 2. ai share — create a public tunnel to the local API
+# Ensure `cloudflared` is available. Returns 0 if present after this call.
+# Downloads the static binary from GitHub if necessary (no account / login
+# needed for trycloudflare.com quick tunnels).
+_ensure_cloudflared() {
+  command -v cloudflared >/dev/null 2>&1 && return 0
+  local cfg_bin="${XDG_CONFIG_HOME:-$HOME/.config}/ai-cli/bin"
+  mkdir -p "$cfg_bin"
+  local target="$cfg_bin/cloudflared"
+  if [[ -x "$target" ]]; then
+    export PATH="$cfg_bin:$PATH"
+    return 0
+  fi
+  local arch os
+  arch=$(uname -m 2>/dev/null)
+  os=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
+  local asset=""
+  case "$os-$arch" in
+    linux-x86_64)  asset="cloudflared-linux-amd64" ;;
+    linux-aarch64) asset="cloudflared-linux-arm64" ;;
+    linux-armv7l)  asset="cloudflared-linux-arm" ;;
+    darwin-x86_64|darwin-arm64) asset="cloudflared-darwin-amd64.tgz" ;;
+    *) err "cloudflared: no prebuilt binary for $os-$arch"; return 1 ;;
+  esac
+  local url="https://github.com/cloudflare/cloudflared/releases/latest/download/$asset"
+  info "Downloading cloudflared → $target"
+  if [[ "$asset" == *.tgz ]]; then
+    local tmp; tmp=$(mktemp)
+    curl -fsSL "$url" -o "$tmp" || { err "download failed: $url"; rm -f "$tmp"; return 1; }
+    tar -xzf "$tmp" -C "$cfg_bin" cloudflared 2>/dev/null \
+      || { err "extract failed"; rm -f "$tmp"; return 1; }
+    rm -f "$tmp"
+  else
+    curl -fsSL "$url" -o "$target" || { err "download failed: $url"; return 1; }
+  fi
+  chmod +x "$target" 2>/dev/null
+  export PATH="$cfg_bin:$PATH"
+  command -v cloudflared >/dev/null 2>&1 || { err "cloudflared install failed"; return 1; }
+  return 0
+}
+
 cmd_share() {
-  local port="${1:-8080}"
-  if ! curl -sS "http://localhost:${port}/health" 2>/dev/null | grep -q ok; then
+  local port="${1:-8080}" provider="${2:-auto}"
+  local cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ai-cli"
+  mkdir -p "$cfg_dir"
+  local log="$cfg_dir/share.log"
+  local urlf="$cfg_dir/share.url"
+  local pidf="$cfg_dir/share.pid"
+
+  case "$port" in
+    stop|--stop|-s)
+      [[ -f "$pidf" ]] && kill "$(cat "$pidf")" 2>/dev/null
+      rm -f "$pidf" "$urlf"
+      ok "Share tunnel stopped"
+      return 0 ;;
+    url)
+      [[ -s "$urlf" ]] && { cat "$urlf"; return 0; } || { err "No active tunnel — run: ai share"; return 1; }
+      ;;
+  esac
+
+  # Spin up the API server if it isn't listening yet.
+  if ! curl -sS --max-time 2 "http://localhost:${port}/health" 2>/dev/null | grep -q ok; then
     warn "API server not running on port ${port} — starting it"
     cmd_api_v3 start --port "$port"
     sleep 1
   fi
-  if command -v cloudflared &>/dev/null; then
-    info "Opening Cloudflare tunnel to port ${port}..."
-    cloudflared tunnel --url "http://localhost:${port}" 2>&1 | tee "$CONFIG_DIR/share.log" | \
-      awk "/trycloudflare.com/ {print; exit} {print}"
-    info "Log: $CONFIG_DIR/share.log"
-  elif command -v ngrok &>/dev/null; then
-    info "Opening ngrok tunnel to port ${port}..."
-    ngrok http "$port"
-  elif command -v ssh &>/dev/null; then
-    info "Falling back to serveo.net via SSH (no auth)..."
-    ssh -o StrictHostKeyChecking=no -R "80:localhost:${port}" serveo.net
-  else
-    err "Install one of: cloudflared, ngrok, or use SSH to share"
-    echo "  cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/tunnel-guide/"
-    echo "  ngrok:       https://ngrok.com/download"
+
+  # Fail-quick if there's already a tunnel for this session
+  if [[ -f "$pidf" ]] && kill -0 "$(cat "$pidf" 2>/dev/null)" 2>/dev/null; then
+    if [[ -s "$urlf" ]]; then
+      ok "Share tunnel already running: $(cat "$urlf")"
+      info "Stop with: ai share stop"
+      return 0
+    fi
   fi
+
+  # Try cloudflared first (auto-install if missing); fall back to ngrok.
+  if [[ "$provider" == "cloudflared" || "$provider" == "auto" ]]; then
+    if _ensure_cloudflared; then
+      info "Starting Cloudflare quick tunnel to :${port}..."
+      rm -f "$log" "$urlf"
+      nohup cloudflared tunnel --url "http://localhost:${port}" --no-autoupdate \
+        >"$log" 2>&1 &
+      local pid=$!
+      echo "$pid" > "$pidf"
+      # Cloudflared prints the URL within ~3–8 s. Poll the log for it.
+      local url="" deadline=$((SECONDS + 25))
+      while (( SECONDS < deadline )); do
+        url=$(grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' "$log" 2>/dev/null | head -1)
+        [[ -n "$url" ]] && break
+        kill -0 "$pid" 2>/dev/null || { err "cloudflared died — see $log"; return 1; }
+        sleep 0.5
+      done
+      if [[ -z "$url" ]]; then
+        err "Timed out waiting for tunnel URL (see $log)"
+        tail -5 "$log" 2>/dev/null
+        return 1
+      fi
+      echo "$url" > "$urlf"
+      ok "Public URL:  $url"
+      echo "  Dashboard:     ${url}/v3/site"
+      echo "  OpenAI chat:   ${url}/v1/chat/completions"
+      echo "  v4 endpoints:  ${url}/v4/endpoints"
+      echo "  URL saved to:  $urlf"
+      echo "  Stop tunnel:   ai share stop"
+      return 0
+    fi
+  fi
+
+  if command -v ngrok &>/dev/null; then
+    info "Falling back to ngrok..."
+    ngrok http "$port"
+    return 0
+  fi
+  err "Install cloudflared (or ngrok) — or re-run: ai share  (will auto-download)"
+  echo "  Tried: cloudflared (not installed, auto-download failed)"
+  return 1
 }
 
 # 3. ai diff-review — AI review of current staged diff or given file
@@ -20183,8 +20292,19 @@ def get_dash_html():
         "function ragList(){j('/v3/rag/list',null,function(d){put('rgOut',d)})}"
         "function benchmark(){put('bmOut','Running...');"
         "j('/v3/benchmark',{},function(d){put('bmOut',d)})}"
-        "function shareLink(){put('shOut','Creating...');"
-        "j('/v3/share',{},function(d){put('shOut',d)})}"
+        "function _shareRender(d){if(d.error){put('shOut',d);return}"
+        "var h='';if(d.url){h+='PUBLIC URL:\\n  '+d.url+'\\n\\n';"
+        "if(d.dashboard)h+='Dashboard:     '+d.dashboard+'\\n';"
+        "if(d.endpoints)h+='v4 endpoints:  '+d.endpoints+'\\n';"
+        "if(d.v4_health)h+='v4 health:     '+d.v4_health+'\\n';"
+        "if(d.openai_compat)h+='OpenAI chat:   '+d.openai_compat+'\\n';"
+        "h+='\\npid '+d.pid+'   '+(d.reused?'(already running)':'(started)');"
+        "h+='\\nStop: ai share stop   or click Stop below'"
+        "}else h=JSON.stringify(d,null,2);put('shOut',h)}"
+        "function shareStatus(){j('/v4/share',{action:'status'},_shareRender)}"
+        "function shareLink(){put('shOut','Creating tunnel...');"
+        "j('/v4/share',{action:'start'},_shareRender)}"
+        "function shareStop(){j('/v4/share',{action:'stop'},function(d){put('shOut',d);shareStatus()})}"
         "function ttsSay(){var t=document.getElementById('vT').value;"
         "j('/v3/voice/tts',{text:t},function(d){put('vOut',d)})}"
     )
@@ -20366,9 +20486,15 @@ def get_dash_html():
     # Tab 9: Share
     h.append(
         "<div id=p9 class=p><h3>Public Share Link</h3>"
-        "<p style=color:#a6adc8>Creates a Cloudflare-tunnel URL so others can reach this API over the internet.</p>"
-        "<button class=b onclick=shareLink()>Create Link</button>"
-        "<pre id=shOut class=o></pre></div>"
+        "<p style=color:#a6adc8>Opens a Cloudflare Quick Tunnel — no account needed. "
+        "Picks up a <code>*.trycloudflare.com</code> URL within ~5 s and saves it. "
+        "Anyone with the URL can reach this API (so set a terminal password first if you want the Terminal tab locked).</p>"
+        "<div class=row>"
+        "<button class='b g' onclick=shareLink()>Create / Re-use Link</button>"
+        "<button class='b bs' onclick=shareStatus()>Status</button>"
+        "<button class='b r bs' onclick=shareStop()>Stop</button>"
+        "</div>"
+        "<pre id=shOut class=o>(click Create)</pre></div>"
     )
 
     # Tab 10: API Docs
@@ -21211,36 +21337,165 @@ def v4_post_voice_tts(h, hdrs, qs):
                       size_bytes=(os.path.getsize(out_path) if ok and os.path.isfile(out_path) else 0),
                       fallback_output=stdout))
 
+SHARE_LOG = os.path.join(CFG_DIR, "share.log")
+SHARE_URL_FILE = os.path.join(CFG_DIR, "share.url")
+SHARE_PID_FILE = os.path.join(CFG_DIR, "share.pid")
+SHARE_BIN_DIR = os.path.join(CFG_DIR, "bin")
+
+def _share_current():
+    """Return (url|None, pid|None) for the active tunnel, if any."""
+    url = None; pid = None
+    try:
+        if os.path.isfile(SHARE_URL_FILE):
+            url = open(SHARE_URL_FILE).read().strip() or None
+        if os.path.isfile(SHARE_PID_FILE):
+            p = int(open(SHARE_PID_FILE).read().strip() or "0")
+            try:
+                os.kill(p, 0); pid = p
+            except Exception:
+                pid = None; url = None
+    except Exception: pass
+    return url, pid
+
+def _cloudflared_bin():
+    """Return a usable cloudflared path, or None."""
+    which = shutil.which("cloudflared")
+    if which: return which
+    local = os.path.join(SHARE_BIN_DIR, "cloudflared")
+    if os.path.isfile(local) and os.access(local, os.X_OK):
+        return local
+    return None
+
+def _start_cloudflared_tunnel(port):
+    """Launch cloudflared in the background; return (url, pid) or (None, None)."""
+    cf = _cloudflared_bin()
+    if not cf: return (None, None)
+    try:
+        os.makedirs(CFG_DIR, exist_ok=True)
+        # Truncate log
+        open(SHARE_LOG, "w").close()
+        try: os.remove(SHARE_URL_FILE)
+        except FileNotFoundError: pass
+        logf = open(SHARE_LOG, "ab")
+        p = subprocess.Popen(
+            [cf, "tunnel", "--url", f"http://localhost:{port}", "--no-autoupdate"],
+            stdout=logf, stderr=logf,
+            start_new_session=True)
+        with open(SHARE_PID_FILE, "w") as f: f.write(str(p.pid))
+        # Poll the log for the trycloudflare URL (max 25 s).
+        import re as _re
+        deadline = time.time() + 25
+        url = None
+        while time.time() < deadline:
+            if p.poll() is not None: break
+            try:
+                data = open(SHARE_LOG).read()
+                m = _re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", data)
+                if m: url = m.group(0); break
+            except Exception: pass
+            time.sleep(0.5)
+        if url:
+            with open(SHARE_URL_FILE, "w") as f: f.write(url)
+            return (url, p.pid)
+        # Timed out or died — clean up
+        try: p.terminate()
+        except Exception: pass
+        try: os.remove(SHARE_PID_FILE)
+        except FileNotFoundError: pass
+        return (None, None)
+    except Exception:
+        return (None, None)
+
+def _stop_share_tunnel():
+    stopped = False
+    try:
+        if os.path.isfile(SHARE_PID_FILE):
+            pid = int(open(SHARE_PID_FILE).read().strip() or "0")
+            if pid:
+                try: os.kill(pid, 15); stopped = True
+                except Exception: pass
+    except Exception: pass
+    for f in (SHARE_PID_FILE, SHARE_URL_FILE):
+        try: os.remove(f)
+        except FileNotFoundError: pass
+    return stopped
+
 def v4_post_share(h, hdrs, qs):
+    """Start / stop / inspect a public tunnel for this API server.
+
+    Actions (body.action):
+      start (default)  → launch cloudflared quick tunnel, return {url,pid}
+      stop             → kill the tunnel, clean pid/url files
+      status           → return current {url,pid,running}
+      snippet          → save a short text snippet to uploads/shares and return a
+                         local-URL for it (the old v3.2 behaviour)
+    """
     t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
-    content = b.get("content") or b.get("text") or ""
-    ttl = int(b.get("ttl_sec", 86400) or 86400)
-    if not content:
-        return (400, _err("missing_input", "missing content/text", req_id))
-    # Persist to a timestamped file under uploads/shares; expose a local URL.
-    share_dir = os.path.join(UPLOADS_DIR, "shares")
-    os.makedirs(share_dir, exist_ok=True)
-    slug = secrets.token_urlsafe(8).replace("_", "-").replace("-", "")[:12]
-    path = os.path.join(share_dir, f"{slug}.txt")
-    with open(path, "w") as f: f.write(content)
-    # Try tunnels in order: cloudflared / ngrok — launch fire-and-forget, don't block.
-    tunnel = None
-    for bin in ("cloudflared", "ngrok"):
-        if shutil.which(bin):
-            tunnel = bin; break
+    action = (b.get("action") or "start").lower()
+
+    if action == "status":
+        url, pid = _share_current()
+        return (200, _env(t0, request_id=req_id,
+                          running=bool(pid), url=url, pid=pid,
+                          log_path=SHARE_LOG,
+                          cloudflared=bool(_cloudflared_bin())))
+
+    if action == "stop":
+        stopped = _stop_share_tunnel()
+        return (200, _env(t0, request_id=req_id,
+                          stopped=stopped, url=None, pid=None))
+
+    if action == "snippet":
+        content = b.get("content") or b.get("text") or ""
+        if not content:
+            return (400, _err("missing_input", "missing content/text", req_id))
+        share_dir = os.path.join(UPLOADS_DIR, "shares")
+        os.makedirs(share_dir, exist_ok=True)
+        slug = secrets.token_urlsafe(8).replace("_", "-").replace("-", "")[:12]
+        path = os.path.join(share_dir, f"{slug}.txt")
+        with open(path, "w") as f: f.write(content)
+        # If a tunnel is running, we can expose it publicly immediately.
+        url, _ = _share_current()
+        public = f"{url}/v4/files/fetch?name=shares/{slug}.txt" if url else None
+        return (200, _env(t0, request_id=req_id,
+                          slug=slug, local_path=path,
+                          local_url=f"http://{HOST}:{PORT}/v4/files/fetch?name=shares/{slug}.txt",
+                          public_url=public,
+                          ttl_sec=int(b.get("ttl_sec", 86400) or 86400),
+                          expires_at=int(time.time()) + int(b.get("ttl_sec", 86400) or 86400)))
+
+    # action == "start" — already running?
+    url, pid = _share_current()
+    if pid and url:
+        return (200, _env(t0, request_id=req_id,
+                          url=url, pid=pid, reused=True,
+                          dashboard=f"{url}/v3/site",
+                          endpoints=f"{url}/v4/endpoints",
+                          stop_hint="POST {action:'stop'} to this endpoint, or: ai share stop"))
+
+    # Not running — try to start cloudflared.
+    cf = _cloudflared_bin()
+    if not cf:
+        return (503, _err("no_tunnel_binary",
+                          "cloudflared not installed. Run: ai share  (auto-downloads on Linux/macOS), "
+                          "or install: pacman -S cloudflared / apt install cloudflared",
+                          req_id,
+                          install_hint="run `ai share` in a terminal — it will fetch cloudflared"))
+
+    url, pid = _start_cloudflared_tunnel(PORT)
+    if not url:
+        return (500, _err("tunnel_failed",
+                          "cloudflared failed to open a tunnel (timed out or died)",
+                          req_id,
+                          log_path=SHARE_LOG))
     return (200, _env(t0, request_id=req_id,
-                      slug=slug,
-                      local_path=path,
-                      local_url=f"http://{HOST}:{PORT}/v4/files/fetch?name=shares/{slug}.txt",
-                      tunnel_available=tunnel,
-                      ttl_sec=ttl,
-                      expires_at=int(time.time()) + ttl,
-                      note=("Use /v4/files/fetch for local viewing. For a public URL, run "
-                            "`ai share` in a terminal — cloudflared/ngrok needs a foreground "
-                            "process to stream the tunnel URL." if not tunnel else
-                            f"Public tunnel binary ({tunnel}) is installed — run `ai share` to "
-                            "start it from a terminal.")))
+                      url=url, pid=pid,
+                      dashboard=f"{url}/v3/site",
+                      endpoints=f"{url}/v4/endpoints",
+                      v4_health=f"{url}/v4/health",
+                      openai_compat=f"{url}/v1/chat/completions",
+                      stop_hint="POST {action:'stop'} to this endpoint, or: ai share stop"))
 
 def v4_post_models_activate(h, hdrs, qs):
     t0 = time.time(); req_id = _req_id()
@@ -21976,6 +22231,23 @@ _RDP_PANEL_HTML = """<!doctype html>
       <button onclick="getClip()">Read</button>
       <button onclick="setClip()">Write</button>
     </div>
+
+    <h3>System</h3>
+    <div class="row">
+      <input type="text" id="launchApp" placeholder="firefox, code, …">
+      <button onclick="launchApp()">Launch</button>
+    </div>
+    <div class="row" style="margin-top:4px">
+      <input type="text" id="notifyText" placeholder="Notify text…">
+      <button onclick="sendNotify()">Notify</button>
+    </div>
+    <div class="row" style="margin-top:4px">
+      <button class="ghost" onclick="lockScreen()">🔒 Lock</button>
+      <button class="ghost" onclick="loadDesktops()">Desktops</button>
+      <button class="ghost" onclick="openShare()">🌐 Share</button>
+    </div>
+    <div id="desktops" style="font-size:11px;color:var(--mute);margin-top:4px"></div>
+
     <h3>Top processes</h3>
     <div class="procs"><table id="procs"><tbody></tbody></table></div>
   </div>
@@ -22025,7 +22297,23 @@ async function refreshAll(){
     const t = document.createElement('div'); t.className = 't'; t.textContent = win.title||'(untitled)';
     const m = document.createElement('div'); m.className = 'm';
     m.textContent = (win.w? `${win.w}×${win.h}  ` : '') + (win.pid? `pid ${win.pid}` : '');
-    div.appendChild(t); div.appendChild(m);
+    const row = document.createElement('div');
+    row.style.display='flex'; row.style.gap='4px'; row.style.marginTop='4px';
+    const btnMin = document.createElement('button');
+    btnMin.className='ghost'; btnMin.style.fontSize='10px'; btnMin.style.padding='2px 6px';
+    btnMin.textContent='—'; btnMin.title='minimise';
+    btnMin.onclick = async ev=>{ ev.stopPropagation();
+      const r = await api('window_minimize', {id: win.id});
+      logMsg('min '+win.id+' · '+(r.j.ok?'ok':'FAIL')); refreshAll(); };
+    const btnClose = document.createElement('button');
+    btnClose.className='ghost'; btnClose.style.fontSize='10px'; btnClose.style.padding='2px 6px';
+    btnClose.textContent='×'; btnClose.title='close';
+    btnClose.onclick = async ev=>{ ev.stopPropagation();
+      if (!confirm('Close "'+(win.title||win.id)+'"?')) return;
+      const r = await api('window_close', {id: win.id});
+      logMsg('close '+win.id+' · '+(r.j.ok?'ok':'FAIL')); refreshAll(); };
+    row.appendChild(btnMin); row.appendChild(btnClose);
+    div.appendChild(t); div.appendChild(m); div.appendChild(row);
     div.onclick = async ()=>{
       const r = await api('activate', {id: win.id});
       logMsg('activate '+win.id+' · '+(r.j.ok?'ok':'FAIL'));
@@ -22114,6 +22402,48 @@ async function runCmd(){
   const j = await r.json().catch(()=>({}));
   out.textContent = '$ '+c+'\\n'+(j.stdout||'')+(j.stderr?'\\n[stderr]\\n'+j.stderr:'')+`\\nrc=${j.rc??'?'}`;
   logMsg('cmd rc='+(j.rc??'?'));
+}
+
+// ─── system (launch / notify / lock / workspace / share) ───────────────────
+async function launchApp(){
+  const a = $('launchApp').value.trim(); if (!a) return;
+  const {j} = await api('launch',{app:a});
+  logMsg('launch '+a+' via '+(j.launcher||'?')+' · '+(j.ok?'ok':'FAIL'));
+}
+async function sendNotify(){
+  const t = $('notifyText').value; if (!t) return;
+  const {j} = await api('notify',{summary:'ai-cli', body:t});
+  logMsg('notify · '+(j.ok?'ok':'FAIL'));
+}
+async function lockScreen(){
+  if (!confirm('Lock the remote screen?')) return;
+  const {j} = await api('lock');
+  logMsg('lock via '+(j.tool||'?')+' · '+(j.ok?'ok':'FAIL'));
+}
+async function loadDesktops(){
+  const {j} = await api('workspace',{op:'current'});
+  const el = $('desktops'); el.innerHTML = '';
+  if (!j.desktops) { el.textContent = 'wmctrl not installed'; return; }
+  for (const d of j.desktops){
+    const btn = document.createElement('button');
+    btn.className = 'ghost';
+    btn.style.margin = '2px';
+    btn.textContent = (d.active?'●':'○')+' '+(d.name||d.index);
+    btn.onclick = async ()=>{
+      await api('workspace',{op:'switch', index:d.index});
+      loadDesktops();
+    };
+    el.appendChild(btn);
+  }
+}
+async function openShare(){
+  const {j} = await api('info');
+  // Delegate to /v4/share for the actual tunnel
+  const r = await fetch('/v4/share',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'start'})});
+  const d = await r.json().catch(()=>({}));
+  if (d.url){ logMsg('share: '+d.url); window.open(d.url+'/v3/site','_blank'); }
+  else { logMsg('share failed: '+(d.error&&d.error.message||JSON.stringify(d))); }
 }
 
 // ─── keyboard grab ────────────────────────────────────────────────────────
@@ -22539,44 +22869,52 @@ def v4_post_rdp(h, hdrs, qs):
                           stderr=(r.stderr or "")[:200]))
 
     if action == "clipboard_get":
-        for sel in ("clipboard", "primary"):
-            tool = shutil.which("xclip") or shutil.which("xsel")
-            if not tool: break
+        # Try in order: xclip (X11), xsel (X11), wl-paste (Wayland)
+        for tool_name in ("xclip", "xsel", "wl-paste"):
+            tool = shutil.which(tool_name)
+            if not tool: continue
             try:
-                if tool.endswith("xclip"):
-                    r = subprocess.run([tool, "-selection", sel, "-o"],
+                if tool_name == "xclip":
+                    r = subprocess.run([tool, "-selection", "clipboard", "-o"],
                                        capture_output=True, text=True, timeout=2, env=env)
-                else:
-                    r = subprocess.run([tool, "--output",
-                                        "--clipboard" if sel == "clipboard" else "--primary"],
+                elif tool_name == "xsel":
+                    r = subprocess.run([tool, "--output", "--clipboard"],
+                                       capture_output=True, text=True, timeout=2, env=env)
+                else:  # wl-paste
+                    r = subprocess.run([tool, "--no-newline"],
                                        capture_output=True, text=True, timeout=2, env=env)
                 if r.returncode == 0:
                     return (200, _env(t0, request_id=req_id,
-                                      action="clipboard_get", selection=sel,
-                                      tool=os.path.basename(tool),
+                                      action="clipboard_get",
+                                      tool=tool_name,
                                       text=r.stdout,
                                       bytes=len(r.stdout)))
             except Exception: pass
-        return (500, _err("no_clipboard_tool", "install xclip or xsel", req_id))
+        return (500, _err("no_clipboard_tool",
+                          "install xclip / xsel (X11) or wl-clipboard (Wayland)", req_id))
 
     if action == "clipboard_set":
         text = b.get("text", "")
         if text is None: text = ""
-        tool = shutil.which("xclip") or shutil.which("xsel")
-        if not tool: return (500, _err("no_clipboard_tool", "install xclip or xsel", req_id))
-        try:
-            if tool.endswith("xclip"):
-                p = subprocess.Popen([tool, "-selection", "clipboard"],
-                                     stdin=subprocess.PIPE, env=env)
-            else:
-                p = subprocess.Popen([tool, "--input", "--clipboard"],
-                                     stdin=subprocess.PIPE, env=env)
-            p.communicate(input=text.encode(), timeout=5)
-            return (200, _env(t0, request_id=req_id,
-                              action="clipboard_set",
-                              tool=os.path.basename(tool), bytes=len(text)))
-        except Exception as e:
-            return (500, _err("clipboard_set_failed", str(e), req_id))
+        # Try tools in session-appropriate order
+        for tool_name in ("xclip", "xsel", "wl-copy"):
+            tool = shutil.which(tool_name)
+            if not tool: continue
+            try:
+                if tool_name == "xclip":
+                    args = [tool, "-selection", "clipboard"]
+                elif tool_name == "xsel":
+                    args = [tool, "--input", "--clipboard"]
+                else:  # wl-copy
+                    args = [tool]
+                p = subprocess.Popen(args, stdin=subprocess.PIPE, env=env)
+                p.communicate(input=text.encode(), timeout=5)
+                return (200, _env(t0, request_id=req_id,
+                                  action="clipboard_set",
+                                  tool=tool_name, bytes=len(text)))
+            except Exception: continue
+        return (500, _err("no_clipboard_tool",
+                          "install xclip / xsel (X11) or wl-clipboard (Wayland)", req_id))
 
     if action == "processes":
         top = max(5, min(100, int(b.get("limit", 25) or 25)))
@@ -22619,11 +22957,113 @@ def v4_post_rdp(h, hdrs, qs):
         except Exception: pass
         return (404, _err("no_volume_tool", "no volume control tool found", req_id))
 
+    if action == "notify":
+        summary = (b.get("summary") or b.get("title") or "ai-cli")[:200]
+        body_txt = (b.get("body") or b.get("text") or "")[:1000]
+        urgency = b.get("urgency", "normal")  # low|normal|critical
+        tool = shutil.which("notify-send")
+        if not tool:
+            return (404, _err("no_notify_tool",
+                              "install libnotify (pacman -S libnotify / apt install libnotify-bin)",
+                              req_id))
+        r = subprocess.run([tool, "-u", urgency, summary, body_txt],
+                           capture_output=True, text=True, timeout=3, env=env)
+        return (200, _env(t0, request_id=req_id,
+                          action="notify",
+                          ok=r.returncode == 0, stderr=r.stderr[:200]))
+
+    if action == "launch":
+        app = b.get("app") or b.get("cmd") or ""
+        if not app:
+            return (400, _err("missing_input", "need app or cmd", req_id))
+        # Detach into its own session so it survives the API request
+        try:
+            if shutil.which(app.split()[0]):
+                subprocess.Popen(app.split(), start_new_session=True, env=env)
+                launcher = app.split()[0]
+            elif shutil.which("xdg-open"):
+                subprocess.Popen(["xdg-open", app], start_new_session=True, env=env)
+                launcher = "xdg-open"
+            elif shutil.which("gtk-launch"):
+                subprocess.Popen(["gtk-launch", app], start_new_session=True, env=env)
+                launcher = "gtk-launch"
+            else:
+                return (500, _err("no_launcher",
+                                  "install xdg-open / gtk-launch, or pass a binary on PATH", req_id))
+            return (200, _env(t0, request_id=req_id,
+                              action="launch", launcher=launcher, target=app, ok=True))
+        except Exception as e:
+            return (500, _err("launch_failed", str(e), req_id))
+
+    if action == "lock":
+        # Try: loginctl lock-session → xdg-screensaver lock → gnome-screensaver-command
+        for cmd in (["loginctl", "lock-session"],
+                    ["xdg-screensaver", "lock"],
+                    ["gnome-screensaver-command", "--lock"],
+                    ["xscreensaver-command", "-lock"],
+                    ["swaylock"]):
+            if shutil.which(cmd[0]):
+                try:
+                    subprocess.Popen(cmd, env=env, start_new_session=True)
+                    return (200, _env(t0, request_id=req_id,
+                                      action="lock", tool=cmd[0], ok=True))
+                except Exception: continue
+        return (404, _err("no_lock_tool",
+                          "install a screen locker (xscreensaver, swaylock, …)", req_id))
+
+    if action == "workspace":
+        op = (b.get("op") or b.get("action2") or "current").lower()
+        if op == "current":
+            # wmctrl -d shows desktops with * on current
+            if not shutil.which("wmctrl"):
+                return (404, _err("no_wmctrl", "install wmctrl", req_id))
+            r = subprocess.run(["wmctrl", "-d"],
+                               capture_output=True, text=True, timeout=2, env=env)
+            desktops = []; cur = None
+            for line in (r.stdout or "").splitlines():
+                parts = line.split(None, 8)
+                if len(parts) >= 2:
+                    d = {"index": int(parts[0]), "active": parts[1] == "*"}
+                    if parts[1] == "*": cur = d["index"]
+                    if len(parts) >= 9: d["name"] = parts[8]
+                    desktops.append(d)
+            return (200, _env(t0, request_id=req_id,
+                              action="workspace", op="current",
+                              desktops=desktops, current=cur))
+        if op == "switch":
+            idx = int(b.get("index", 0))
+            tool = shutil.which("wmctrl")
+            if not tool: return (404, _err("no_wmctrl", "install wmctrl", req_id))
+            r = subprocess.run([tool, "-s", str(idx)],
+                               capture_output=True, text=True, timeout=2, env=env)
+            return (200, _env(t0, request_id=req_id,
+                              action="workspace", op="switch", index=idx,
+                              ok=r.returncode == 0))
+        return (400, _err("bad_op", "expected op: current|switch", req_id))
+
+    if action == "window_close":
+        wid = str(b.get("id") or b.get("window_id") or "")
+        if not wid: return (400, _err("missing_input", "need id", req_id))
+        r = subprocess.run([ctl, "windowclose", wid],
+                           capture_output=True, text=True, timeout=2, env=env)
+        return (200, _env(t0, request_id=req_id, action="window_close",
+                          window_id=wid, ok=r.returncode == 0,
+                          stderr=r.stderr[:200]))
+
+    if action == "window_minimize":
+        wid = str(b.get("id") or b.get("window_id") or "")
+        if not wid: return (400, _err("missing_input", "need id", req_id))
+        r = subprocess.run([ctl, "windowminimize", wid],
+                           capture_output=True, text=True, timeout=2, env=env)
+        return (200, _env(t0, request_id=req_id, action="window_minimize",
+                          window_id=wid, ok=r.returncode == 0))
+
     return (400, _err("unknown_action",
                       "expected action: info|screenshot|type|key|keys_sequence|"
                       "click|mousedown|mouseup|mousemove|scroll|"
                       "windows|active|cursor|activate|clipboard_get|clipboard_set|"
-                      "processes|volume",
+                      "processes|volume|notify|launch|lock|workspace|"
+                      "window_close|window_minimize",
                       req_id))
 
 
@@ -23263,6 +23703,9 @@ APIPY
     keys) cmd_api_keys_list ;;
     revoke) cmd_api_revoke "$@" ;;
     -Upgrade-k|-upgrade-k|upgrade-k|upgrade-key) cmd_api_upgrade_key "$@" ;;
+    share|public)   cmd_share "${1:-8080}" "${2:-auto}" ;;
+    share-stop|unshare) cmd_share stop ;;
+    share-url)      cmd_share url ;;
     *) cmd_api_help ;;
   esac
 }

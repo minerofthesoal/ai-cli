@@ -1,5 +1,5 @@
 Name:           ai-cli
-Version:        3.2.1.0.2
+Version:        3.2.1.1
 Release:        1%{?dist}
 Summary:        AI CLI — local + cloud LLM terminal toolkit
 License:        MIT
