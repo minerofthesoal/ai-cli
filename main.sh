@@ -12,7 +12,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.2.1.0.2"
+VERSION="3.2.1.2"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -7512,26 +7512,42 @@ cmd_install_deps() {
       info "Detected APT (Debian/Ubuntu/Mint)..."
       sudo apt-get update -q 2>/dev/null || true
       sudo apt-get install -y -q python3 python3-pip python3-dev git cmake \
-        build-essential ffmpeg curl jq espeak libsndfile1 \
+        build-essential ffmpeg curl jq espeak-ng libsndfile1 \
         libssl-dev libffi-dev tk-dev 2>/dev/null || true
+      # RDP + automation (X11 + Wayland where available)
+      sudo apt-get install -y -q xdotool xclip xsel wmctrl scrot libnotify-bin \
+        wl-clipboard grim slurp ydotool 2>/dev/null || true
     elif command -v pacman &>/dev/null; then
       info "Detected Pacman (Arch/Manjaro/EndeavourOS)..."
       sudo pacman -Sy --noconfirm --needed 2>/dev/null || true
+      # Core build + python + media stack (Arch package names: espeak-ng not
+      # espeak, libsndfile not libsndfile1, python-pip not python3-pip, etc.)
       sudo pacman -S --noconfirm --needed \
         python python-pip git cmake base-devel \
-        ffmpeg curl jq espeak libsndfile \
-        openssl python-tkinter 2>/dev/null || true
-      # AUR helper for yay or paru (optional extras)
+        ffmpeg curl jq espeak-ng libsndfile \
+        openssl tk 2>/dev/null || true
+      # RDP + automation stack (X11 path). Wayland users get the second group.
+      sudo pacman -S --noconfirm --needed \
+        xdotool xclip xsel wmctrl scrot libnotify \
+        2>/dev/null || true
+      # Wayland / Hyprland / Sway friends — installed alongside on Arch because
+      # the same box often has both sessions available
+      sudo pacman -S --noconfirm --needed \
+        wl-clipboard grim slurp 2>/dev/null || true
+      # cloudflared is in AUR; try AUR helpers first, then fall back to the
+      # GitHub-hosted binary (handled later by _ensure_cloudflared).
       if command -v yay &>/dev/null; then
-        yay -S --noconfirm --needed python-soundfile 2>/dev/null || true
+        yay -S --noconfirm --needed python-soundfile cloudflared ydotool 2>/dev/null || true
       elif command -v paru &>/dev/null; then
-        paru -S --noconfirm --needed python-soundfile 2>/dev/null || true
+        paru -S --noconfirm --needed python-soundfile cloudflared ydotool 2>/dev/null || true
       fi
     elif command -v dnf &>/dev/null; then
       info "Detected DNF (Fedora/RHEL)..."
       sudo dnf install -y python3 python3-pip python3-devel git cmake \
-        gcc gcc-c++ ffmpeg curl jq espeak libsndfile-devel \
+        gcc gcc-c++ ffmpeg curl jq espeak-ng libsndfile-devel \
         openssl-devel python3-tkinter 2>/dev/null || true
+      sudo dnf install -y xdotool xclip xsel wmctrl scrot libnotify \
+        wl-clipboard grim slurp ydotool 2>/dev/null || true
     elif command -v zypper &>/dev/null; then
       info "Detected Zypper (openSUSE)..."
       sudo zypper install -y python3 python3-pip python3-devel git cmake \
@@ -19354,29 +19370,122 @@ _play_audio() {
 }
 
 # 2. ai share — create a public tunnel to the local API
+# Ensure `cloudflared` is available. Returns 0 if present after this call.
+# Downloads the static binary from GitHub if necessary (no account / login
+# needed for trycloudflare.com quick tunnels).
+_ensure_cloudflared() {
+  command -v cloudflared >/dev/null 2>&1 && return 0
+  local cfg_bin="${XDG_CONFIG_HOME:-$HOME/.config}/ai-cli/bin"
+  mkdir -p "$cfg_bin"
+  local target="$cfg_bin/cloudflared"
+  if [[ -x "$target" ]]; then
+    export PATH="$cfg_bin:$PATH"
+    return 0
+  fi
+  local arch os
+  arch=$(uname -m 2>/dev/null)
+  os=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
+  local asset=""
+  case "$os-$arch" in
+    linux-x86_64)  asset="cloudflared-linux-amd64" ;;
+    linux-aarch64) asset="cloudflared-linux-arm64" ;;
+    linux-armv7l)  asset="cloudflared-linux-arm" ;;
+    darwin-x86_64|darwin-arm64) asset="cloudflared-darwin-amd64.tgz" ;;
+    *) err "cloudflared: no prebuilt binary for $os-$arch"; return 1 ;;
+  esac
+  local url="https://github.com/cloudflare/cloudflared/releases/latest/download/$asset"
+  info "Downloading cloudflared → $target"
+  if [[ "$asset" == *.tgz ]]; then
+    local tmp; tmp=$(mktemp)
+    curl -fsSL "$url" -o "$tmp" || { err "download failed: $url"; rm -f "$tmp"; return 1; }
+    tar -xzf "$tmp" -C "$cfg_bin" cloudflared 2>/dev/null \
+      || { err "extract failed"; rm -f "$tmp"; return 1; }
+    rm -f "$tmp"
+  else
+    curl -fsSL "$url" -o "$target" || { err "download failed: $url"; return 1; }
+  fi
+  chmod +x "$target" 2>/dev/null
+  export PATH="$cfg_bin:$PATH"
+  command -v cloudflared >/dev/null 2>&1 || { err "cloudflared install failed"; return 1; }
+  return 0
+}
+
 cmd_share() {
-  local port="${1:-8080}"
-  if ! curl -sS "http://localhost:${port}/health" 2>/dev/null | grep -q ok; then
+  local port="${1:-8080}" provider="${2:-auto}"
+  local cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ai-cli"
+  mkdir -p "$cfg_dir"
+  local log="$cfg_dir/share.log"
+  local urlf="$cfg_dir/share.url"
+  local pidf="$cfg_dir/share.pid"
+
+  case "$port" in
+    stop|--stop|-s)
+      [[ -f "$pidf" ]] && kill "$(cat "$pidf")" 2>/dev/null
+      rm -f "$pidf" "$urlf"
+      ok "Share tunnel stopped"
+      return 0 ;;
+    url)
+      [[ -s "$urlf" ]] && { cat "$urlf"; return 0; } || { err "No active tunnel — run: ai share"; return 1; }
+      ;;
+  esac
+
+  # Spin up the API server if it isn't listening yet.
+  if ! curl -sS --max-time 2 "http://localhost:${port}/health" 2>/dev/null | grep -q ok; then
     warn "API server not running on port ${port} — starting it"
     cmd_api_v3 start --port "$port"
     sleep 1
   fi
-  if command -v cloudflared &>/dev/null; then
-    info "Opening Cloudflare tunnel to port ${port}..."
-    cloudflared tunnel --url "http://localhost:${port}" 2>&1 | tee "$CONFIG_DIR/share.log" | \
-      awk "/trycloudflare.com/ {print; exit} {print}"
-    info "Log: $CONFIG_DIR/share.log"
-  elif command -v ngrok &>/dev/null; then
-    info "Opening ngrok tunnel to port ${port}..."
-    ngrok http "$port"
-  elif command -v ssh &>/dev/null; then
-    info "Falling back to serveo.net via SSH (no auth)..."
-    ssh -o StrictHostKeyChecking=no -R "80:localhost:${port}" serveo.net
-  else
-    err "Install one of: cloudflared, ngrok, or use SSH to share"
-    echo "  cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/tunnel-guide/"
-    echo "  ngrok:       https://ngrok.com/download"
+
+  # Fail-quick if there's already a tunnel for this session
+  if [[ -f "$pidf" ]] && kill -0 "$(cat "$pidf" 2>/dev/null)" 2>/dev/null; then
+    if [[ -s "$urlf" ]]; then
+      ok "Share tunnel already running: $(cat "$urlf")"
+      info "Stop with: ai share stop"
+      return 0
+    fi
   fi
+
+  # Try cloudflared first (auto-install if missing); fall back to ngrok.
+  if [[ "$provider" == "cloudflared" || "$provider" == "auto" ]]; then
+    if _ensure_cloudflared; then
+      info "Starting Cloudflare quick tunnel to :${port}..."
+      rm -f "$log" "$urlf"
+      nohup cloudflared tunnel --url "http://localhost:${port}" --no-autoupdate \
+        >"$log" 2>&1 &
+      local pid=$!
+      echo "$pid" > "$pidf"
+      # Cloudflared prints the URL within ~3–8 s. Poll the log for it.
+      local url="" deadline=$((SECONDS + 25))
+      while (( SECONDS < deadline )); do
+        url=$(grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' "$log" 2>/dev/null | head -1)
+        [[ -n "$url" ]] && break
+        kill -0 "$pid" 2>/dev/null || { err "cloudflared died — see $log"; return 1; }
+        sleep 0.5
+      done
+      if [[ -z "$url" ]]; then
+        err "Timed out waiting for tunnel URL (see $log)"
+        tail -5 "$log" 2>/dev/null
+        return 1
+      fi
+      echo "$url" > "$urlf"
+      ok "Public URL:  $url"
+      echo "  Dashboard:     ${url}/v3/site"
+      echo "  OpenAI chat:   ${url}/v1/chat/completions"
+      echo "  v4 endpoints:  ${url}/v4/endpoints"
+      echo "  URL saved to:  $urlf"
+      echo "  Stop tunnel:   ai share stop"
+      return 0
+    fi
+  fi
+
+  if command -v ngrok &>/dev/null; then
+    info "Falling back to ngrok..."
+    ngrok http "$port"
+    return 0
+  fi
+  err "Install cloudflared (or ngrok) — or re-run: ai share  (will auto-download)"
+  echo "  Tried: cloudflared (not installed, auto-download failed)"
+  return 1
 }
 
 # 3. ai diff-review — AI review of current staged diff or given file
@@ -19487,124 +19596,375 @@ ANSWER:"
 
 cmd_hy() {
   # HyperNix integration — https://pypi.org/project/hypernix/
-  # HyperNix is a PyTorch model quantization + chat toolkit for the
-  # ray0rf1re/hyper-nix.1 model family. We shell out to its CLI.
+  # Full toolkit wrapper: chat, generate, download, convert, quantize,
+  # verify, upload, doctor, train init|expand|run, plus local cache mgmt.
   local sub="${1:-help}"; shift 2>/dev/null || true
   local hy_repo="${HYPERNIX_REPO:-nix2.5}"
 
   _hy_bin() {
     if command -v hypernix >/dev/null 2>&1; then echo "hypernix"; return 0; fi
-    if "$PYTHON" -c "import hypernix" >/dev/null 2>&1; then
+    if [[ -n "$PYTHON" ]] && "$PYTHON" -c "import hypernix" >/dev/null 2>&1; then
       echo "$PYTHON -m hypernix"; return 0
     fi
     return 1
   }
+  _hy_require() {
+    if _hy_bin >/dev/null; then return 0; fi
+    err "hypernix is not installed"
+    info "Install:  ai hy install            (core)"
+    info "          ai hy install --extras llama-cpp   (for quantization)"
+    info "          ai hy install --extras train       (for fine-tuning)"
+    return 1
+  }
+  # Where HuggingFace-hub (and therefore hypernix) caches snapshots.
+  _hy_cache_dir() {
+    echo "${HF_HOME:-$HOME/.cache/huggingface}/hub"
+  }
 
   case "$sub" in
     help|"")
-      cat <<'EOF'
+      cat <<EOF
 Usage: ai hy <subcommand> [options]
 
-HyperNix wrapper — PyTorch model quantization + chat toolkit.
+HyperNix — PyTorch model quantization + chat toolkit.
 Upstream: https://pypi.org/project/hypernix/
 
-Subcommands:
-  help                       Show this help
-  install [--extras E]       pip install hypernix[E]   (E: llama-cpp | train)
-  info                       Installed version + python path
-  models                     Common --repo-id values (nix2.5, qwen3.5-4b, …)
-  ask|a|chat "prompt"        Chat via hypernix (uses --repo-id, default nix2.5)
-  repo ID                    Set default repo for this shell (exports HYPERNIX_REPO)
-  passthrough ARGS...        Run the raw `hypernix ARGS` command
+Core
+  help                          This help
+  install [--extras E]          pip install hypernix[E]     (E: llama-cpp | train | dev)
+  info                          Installed version + python + cache size
+  doctor [--fix]                Upstream env diagnostic (auto-install deps with --fix)
+  models                        Supported short names (nix/qwen/gemma/llama/phi/…)
+  repo ID                       Set default repo-id for this shell (persists)
 
-Environment:
-  HYPERNIX_REPO   default repo-id (current: ${HYPERNIX_REPO:-nix2.5})
+Chat + generation
+  ask|a "prompt" [--repo ID]    Single-shot message to a model
+  chat|i [--repo ID]            Interactive REPL (passthrough to hypernix chat)
+  generate "prompt" [--repo ID] Non-chat text sampling
+  bench [--repo ID] [--n 20]    Quick tokens/sec benchmark
 
-Examples:
+Model pipeline
+  download <repo-id>            Fetch a HuggingFace snapshot into the cache
+  convert <repo> [--quants Q…]  Snapshot → GGUF (quants: fp32 fp16 q8_0 q6_k q4_k_m q5_k_m)
+  quantize <file.gguf> <qtype>  llama-quantize pass on an existing GGUF
+  all <repo> [--quants Q…]      download → convert → quantize pipeline
+  verify <file.gguf>            Read-validate a GGUF and print headers
+  upload <repo> <file>          Push a file to a HuggingFace repo
+
+Local cache
+  local                         List locally-downloaded hypernix models (with size)
+  rm <repo-id>                  Delete a cached snapshot
+  cache                         Show cache path + total size
+
+Training (passthrough)
+  train-init <repo> [opts]      hypernix train init
+  train-expand <from> <to>      hypernix train expand
+  train-run <snapshot> [opts]   hypernix train run
+
+Advanced
+  passthrough|raw ARGS…         Run the raw \`hypernix ARGS\` command
+
+Environment
+  HYPERNIX_REPO   default repo-id (current: ${hy_repo})
+  HF_HOME         cache root (currently: \$(_hy_cache_dir))
+  HF_TOKEN        HuggingFace token for gated repos
+
+Examples
   ai hy install --extras llama-cpp
   ai hy ask "explain rotary embeddings"
-  ai hy chat "write a haiku" --repo-id gemma-4-e4b
-  ai hy repo qwen3.5-4b
-  ai hy passthrough quantize --help
+  ai hy chat --repo qwen3.5-4b
+  ai hy all nix2.5 --quants fp16 q8_0 q4_k_m
+  ai hy local
+  ai hy bench --repo gemma-4-e4b
 EOF
       ;;
 
     install)
-      local extras=""
+      local extras="" upgrade=1
       while [[ $# -gt 0 ]]; do
         case "$1" in
           --extras) extras="$2"; shift 2 ;;
+          --no-upgrade) upgrade=0; shift ;;
           *) shift ;;
         esac
       done
-      [[ -z "$PYTHON" ]] && { err "Python required"; return 1; }
+      [[ -z "$PYTHON" ]] && { err "Python required — run: ai install-deps"; return 1; }
       local spec="hypernix"
       [[ -n "$extras" ]] && spec="hypernix[${extras}]"
+      local args=(install "$spec")
+      [[ $upgrade -eq 1 ]] && args=(install --upgrade "$spec")
       info "Installing $spec via pip..."
-      if "$PYTHON" -m pip install --upgrade "$spec"; then
-        ok "Installed. Try: ai hy ask \"hello\""
+      if "$PYTHON" -m pip "${args[@]}" 2>&1; then
+        ok "Installed. Try: ai hy doctor   then   ai hy ask \"hello\""
       else
-        err "pip install failed — try: $PYTHON -m pip install --user $spec"
-        return 1
+        warn "pip failed; retrying --user (PEP 668 systems)"
+        "$PYTHON" -m pip "${args[@]}" --user 2>&1 \
+          || "$PYTHON" -m pip "${args[@]}" --break-system-packages 2>&1 \
+          || { err "Install failed"; return 1; }
       fi
       ;;
 
     info)
-      local b; if ! b=$(_hy_bin); then
-        warn "hypernix is not installed"
-        info "Install:  ai hy install"
-        return 1
+      local b; b=$(_hy_bin) || { _hy_require; return 1; }
+      info "Binary:  $b"
+      info "Python:  $PYTHON"
+      "$PYTHON" -c "import hypernix, importlib.metadata as m; print('Version:', m.version('hypernix'))" 2>/dev/null \
+        || warn "Could not read version (metadata missing)"
+      info "Default repo-id:  $hy_repo"
+      local cache; cache=$(_hy_cache_dir)
+      if [[ -d "$cache" ]]; then
+        local sz; sz=$(du -sh "$cache" 2>/dev/null | awk '{print $1}')
+        info "Cache:   $cache  (${sz:-?})"
+      else
+        info "Cache:   $cache  (not created yet)"
       fi
-      info "Binary:   $b"
-      info "Python:   $PYTHON"
-      "$PYTHON" -c "import hypernix, importlib.metadata as m; print('Version: ' + m.version('hypernix'))" 2>/dev/null \
-        || warn "Could not read version (hypernix importable but metadata missing)"
-      info "Default repo-id: $hy_repo  (override: HYPERNIX_REPO=... or ai hy repo ID)"
+      # Pull upstream `hypernix info` for extra detail
+      # shellcheck disable=SC2086
+      $b info 2>/dev/null | sed 's/^/    /' || true
+      ;;
+
+    doctor)
+      _hy_require || return 1
+      local b; b=$(_hy_bin)
+      local args=(doctor)
+      [[ "${1:-}" == "--fix" ]] && args+=(--fix)
+      # shellcheck disable=SC2086
+      $b "${args[@]}"
       ;;
 
     models)
       cat <<'EOF'
-Common --repo-id values (not exhaustive — see upstream):
+HyperNix short-name families (use with --repo-id or HYPERNIX_REPO):
 
-  nix2.5                HyperNix flagship
-  qwen3.5-4b            Qwen 3.5, 4 B parameters
-  qwen3.5-8b            Qwen 3.5, 8 B parameters
-  gemma-4-e4b           Gemma 4, E4B
-  gemma-4-e12b          Gemma 4, E12B
-  llama-3.2-3b          Llama 3.2, 3 B
-  mistral-nemo-12b      Mistral Nemo, 12 B
+  HyperNix     hyper-nix.1  hyper-nix  hypernix  nano-nano-v4  nano-mini-6.99-v2
+  Nix          nix  nix2.5  nix2.6-m  nix2.6-mm  nix-2.7a  nix2.7  nix2.6
+  Llama 3.x    llama-3.1-8b  llama-3.1-8b-instruct  llama-3.2-1b  llama-3.2-3b
+  Qwen         qwen2.5-*  qwen3-*  qwen3.5-*  qwen3.6-35b-a3b
+  Gemma        gemma-2-{2b,9b,27b}  gemma-3-{1b,4b}  gemma-4-{e2b,e4b,26b-a4b,31b}
+  Phi          phi-3-mini  phi-3.5-mini  phi-4
+  DeepSeek     deepseek-r1-distill-llama-8b  deepseek-v2-lite  deepseek-v3
+  GLM          glm-4-9b-chat  glm-4.1v  glm-5  glm-5.1-fp8
+  Mistral      mistral-7b-instruct  mixtral-8x7b-instruct  mistral-nemo-12b
+  NVIDIA       nemotron-4-15b  llama-3.1-nemotron-70b-instruct
+  OpenAI       gpt-oss-20b  gpt-oss-120b
 
-Use any with:  ai hy ask "prompt" --repo-id <id>
-Set default:   ai hy repo <id>
+Quant aliases: fp32, fp16, q8_0, q6_k, q4_k_m, q5_k_m
+
+Use with:  ai hy ask "hi" --repo gemma-4-e4b
+Set default: ai hy repo qwen3.5-4b
 EOF
       ;;
 
-    ask|a|chat)
-      local prompt="" repo="$hy_repo"
-      # collect prompt + optional flags
+    ask|a)
+      local prompt="" repo="$hy_repo" device="" dtype=""
       while [[ $# -gt 0 ]]; do
         case "$1" in
           --repo-id|--repo) repo="$2"; shift 2 ;;
+          --device)         device="$2"; shift 2 ;;
+          --dtype)          dtype="$2"; shift 2 ;;
           --)               shift; prompt="${prompt}${prompt:+ }$*"; break ;;
           *)                prompt="${prompt}${prompt:+ }$1"; shift ;;
         esac
       done
-      [[ -z "$prompt" ]] && { err "Usage: ai hy ask \"prompt\" [--repo-id ID]"; return 1; }
-      local b; if ! b=$(_hy_bin); then
-        err "hypernix is not installed"
-        info "Run:  ai hy install"
-        return 1
-      fi
-      info "HyperNix ask → repo=$repo"
+      [[ -z "$prompt" ]] && { err "Usage: ai hy ask \"prompt\" [--repo ID]"; return 1; }
+      _hy_require || return 1
+      local b; b=$(_hy_bin)
+      local args=(chat --repo-id "$repo" --message "$prompt")
+      [[ -n "$device" ]] && args+=(--device "$device")
+      [[ -n "$dtype"  ]] && args+=(--dtype  "$dtype")
+      info "HyperNix ask → repo=$repo${device:+  device=$device}${dtype:+  dtype=$dtype}"
       # shellcheck disable=SC2086
-      $b chat --repo-id "$repo" --message "$prompt"
+      $b "${args[@]}"
+      ;;
+
+    chat|i|interactive)
+      local repo="$hy_repo" extra=()
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --repo-id|--repo) repo="$2"; shift 2 ;;
+          *) extra+=("$1"); shift ;;
+        esac
+      done
+      _hy_require || return 1
+      local b; b=$(_hy_bin)
+      info "HyperNix chat REPL → repo=$repo  (Ctrl+C / Ctrl+D to exit)"
+      # shellcheck disable=SC2086
+      $b chat --repo-id "$repo" "${extra[@]}"
+      ;;
+
+    generate|gen)
+      local prompt="" repo="$hy_repo" extra=()
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --repo-id|--repo) repo="$2"; shift 2 ;;
+          --*) extra+=("$1" "${2:-}"); shift 2 ;;
+          *) prompt="${prompt}${prompt:+ }$1"; shift ;;
+        esac
+      done
+      [[ -z "$prompt" ]] && { err "Usage: ai hy generate \"prompt\" [--repo ID]"; return 1; }
+      _hy_require || return 1
+      local b; b=$(_hy_bin)
+      # shellcheck disable=SC2086
+      $b generate --repo-id "$repo" --prompt "$prompt" "${extra[@]}"
+      ;;
+
+    bench)
+      local repo="$hy_repo" n=20
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --repo-id|--repo) repo="$2"; shift 2 ;;
+          --n|-n) n="$2"; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      _hy_require || return 1
+      local b; b=$(_hy_bin)
+      info "Benchmarking $repo  (n=$n prompts)..."
+      local t0 t1 total=0
+      t0=$(date +%s.%N)
+      local i; for ((i=0;i<n;i++)); do
+        # shellcheck disable=SC2086
+        $b chat --repo-id "$repo" --message "Say ready." >/dev/null 2>&1
+        total=$((total+1))
+      done
+      t1=$(date +%s.%N)
+      awk -v t0="$t0" -v t1="$t1" -v n="$n" 'BEGIN{
+        dt=t1-t0;
+        if(dt<=0) dt=0.001;
+        printf "  %d prompts in %.2fs  →  %.2f prompts/s  (%.0f ms each)\n",
+               n, dt, n/dt, (dt/n)*1000
+      }'
+      ;;
+
+    download|dl)
+      local repo="${1:-}"; [[ -z "$repo" ]] && { err "Usage: ai hy download <repo-id>"; return 1; }
+      shift; _hy_require || return 1
+      local b; b=$(_hy_bin)
+      # shellcheck disable=SC2086
+      $b download --repo-id "$repo" "$@"
+      ;;
+
+    convert)
+      local repo="${1:-}"; [[ -z "$repo" ]] && { err "Usage: ai hy convert <repo-id> [--quants fp16 q8_0 …]"; return 1; }
+      shift; _hy_require || return 1
+      local b; b=$(_hy_bin)
+      # shellcheck disable=SC2086
+      $b convert --repo-id "$repo" "$@"
+      ;;
+
+    quantize|quant)
+      local f="${1:-}" q="${2:-q4_k_m}"
+      [[ -z "$f" ]] && { err "Usage: ai hy quantize <file.gguf> <qtype>  (qtype: q8_0 q6_k q4_k_m q5_k_m fp16)"; return 1; }
+      shift 2 2>/dev/null; _hy_require || return 1
+      local b; b=$(_hy_bin)
+      # shellcheck disable=SC2086
+      $b quantize "$f" "$q" "$@"
+      ;;
+
+    all)
+      local repo="${1:-}"; [[ -z "$repo" ]] && { err "Usage: ai hy all <repo-id> [--quants fp16 q8_0 q4_k_m …]"; return 1; }
+      shift; _hy_require || return 1
+      local b; b=$(_hy_bin)
+      info "Pipeline: download → convert → quantize  for $repo"
+      # shellcheck disable=SC2086
+      $b all --repo-id "$repo" "$@"
+      ;;
+
+    verify)
+      local f="${1:-}"
+      [[ -z "$f" ]] && { err "Usage: ai hy verify <file.gguf>"; return 1; }
+      _hy_require || return 1
+      local b; b=$(_hy_bin)
+      # shellcheck disable=SC2086
+      $b verify "$f"
+      ;;
+
+    upload)
+      local repo="${1:-}" path="${2:-}"
+      [[ -z "$repo" || -z "$path" ]] && { err "Usage: ai hy upload <repo-id> <file-or-dir>"; return 1; }
+      shift 2; _hy_require || return 1
+      [[ -z "${HF_TOKEN:-}" ]] && { err "HF_TOKEN not set — run: ai keys set HF_TOKEN hf_..."; return 1; }
+      local b; b=$(_hy_bin)
+      # shellcheck disable=SC2086
+      $b upload --repo-id "$repo" --path "$path" "$@"
+      ;;
+
+    local|ls)
+      local cache; cache=$(_hy_cache_dir)
+      [[ ! -d "$cache" ]] && { info "No cache yet: $cache"; return 0; }
+      printf "%-48s %10s   %s\n" "MODEL" "SIZE" "PATH"
+      printf '%s\n' "────────────────────────────────────────────────────────────────────────────────"
+      # HF-hub caches as models--<org>--<name>
+      local total=0
+      for d in "$cache"/models--*; do
+        [[ -d "$d" ]] || continue
+        local name; name=$(basename "$d")
+        name=${name#models--}
+        name=${name//--/\/}
+        local sz; sz=$(du -sm "$d" 2>/dev/null | awk '{print $1}')
+        total=$((total + sz))
+        printf "%-48s %7d MB   %s\n" "$name" "${sz:-0}" "$d"
+      done
+      echo
+      info "Total cached: ${total} MB in $cache"
+      ;;
+
+    rm|remove|delete)
+      local repo="${1:-}"; [[ -z "$repo" ]] && { err "Usage: ai hy rm <repo-id>"; return 1; }
+      local cache; cache=$(_hy_cache_dir)
+      # Convert "org/name" or short name to cache folder
+      local slug="models--${repo//\//--}"
+      local dir="$cache/$slug"
+      if [[ -d "$dir" ]]; then
+        local sz; sz=$(du -sh "$dir" 2>/dev/null | awk '{print $1}')
+        read -rp "Delete $dir ($sz) ? [y/N] " ans
+        [[ "$ans" == [yY]* ]] || { info "aborted"; return 0; }
+        rm -rf "$dir" && ok "Deleted $repo ($sz)"
+      else
+        # Try fuzzy match
+        local matches=()
+        for d in "$cache"/models--*"${repo##*/}"*; do
+          [[ -d "$d" ]] && matches+=("$d")
+        done
+        if (( ${#matches[@]} == 1 )); then
+          local sz; sz=$(du -sh "${matches[0]}" 2>/dev/null | awk '{print $1}')
+          read -rp "Delete ${matches[0]} ($sz) ? [y/N] " ans
+          [[ "$ans" == [yY]* ]] || { info "aborted"; return 0; }
+          rm -rf "${matches[0]}" && ok "Deleted ($sz)"
+        elif (( ${#matches[@]} > 1 )); then
+          err "Multiple matches — be more specific:"
+          for m in "${matches[@]}"; do echo "  $(basename "$m")"; done
+          return 1
+        else
+          err "No cached model matches: $repo"
+          return 1
+        fi
+      fi
+      ;;
+
+    cache)
+      local cache; cache=$(_hy_cache_dir)
+      if [[ -d "$cache" ]]; then
+        local sz; sz=$(du -sh "$cache" 2>/dev/null | awk '{print $1}')
+        info "Path: $cache"
+        info "Size: ${sz:-?}"
+      else
+        info "Cache does not exist yet: $cache"
+      fi
+      ;;
+
+    train-init|train-expand|train-run)
+      _hy_require || return 1
+      local b; b=$(_hy_bin)
+      local subcmd="${sub#train-}"
+      # shellcheck disable=SC2086
+      $b train "$subcmd" "$@"
       ;;
 
     repo)
       local new="${1:-}"
       [[ -z "$new" ]] && { info "Current HYPERNIX_REPO: $hy_repo"; info "Set with: ai hy repo <id>"; return 0; }
       export HYPERNIX_REPO="$new"
-      # Persist to the user's ai-cli config so it survives shells
       local cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ai-cli"
       mkdir -p "$cfg_dir"
       local envf="$cfg_dir/aliases.env"
@@ -19615,11 +19975,12 @@ EOF
         printf 'export HYPERNIX_REPO="%s"\n' "$new" >> "$envf"
       fi
       ok "Default repo set to: $new"
-      info "Sourced from: $envf (runs on next shell; this shell already exported)"
+      info "Persisted in: $envf"
       ;;
 
     passthrough|raw)
-      local b; if ! b=$(_hy_bin); then err "hypernix not installed"; return 1; fi
+      _hy_require || return 1
+      local b; b=$(_hy_bin)
       # shellcheck disable=SC2086
       $b "$@"
       ;;
@@ -20183,8 +20544,19 @@ def get_dash_html():
         "function ragList(){j('/v3/rag/list',null,function(d){put('rgOut',d)})}"
         "function benchmark(){put('bmOut','Running...');"
         "j('/v3/benchmark',{},function(d){put('bmOut',d)})}"
-        "function shareLink(){put('shOut','Creating...');"
-        "j('/v3/share',{},function(d){put('shOut',d)})}"
+        "function _shareRender(d){if(d.error){put('shOut',d);return}"
+        "var h='';if(d.url){h+='PUBLIC URL:\\n  '+d.url+'\\n\\n';"
+        "if(d.dashboard)h+='Dashboard:     '+d.dashboard+'\\n';"
+        "if(d.endpoints)h+='v4 endpoints:  '+d.endpoints+'\\n';"
+        "if(d.v4_health)h+='v4 health:     '+d.v4_health+'\\n';"
+        "if(d.openai_compat)h+='OpenAI chat:   '+d.openai_compat+'\\n';"
+        "h+='\\npid '+d.pid+'   '+(d.reused?'(already running)':'(started)');"
+        "h+='\\nStop: ai share stop   or click Stop below'"
+        "}else h=JSON.stringify(d,null,2);put('shOut',h)}"
+        "function shareStatus(){j('/v4/share',{action:'status'},_shareRender)}"
+        "function shareLink(){put('shOut','Creating tunnel...');"
+        "j('/v4/share',{action:'start'},_shareRender)}"
+        "function shareStop(){j('/v4/share',{action:'stop'},function(d){put('shOut',d);shareStatus()})}"
         "function ttsSay(){var t=document.getElementById('vT').value;"
         "j('/v3/voice/tts',{text:t},function(d){put('vOut',d)})}"
     )
@@ -20366,9 +20738,15 @@ def get_dash_html():
     # Tab 9: Share
     h.append(
         "<div id=p9 class=p><h3>Public Share Link</h3>"
-        "<p style=color:#a6adc8>Creates a Cloudflare-tunnel URL so others can reach this API over the internet.</p>"
-        "<button class=b onclick=shareLink()>Create Link</button>"
-        "<pre id=shOut class=o></pre></div>"
+        "<p style=color:#a6adc8>Opens a Cloudflare Quick Tunnel — no account needed. "
+        "Picks up a <code>*.trycloudflare.com</code> URL within ~5 s and saves it. "
+        "Anyone with the URL can reach this API (so set a terminal password first if you want the Terminal tab locked).</p>"
+        "<div class=row>"
+        "<button class='b g' onclick=shareLink()>Create / Re-use Link</button>"
+        "<button class='b bs' onclick=shareStatus()>Status</button>"
+        "<button class='b r bs' onclick=shareStop()>Stop</button>"
+        "</div>"
+        "<pre id=shOut class=o>(click Create)</pre></div>"
     )
 
     # Tab 10: API Docs
@@ -21211,36 +21589,165 @@ def v4_post_voice_tts(h, hdrs, qs):
                       size_bytes=(os.path.getsize(out_path) if ok and os.path.isfile(out_path) else 0),
                       fallback_output=stdout))
 
+SHARE_LOG = os.path.join(CFG_DIR, "share.log")
+SHARE_URL_FILE = os.path.join(CFG_DIR, "share.url")
+SHARE_PID_FILE = os.path.join(CFG_DIR, "share.pid")
+SHARE_BIN_DIR = os.path.join(CFG_DIR, "bin")
+
+def _share_current():
+    """Return (url|None, pid|None) for the active tunnel, if any."""
+    url = None; pid = None
+    try:
+        if os.path.isfile(SHARE_URL_FILE):
+            url = open(SHARE_URL_FILE).read().strip() or None
+        if os.path.isfile(SHARE_PID_FILE):
+            p = int(open(SHARE_PID_FILE).read().strip() or "0")
+            try:
+                os.kill(p, 0); pid = p
+            except Exception:
+                pid = None; url = None
+    except Exception: pass
+    return url, pid
+
+def _cloudflared_bin():
+    """Return a usable cloudflared path, or None."""
+    which = shutil.which("cloudflared")
+    if which: return which
+    local = os.path.join(SHARE_BIN_DIR, "cloudflared")
+    if os.path.isfile(local) and os.access(local, os.X_OK):
+        return local
+    return None
+
+def _start_cloudflared_tunnel(port):
+    """Launch cloudflared in the background; return (url, pid) or (None, None)."""
+    cf = _cloudflared_bin()
+    if not cf: return (None, None)
+    try:
+        os.makedirs(CFG_DIR, exist_ok=True)
+        # Truncate log
+        open(SHARE_LOG, "w").close()
+        try: os.remove(SHARE_URL_FILE)
+        except FileNotFoundError: pass
+        logf = open(SHARE_LOG, "ab")
+        p = subprocess.Popen(
+            [cf, "tunnel", "--url", f"http://localhost:{port}", "--no-autoupdate"],
+            stdout=logf, stderr=logf,
+            start_new_session=True)
+        with open(SHARE_PID_FILE, "w") as f: f.write(str(p.pid))
+        # Poll the log for the trycloudflare URL (max 25 s).
+        import re as _re
+        deadline = time.time() + 25
+        url = None
+        while time.time() < deadline:
+            if p.poll() is not None: break
+            try:
+                data = open(SHARE_LOG).read()
+                m = _re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", data)
+                if m: url = m.group(0); break
+            except Exception: pass
+            time.sleep(0.5)
+        if url:
+            with open(SHARE_URL_FILE, "w") as f: f.write(url)
+            return (url, p.pid)
+        # Timed out or died — clean up
+        try: p.terminate()
+        except Exception: pass
+        try: os.remove(SHARE_PID_FILE)
+        except FileNotFoundError: pass
+        return (None, None)
+    except Exception:
+        return (None, None)
+
+def _stop_share_tunnel():
+    stopped = False
+    try:
+        if os.path.isfile(SHARE_PID_FILE):
+            pid = int(open(SHARE_PID_FILE).read().strip() or "0")
+            if pid:
+                try: os.kill(pid, 15); stopped = True
+                except Exception: pass
+    except Exception: pass
+    for f in (SHARE_PID_FILE, SHARE_URL_FILE):
+        try: os.remove(f)
+        except FileNotFoundError: pass
+    return stopped
+
 def v4_post_share(h, hdrs, qs):
+    """Start / stop / inspect a public tunnel for this API server.
+
+    Actions (body.action):
+      start (default)  → launch cloudflared quick tunnel, return {url,pid}
+      stop             → kill the tunnel, clean pid/url files
+      status           → return current {url,pid,running}
+      snippet          → save a short text snippet to uploads/shares and return a
+                         local-URL for it (the old v3.2 behaviour)
+    """
     t0 = time.time(); req_id = _req_id()
     b = v4_body(h)
-    content = b.get("content") or b.get("text") or ""
-    ttl = int(b.get("ttl_sec", 86400) or 86400)
-    if not content:
-        return (400, _err("missing_input", "missing content/text", req_id))
-    # Persist to a timestamped file under uploads/shares; expose a local URL.
-    share_dir = os.path.join(UPLOADS_DIR, "shares")
-    os.makedirs(share_dir, exist_ok=True)
-    slug = secrets.token_urlsafe(8).replace("_", "-").replace("-", "")[:12]
-    path = os.path.join(share_dir, f"{slug}.txt")
-    with open(path, "w") as f: f.write(content)
-    # Try tunnels in order: cloudflared / ngrok — launch fire-and-forget, don't block.
-    tunnel = None
-    for bin in ("cloudflared", "ngrok"):
-        if shutil.which(bin):
-            tunnel = bin; break
+    action = (b.get("action") or "start").lower()
+
+    if action == "status":
+        url, pid = _share_current()
+        return (200, _env(t0, request_id=req_id,
+                          running=bool(pid), url=url, pid=pid,
+                          log_path=SHARE_LOG,
+                          cloudflared=bool(_cloudflared_bin())))
+
+    if action == "stop":
+        stopped = _stop_share_tunnel()
+        return (200, _env(t0, request_id=req_id,
+                          stopped=stopped, url=None, pid=None))
+
+    if action == "snippet":
+        content = b.get("content") or b.get("text") or ""
+        if not content:
+            return (400, _err("missing_input", "missing content/text", req_id))
+        share_dir = os.path.join(UPLOADS_DIR, "shares")
+        os.makedirs(share_dir, exist_ok=True)
+        slug = secrets.token_urlsafe(8).replace("_", "-").replace("-", "")[:12]
+        path = os.path.join(share_dir, f"{slug}.txt")
+        with open(path, "w") as f: f.write(content)
+        # If a tunnel is running, we can expose it publicly immediately.
+        url, _ = _share_current()
+        public = f"{url}/v4/files/fetch?name=shares/{slug}.txt" if url else None
+        return (200, _env(t0, request_id=req_id,
+                          slug=slug, local_path=path,
+                          local_url=f"http://{HOST}:{PORT}/v4/files/fetch?name=shares/{slug}.txt",
+                          public_url=public,
+                          ttl_sec=int(b.get("ttl_sec", 86400) or 86400),
+                          expires_at=int(time.time()) + int(b.get("ttl_sec", 86400) or 86400)))
+
+    # action == "start" — already running?
+    url, pid = _share_current()
+    if pid and url:
+        return (200, _env(t0, request_id=req_id,
+                          url=url, pid=pid, reused=True,
+                          dashboard=f"{url}/v3/site",
+                          endpoints=f"{url}/v4/endpoints",
+                          stop_hint="POST {action:'stop'} to this endpoint, or: ai share stop"))
+
+    # Not running — try to start cloudflared.
+    cf = _cloudflared_bin()
+    if not cf:
+        return (503, _err("no_tunnel_binary",
+                          "cloudflared not installed. Run: ai share  (auto-downloads on Linux/macOS), "
+                          "or install: pacman -S cloudflared / apt install cloudflared",
+                          req_id,
+                          install_hint="run `ai share` in a terminal — it will fetch cloudflared"))
+
+    url, pid = _start_cloudflared_tunnel(PORT)
+    if not url:
+        return (500, _err("tunnel_failed",
+                          "cloudflared failed to open a tunnel (timed out or died)",
+                          req_id,
+                          log_path=SHARE_LOG))
     return (200, _env(t0, request_id=req_id,
-                      slug=slug,
-                      local_path=path,
-                      local_url=f"http://{HOST}:{PORT}/v4/files/fetch?name=shares/{slug}.txt",
-                      tunnel_available=tunnel,
-                      ttl_sec=ttl,
-                      expires_at=int(time.time()) + ttl,
-                      note=("Use /v4/files/fetch for local viewing. For a public URL, run "
-                            "`ai share` in a terminal — cloudflared/ngrok needs a foreground "
-                            "process to stream the tunnel URL." if not tunnel else
-                            f"Public tunnel binary ({tunnel}) is installed — run `ai share` to "
-                            "start it from a terminal.")))
+                      url=url, pid=pid,
+                      dashboard=f"{url}/v3/site",
+                      endpoints=f"{url}/v4/endpoints",
+                      v4_health=f"{url}/v4/health",
+                      openai_compat=f"{url}/v1/chat/completions",
+                      stop_hint="POST {action:'stop'} to this endpoint, or: ai share stop"))
 
 def v4_post_models_activate(h, hdrs, qs):
     t0 = time.time(); req_id = _req_id()
@@ -21854,232 +22361,277 @@ _RDP_LOGIN_HTML = """<!doctype html>
 _RDP_PANEL_HTML = """<!doctype html>
 <html><head><meta charset="utf-8"><title>RDP · __HOST__</title>
 <style>
-  :root{--bg:#0b1020;--card:#131a33;--ink:#d7e1ff;--mute:#8a95c0;--acc:#3d5afe;--ok:#27c28a;--warn:#e8a93d;--err:#e95d5d}
+  :root{--bg:#0b1020;--card:#131a33;--card2:#0f152b;--ink:#d7e1ff;--mute:#8a95c0;
+        --acc:#3d5afe;--ok:#27c28a;--warn:#e8a93d;--err:#e95d5d;--line:#1e2a4a}
   *{box-sizing:border-box}
   body{margin:0;font:14px/1.4 -apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--ink);overflow:hidden}
-  header{display:flex;align-items:center;gap:10px;padding:8px 14px;background:#0a0f1d;border-bottom:1px solid #1e2a4a;flex-wrap:wrap}
+  header{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#0a0f1d;border-bottom:1px solid var(--line);flex-wrap:wrap}
   header h1{font-size:14px;margin:0;font-weight:600}
   header .sp{flex:1}
-  .pill{font-size:11px;padding:3px 8px;border-radius:999px;background:#22305a;color:#b9c4ea}
+  .pill{font-size:11px;padding:3px 8px;border-radius:999px;background:#22305a;color:#b9c4ea;white-space:nowrap;max-width:340px;overflow:hidden;text-overflow:ellipsis}
   .pill.ok{background:#123f2f;color:#27c28a}
   .pill.warn{background:#3a2b10;color:#e8a93d}
   .pill.err{background:#3f1b1b;color:#e95d5d}
-  .sps{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mute)}
-  .sps input[type=range]{accent-color:var(--acc);width:110px}
-  .sps b{color:var(--ink);min-width:54px;display:inline-block;text-align:right}
-  .wrap{padding:10px 12px;display:grid;grid-template-columns:1fr 300px;gap:10px;height:calc(100vh - 46px)}
-  .shot{background:var(--card);border-radius:10px;padding:6px;overflow:auto;position:relative}
-  .shot img{max-width:100%;display:block;border-radius:6px;user-select:none;-webkit-user-drag:none}
-  .shot.grab img{cursor:none}
-  .shot .overlay{position:absolute;top:12px;right:12px;padding:4px 8px;border-radius:6px;background:#0008;
-                 color:#fff;font:11px ui-monospace,monospace;opacity:.8;pointer-events:none}
-  aside{background:var(--card);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px;overflow:auto}
-  aside h3{margin:0 0 2px;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--mute)}
-  label{font-size:12px;color:var(--mute);margin-bottom:4px;display:block}
-  input[type=text],select,textarea{width:100%;padding:7px 9px;border-radius:6px;border:1px solid #2a3660;
+  .rate{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mute)}
+  .rate input[type=range]{accent-color:var(--acc);width:90px}
+  .rate b{color:var(--ink);min-width:52px;display:inline-block;text-align:right}
+  .wrap{padding:10px;display:grid;grid-template-columns:280px 1fr 300px;gap:10px;height:calc(100vh - 46px)}
+  .col{background:var(--card);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:10px;overflow:auto;min-height:0}
+  .col h3{margin:0;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--mute)}
+  .wins{display:flex;flex-direction:column;gap:4px;overflow:auto;flex:1}
+  .win{padding:7px 9px;background:var(--card2);border-radius:6px;cursor:pointer;font-size:12px;line-height:1.3;border:1px solid transparent}
+  .win:hover{background:#1a2550}
+  .win.active{border-color:var(--acc);background:#1b2754}
+  .win .t{font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .win .m{font-size:10.5px;color:var(--mute);margin-top:2px}
+  .active-card{background:var(--card2);border-radius:8px;padding:10px;border:1px solid var(--line)}
+  .active-card .at{font-weight:700;font-size:14px;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .active-card .am{font-size:11px;color:var(--mute);font-family:ui-monospace,monospace}
+  textarea,input[type=text],select{width:100%;padding:7px 9px;border-radius:6px;border:1px solid #2a3660;
     background:#0b1020;color:#fff;font:13px ui-monospace,monospace}
   textarea{min-height:60px;resize:vertical}
   button{padding:7px 10px;border:0;border-radius:6px;background:var(--acc);color:#fff;font-weight:600;cursor:pointer;font-size:12px}
   button.ghost{background:#22305a}
-  button.warn{background:#b9821f}
-  button.grabbed{background:var(--err);color:#fff;animation:pulse 1.4s ease-in-out infinite}
+  button.grabbed{background:var(--err);animation:pulse 1.4s ease-in-out infinite}
   @keyframes pulse{50%{filter:brightness(1.3)}}
   .row{display:flex;gap:6px}
   .row > *{flex:1}
-  .log{font:11px ui-monospace,monospace;background:#0b1020;padding:8px;border-radius:6px;max-height:110px;overflow:auto;color:#94a2d2}
   .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
   .grid3 button{background:#22305a}
-  .meta{font-size:11px;color:var(--mute)}
+  .procs{font:11px ui-monospace,monospace;max-height:220px;overflow:auto}
+  .procs table{width:100%;border-collapse:collapse}
+  .procs td{padding:3px 4px;border-bottom:1px solid #1a2346}
+  .procs td.c{color:var(--warn)} .procs td.m{color:#7ad6ff}
+  .log{font:11px ui-monospace,monospace;background:#0b1020;padding:8px;border-radius:6px;max-height:130px;overflow:auto;color:#94a2d2}
   .kbd{padding:1px 5px;background:#22305a;border-radius:4px;font:11px ui-monospace,monospace}
+  .shell{font:12px ui-monospace,monospace;background:#000;color:#bef7b0;padding:8px;border-radius:6px;min-height:100px;max-height:200px;overflow:auto;white-space:pre-wrap}
+  .banner{padding:10px 14px;background:#3f1b1b;color:#ffd7d7;border-bottom:1px solid #7a2b2b;
+          font-size:13px;display:none}
+  .banner.show{display:block}
+  .banner b{color:#fff}
+  .banner code{background:#1e1e2e;padding:1px 6px;border-radius:4px;color:#f1d58c;font-family:ui-monospace,monospace}
+  .vbadge{font-size:11px;background:#1e1e2e;color:#f9e2af;padding:2px 8px;border-radius:6px;font-family:ui-monospace,monospace}
 </style></head><body>
 <header>
   <h1>🖥 __HOST__</h1>
+  <span class="vbadge">v__VERSION__</span>
   <span class="pill ok" id="st-ts">Tailscale OK</span>
-  <span class="pill" id="st-eng">engine —</span>
-  <span class="pill" id="st-dpy">display —</span>
-  <span class="pill" id="st-last">—</span>
+  <span class="pill" id="st-ses">session —</span>
+  <span class="pill" id="st-de">de —</span>
+  <span class="pill" id="st-ctl">input —</span>
+  <span class="pill" id="st-active" title="active window">active —</span>
+  <span class="pill" id="st-cur">cursor —</span>
   <div class="sp"></div>
-  <div class="sps">
+  <div class="rate">
     <label style="margin:0">auto <input type="checkbox" id="auto" checked></label>
-    <input type="range" id="sps" min="1" max="30" value="15" step="1">
-    <b id="spsv">15 sps</b>
+    <input type="range" id="rate" min="200" max="3000" value="1000" step="100">
+    <b id="ratev">1.0 s</b>
   </div>
-  <button class="ghost" onclick="shot()">↻</button>
   <button id="kbBtn" class="ghost" onclick="toggleKbGrab()">⌨ Capture keyboard</button>
 </header>
+
+<div class="banner" id="banner"></div>
+
 <div class="wrap">
-  <div class="shot" id="shotbox">
-    <img id="shotA" alt="" draggable="false">
-    <img id="shotB" alt="" style="display:none" draggable="false">
-    <div class="overlay" id="ov">no frame yet</div>
+  <!-- ─── Left: Window list ───────────────────────────────────────────── -->
+  <div class="col">
+    <h3>Windows <span id="winct" style="color:var(--mute)">(0)</span></h3>
+    <div class="wins" id="wins"></div>
+    <h3>Cursor</h3>
+    <div class="active-card"><div class="am" id="curline">–</div></div>
+    <h3>Log</h3>
+    <div class="log" id="log">ready</div>
   </div>
-  <aside>
-    <div>
-      <h3>Keyboard grab</h3>
-      <div class="meta">While grabbed, every key you press is forwarded to the remote PC.<br>
-        Exit chord: <span class="kbd">L-Ctrl</span> + <span class="kbd">L-Alt</span> + <span class="kbd">R-Shift</span> + <span class="kbd">.</span></div>
+
+  <!-- ─── Middle: Active window + type + shell ────────────────────────── -->
+  <div class="col">
+    <h3>Active window</h3>
+    <div class="active-card">
+      <div class="at" id="actTitle">—</div>
+      <div class="am" id="actMeta">—</div>
     </div>
-    <div>
-      <h3>Type text</h3>
-      <textarea id="text" placeholder="Type into the focused window…"></textarea>
-      <div class="row" style="margin-top:6px"><button onclick="sendType()">Send type</button>
-        <button class="ghost" onclick="document.getElementById('text').value=''">Clear</button></div>
+    <h3>Type into active window</h3>
+    <textarea id="text" placeholder="Type text to send…"></textarea>
+    <div class="row">
+      <button onclick="sendType()">Send type</button>
+      <button class="ghost" onclick="document.getElementById('text').value=''">Clear</button>
+      <button class="ghost" onclick="pasteFromClipboard()">Paste clipboard</button>
     </div>
-    <div>
-      <h3>Quick keys</h3>
-      <div class="row"><input type="text" id="key" placeholder="Return, ctrl+alt+t…">
-        <button onclick="sendKey()">Press</button></div>
-      <div class="grid3" style="margin-top:6px">
-        <button onclick="k('Return')">Enter</button>
-        <button onclick="k('Escape')">Esc</button>
-        <button onclick="k('Tab')">Tab</button>
-        <button onclick="k('BackSpace')">Back</button>
-        <button onclick="k('super')">Super</button>
-        <button onclick="k('ctrl+alt+t')">⎋ Term</button>
-      </div>
+    <h3>Quick keys</h3>
+    <div class="row">
+      <input type="text" id="key" placeholder="Return, ctrl+alt+t, super+d…">
+      <button onclick="sendKey()">Press</button>
     </div>
-    <div>
-      <h3>Mouse</h3>
-      <div class="meta">Move the cursor over the screen above; mousedown/up and scroll are forwarded live.<br>
-        To click without moving: fill x/y below.</div>
-      <div class="row" style="margin-top:6px">
-        <input type="text" id="cx" placeholder="x">
-        <input type="text" id="cy" placeholder="y">
-        <select id="cb"><option value="1">left</option><option value="2">mid</option><option value="3">right</option></select>
-        <button onclick="sendClick()">Click</button>
-      </div>
+    <div class="grid3">
+      <button onclick="k('Return')">Enter</button>
+      <button onclick="k('Escape')">Esc</button>
+      <button onclick="k('Tab')">Tab</button>
+      <button onclick="k('BackSpace')">Back</button>
+      <button onclick="k('super')">Super</button>
+      <button onclick="k('ctrl+alt+t')">⎋ Term</button>
+      <button onclick="k('alt+F4')">Alt+F4</button>
+      <button onclick="k('super+d')">Show Desktop</button>
+      <button onclick="k('ctrl+alt+Delete')">C+A+Del</button>
     </div>
-    <div>
-      <h3>Log</h3>
-      <div class="log" id="log">ready</div>
+    <h3>Shell</h3>
+    <div class="row">
+      <input type="text" id="cmd" placeholder="shell command (needs PC password)">
+      <button onclick="runCmd()">Run</button>
     </div>
-  </aside>
+    <div class="shell" id="shellout">$ _</div>
+  </div>
+
+  <!-- ─── Right: Clipboard + processes + keyboard grab info ───────────── -->
+  <div class="col">
+    <h3>Keyboard grab</h3>
+    <div style="font-size:12px;color:var(--mute)">
+      Press <b>⌨ Capture keyboard</b> above and every key you press is forwarded to the remote PC.<br>
+      Exit chord: <span class="kbd">L-Ctrl</span> + <span class="kbd">L-Alt</span> + <span class="kbd">R-Shift</span> + <span class="kbd">.</span>
+    </div>
+    <h3>Clipboard (remote)</h3>
+    <textarea id="clip" placeholder="Remote clipboard contents…"></textarea>
+    <div class="row">
+      <button onclick="getClip()">Read</button>
+      <button onclick="setClip()">Write</button>
+    </div>
+
+    <h3>System</h3>
+    <div class="row">
+      <input type="text" id="launchApp" placeholder="firefox, code, …">
+      <button onclick="launchApp()">Launch</button>
+    </div>
+    <div class="row" style="margin-top:4px">
+      <input type="text" id="notifyText" placeholder="Notify text…">
+      <button onclick="sendNotify()">Notify</button>
+    </div>
+    <div class="row" style="margin-top:4px">
+      <button class="ghost" onclick="lockScreen()">🔒 Lock</button>
+      <button class="ghost" onclick="loadDesktops()">Desktops</button>
+      <button class="ghost" onclick="openShare()">🌐 Share</button>
+    </div>
+    <div id="desktops" style="font-size:11px;color:var(--mute);margin-top:4px"></div>
+
+    <h3>Top processes</h3>
+    <div class="procs"><table id="procs"><tbody></tbody></table></div>
+  </div>
 </div>
+
 <script>
 const PW = __PW_JSON__;
-
-// ─── rendering: double-buffered image swap ────────────────────────────────
-const imgs = [document.getElementById('shotA'), document.getElementById('shotB')];
-let front = 0;  // which img is currently visible
-const ov = document.getElementById('ov');
-let natW = 0, natH = 0;
-
-function swapTo(b64DataUrlOrUrl){
-  // Preload onto the back buffer, then reveal it and hide the front buffer.
-  // This removes the previous frame right before the next appears — no ghost.
-  const back = imgs[1 - front];
-  const next = () => {
-    natW = back.naturalWidth || natW;
-    natH = back.naturalHeight || natH;
-    imgs[front].style.display = 'none';
-    imgs[front].src = '';
-    back.style.display = 'block';
-    front = 1 - front;
-  };
-  back.onload = next;
-  back.onerror = () => { logMsg('img load err'); };
-  back.src = b64DataUrlOrUrl;
-}
-
-// ─── api helpers ──────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
 function ts(){return new Date().toLocaleTimeString();}
-function logMsg(m){const el=document.getElementById('log');el.textContent=ts()+'  '+m+'\\n'+el.textContent;}
+function logMsg(m){const el=$('log');el.textContent=ts()+'  '+m+'\\n'+el.textContent;}
+
 async function api(action, extra){
   const body = Object.assign({action, password: PW}, extra||{});
-  const r = await fetch('/v4/_rdp', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const r = await fetch('/v4/_rdp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const j = await r.json().catch(()=>({error:{message:'bad json'}}));
   return {code:r.status, j};
 }
 
-// ─── screenshot loop ──────────────────────────────────────────────────────
-let inFlight = false, lastFrameMs = 0;
-async function shot(){
-  if (inFlight) return;
-  inFlight = true;
-  const t0 = performance.now();
-  try {
-    const {code, j} = await api('screenshot');
-    if (code !== 200) { logMsg('shot '+code+': '+(j.error&&j.error.message||'err')); return; }
-    swapTo(j.url + '&t=' + Date.now());
-    const took = Math.round(performance.now() - t0);
-    lastFrameMs = took;
-    document.getElementById('st-last').textContent = took + 'ms';
-    document.getElementById('st-eng').textContent = 'engine '+(j.engine||'?');
-    document.getElementById('st-dpy').textContent = 'DISPLAY='+(j.display||'-');
-    ov.textContent = natW+'×'+natH+'  ·  '+took+'ms  ·  '+j.engine;
-  } catch(e) { logMsg('err '+e); }
-  finally { inFlight = false; }
+// ─── polling loop ─────────────────────────────────────────────────────────
+const rateEl = $('rate'), ratevEl = $('ratev');
+function rateMs(){ return +rateEl.value || 1000; }
+rateEl.addEventListener('input', ()=> ratevEl.textContent = (rateMs()/1000).toFixed(1)+' s');
+ratevEl.textContent = (rateMs()/1000).toFixed(1)+' s';
+
+let activeId = null;
+
+async function refreshAll(){
+  // active window
+  const a = (await api('active')).j;
+  if (a && a.window_id){
+    activeId = a.window_id;
+    $('actTitle').textContent = a.title || '(untitled)';
+    const g = a.geometry || {};
+    $('actMeta').textContent =
+      `id=${a.window_id}  pid=${a.pid||'?'}  geom=${g.x||0},${g.y||0} ${g.w||0}×${g.h||0}`;
+    $('st-active').textContent = 'active: ' + (a.title||'').slice(0,60);
+  }
+  // windows list
+  const w = (await api('windows')).j;
+  const wins = (w && w.windows) || [];
+  $('winct').textContent = `(${wins.length})`;
+  const box = $('wins');
+  box.innerHTML = '';
+  for (const win of wins){
+    const div = document.createElement('div');
+    div.className = 'win' + (win.id === activeId ? ' active' : '');
+    const t = document.createElement('div'); t.className = 't'; t.textContent = win.title||'(untitled)';
+    const m = document.createElement('div'); m.className = 'm';
+    m.textContent = (win.w? `${win.w}×${win.h}  ` : '') + (win.pid? `pid ${win.pid}` : '');
+    const row = document.createElement('div');
+    row.style.display='flex'; row.style.gap='4px'; row.style.marginTop='4px';
+    const btnMin = document.createElement('button');
+    btnMin.className='ghost'; btnMin.style.fontSize='10px'; btnMin.style.padding='2px 6px';
+    btnMin.textContent='—'; btnMin.title='minimise';
+    btnMin.onclick = async ev=>{ ev.stopPropagation();
+      const r = await api('window_minimize', {id: win.id});
+      logMsg('min '+win.id+' · '+(r.j.ok?'ok':'FAIL')); refreshAll(); };
+    const btnClose = document.createElement('button');
+    btnClose.className='ghost'; btnClose.style.fontSize='10px'; btnClose.style.padding='2px 6px';
+    btnClose.textContent='×'; btnClose.title='close';
+    btnClose.onclick = async ev=>{ ev.stopPropagation();
+      if (!confirm('Close "'+(win.title||win.id)+'"?')) return;
+      const r = await api('window_close', {id: win.id});
+      logMsg('close '+win.id+' · '+(r.j.ok?'ok':'FAIL')); refreshAll(); };
+    row.appendChild(btnMin); row.appendChild(btnClose);
+    div.appendChild(t); div.appendChild(m); div.appendChild(row);
+    div.onclick = async ()=>{
+      const r = await api('activate', {id: win.id});
+      logMsg('activate '+win.id+' · '+(r.j.ok?'ok':'FAIL'));
+      refreshAll();
+    };
+    box.appendChild(div);
+  }
+  // cursor
+  const c = (await api('cursor')).j;
+  if (c && c.x !== null){
+    $('st-cur').textContent = `cursor ${c.x},${c.y}`;
+    $('curline').textContent = `x=${c.x}  y=${c.y}  screen=${c.screen}  window=${c.window}`;
+  }
 }
 
-// Adjustable SPS (screenshots per second), 1..30
-const spsEl = document.getElementById('sps');
-const spsvEl = document.getElementById('spsv');
-function currentSps(){ return +spsEl.value || 15; }
-spsEl.addEventListener('input', () => spsvEl.textContent = currentSps()+' sps');
-spsvEl.textContent = currentSps()+' sps';
+async function refreshProcs(){
+  const p = (await api('processes',{limit:25})).j;
+  const tb = $('procs').querySelector('tbody');
+  tb.innerHTML = '';
+  for (const r of (p.processes||[])){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.pid}</td><td class="c">${r.cpu.toFixed(1)}</td>`
+                 + `<td class="m">${r.mem.toFixed(1)}</td><td>${r.cmd.slice(0,40)}</td>`;
+    tb.appendChild(tr);
+  }
+}
 
 (async function loop(){
-  while (true) {
-    const on = document.getElementById('auto').checked;
-    const sps = currentSps();
-    const interval = Math.max(30, Math.floor(1000/sps));  // 30ms floor (~33 fps)
-    if (on) { await shot(); }
-    await new Promise(r => setTimeout(r, interval));
+  while (true){
+    const on = $('auto').checked;
+    const ms = rateMs();
+    if (on){
+      try { await refreshAll(); } catch(e){ logMsg('poll err '+e); }
+    }
+    await new Promise(r=>setTimeout(r, ms));
+  }
+})();
+// processes poll — slower by design
+(async function procLoop(){
+  while (true){
+    if ($('auto').checked){
+      try { await refreshProcs(); } catch{}
+    }
+    await new Promise(r=>setTimeout(r, Math.max(2000, rateMs()*2)));
   }
 })();
 
-// ─── mouse capture (move + down/up + wheel + click-on-image) ──────────────
-const box = document.getElementById('shotbox');
-let mouseInside = false;
-let lastMoveSent = 0;
-const MOVE_THROTTLE_MS = 60;  // don't flood server; ~16 moves/sec max
-
-function imgCoords(ev){
-  const img = imgs[front];
-  const r = img.getBoundingClientRect();
-  if (r.width <= 0 || !img.naturalWidth) return null;
-  const sx = Math.round((ev.clientX - r.left) * (img.naturalWidth  / r.width));
-  const sy = Math.round((ev.clientY - r.top)  * (img.naturalHeight / r.height));
-  if (sx < 0 || sy < 0 || sx > img.naturalWidth || sy > img.naturalHeight) return null;
-  return {x: sx, y: sy};
-}
-
-box.addEventListener('mouseenter', () => { mouseInside = true; });
-box.addEventListener('mouseleave', () => { mouseInside = false; });
-box.addEventListener('contextmenu', ev => { ev.preventDefault(); });
-box.addEventListener('mousemove', ev => {
-  if (!mouseInside) return;
-  const now = performance.now();
-  if (now - lastMoveSent < MOVE_THROTTLE_MS) return;
-  const p = imgCoords(ev); if (!p) return;
-  lastMoveSent = now;
-  api('mousemove', p).catch(()=>{});
-});
-box.addEventListener('mousedown', ev => {
-  ev.preventDefault();
-  const p = imgCoords(ev) || {};
-  const btn = ev.button === 2 ? 3 : ev.button === 1 ? 2 : 1;
-  api('mousedown', Object.assign({button:btn}, p));
-});
-box.addEventListener('mouseup', ev => {
-  ev.preventDefault();
-  const p = imgCoords(ev) || {};
-  const btn = ev.button === 2 ? 3 : ev.button === 1 ? 2 : 1;
-  api('mouseup', Object.assign({button:btn}, p));
-});
-box.addEventListener('wheel', ev => {
-  ev.preventDefault();
-  api('scroll', {dy: ev.deltaY});
-}, {passive:false});
-
-// ─── text / key / manual click buttons ─────────────────────────────────────
+// ─── actions ──────────────────────────────────────────────────────────────
 async function sendType(){
-  const t = document.getElementById('text').value; if (!t) return;
+  const t = $('text').value; if (!t) return;
   const {j} = await api('type', {text:t});
   logMsg('type '+t.length+'c · '+(j.ok?'ok':('FAIL '+(j.stderr||''))));
 }
 async function sendKey(){
-  const v = document.getElementById('key').value; if (!v) return;
+  const v = $('key').value; if (!v) return;
   const {j} = await api('key', {key:v});
   logMsg('key '+v+' · '+(j.ok?'ok':('FAIL '+(j.stderr||''))));
 }
@@ -22087,18 +22639,79 @@ async function k(combo){
   const {j} = await api('key', {key:combo});
   logMsg('key '+combo+' · '+(j.ok?'ok':('FAIL '+(j.stderr||''))));
 }
-async function sendClick(){
-  const x = +document.getElementById('cx').value || 0;
-  const y = +document.getElementById('cy').value || 0;
-  const btn = +document.getElementById('cb').value || 1;
-  const {j} = await api('click', {x, y, button:btn});
-  logMsg('click '+x+','+y+' b'+btn+' · '+(j.ok?'ok':('FAIL '+(j.stderr||''))));
+async function getClip(){
+  const {j} = await api('clipboard_get');
+  $('clip').value = j.text||'';
+  logMsg('clip read '+(j.bytes||0)+' bytes');
+}
+async function setClip(){
+  const txt = $('clip').value;
+  const {j} = await api('clipboard_set', {text: txt});
+  logMsg('clip write '+(j.bytes||0)+' bytes');
+}
+async function pasteFromClipboard(){
+  // First ensure remote clipboard has our typed text, then ctrl+v
+  const txt = $('text').value || '';
+  if (txt){ await api('clipboard_set', {text: txt}); }
+  await api('key', {key:'ctrl+v'});
+  logMsg('paste '+txt.length+' chars via ctrl+v');
+}
+async function runCmd(){
+  const c = $('cmd').value.trim(); if (!c) return;
+  const out = $('shellout');
+  out.textContent = '$ '+c+'\\n…running…';
+  const r = await fetch('/v4/run',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({cmd:c, password:PW, timeout:15})});
+  const j = await r.json().catch(()=>({}));
+  out.textContent = '$ '+c+'\\n'+(j.stdout||'')+(j.stderr?'\\n[stderr]\\n'+j.stderr:'')+`\\nrc=${j.rc??'?'}`;
+  logMsg('cmd rc='+(j.rc??'?'));
+}
+
+// ─── system (launch / notify / lock / workspace / share) ───────────────────
+async function launchApp(){
+  const a = $('launchApp').value.trim(); if (!a) return;
+  const {j} = await api('launch',{app:a});
+  logMsg('launch '+a+' via '+(j.launcher||'?')+' · '+(j.ok?'ok':'FAIL'));
+}
+async function sendNotify(){
+  const t = $('notifyText').value; if (!t) return;
+  const {j} = await api('notify',{summary:'ai-cli', body:t});
+  logMsg('notify · '+(j.ok?'ok':'FAIL'));
+}
+async function lockScreen(){
+  if (!confirm('Lock the remote screen?')) return;
+  const {j} = await api('lock');
+  logMsg('lock via '+(j.tool||'?')+' · '+(j.ok?'ok':'FAIL'));
+}
+async function loadDesktops(){
+  const {j} = await api('workspace',{op:'current'});
+  const el = $('desktops'); el.innerHTML = '';
+  if (!j.desktops) { el.textContent = 'wmctrl not installed'; return; }
+  for (const d of j.desktops){
+    const btn = document.createElement('button');
+    btn.className = 'ghost';
+    btn.style.margin = '2px';
+    btn.textContent = (d.active?'●':'○')+' '+(d.name||d.index);
+    btn.onclick = async ()=>{
+      await api('workspace',{op:'switch', index:d.index});
+      loadDesktops();
+    };
+    el.appendChild(btn);
+  }
+}
+async function openShare(){
+  const {j} = await api('info');
+  // Delegate to /v4/share for the actual tunnel
+  const r = await fetch('/v4/share',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'start'})});
+  const d = await r.json().catch(()=>({}));
+  if (d.url){ logMsg('share: '+d.url); window.open(d.url+'/v3/site','_blank'); }
+  else { logMsg('share failed: '+(d.error&&d.error.message||JSON.stringify(d))); }
 }
 
 // ─── keyboard grab ────────────────────────────────────────────────────────
 let kbGrabbed = false;
-const held = new Set();   // event.code for currently pressed keys
-
+const held = new Set();
 function kbCode(ev){
   const c = ev.code || "";
   if (/^Key[A-Z]$/.test(c))  return c.slice(3).toLowerCase();
@@ -22115,72 +22728,84 @@ function kbCode(ev){
     BracketLeft:'bracketleft', BracketRight:'bracketright', Backslash:'backslash',
     CapsLock:'Caps_Lock', ContextMenu:'Menu',
     NumpadAdd:'KP_Add', NumpadSubtract:'KP_Subtract',
-    NumpadMultiply:'KP_Multiply', NumpadDivide:'KP_Divide',
-    NumpadDecimal:'KP_Decimal'
+    NumpadMultiply:'KP_Multiply', NumpadDivide:'KP_Divide', NumpadDecimal:'KP_Decimal'
   };
   return map[c] || null;
 }
-
 function toggleKbGrab(){
   kbGrabbed = !kbGrabbed;
-  const btn = document.getElementById('kbBtn');
-  if (kbGrabbed) {
-    btn.className = 'grabbed';
-    btn.textContent = '⌨ grabbed — L-Ctrl+L-Alt+R-Shift+. to release';
-    held.clear();
-    logMsg('keyboard grabbed');
+  const b = $('kbBtn');
+  if (kbGrabbed){
+    b.className='grabbed';
+    b.textContent='⌨ grabbed — L-Ctrl+L-Alt+R-Shift+. to release';
+    held.clear(); logMsg('keyboard grabbed');
   } else {
-    btn.className = 'ghost';
-    btn.textContent = '⌨ Capture keyboard';
-    held.clear();
-    logMsg('keyboard released');
+    b.className='ghost'; b.textContent='⌨ Capture keyboard';
+    held.clear(); logMsg('keyboard released');
   }
 }
-
-window.addEventListener('keydown', ev => {
+window.addEventListener('keydown', ev=>{
   if (!kbGrabbed) return;
   held.add(ev.code);
-  // Exit chord: LCtrl + LAlt + RShift + Period
   if (held.has('ControlLeft') && held.has('AltLeft') &&
-      held.has('ShiftRight')  && held.has('Period')) {
-    ev.preventDefault();
-    toggleKbGrab();
-    return;
+      held.has('ShiftRight')  && held.has('Period')){
+    ev.preventDefault(); toggleKbGrab(); return;
   }
-  // Don't forward pure modifier keys (they'd be redundant)
   if (['ControlLeft','ControlRight','AltLeft','AltRight',
-       'ShiftLeft','ShiftRight','MetaLeft','MetaRight'].includes(ev.code)) {
-    ev.preventDefault();
-    return;
+       'ShiftLeft','ShiftRight','MetaLeft','MetaRight'].includes(ev.code)){
+    ev.preventDefault(); return;
   }
   ev.preventDefault();
-  const base = kbCode(ev);
-  if (!base) return;
-  const mods = [];
+  const base = kbCode(ev); if (!base) return;
+  const mods=[];
   if (ev.ctrlKey)  mods.push('ctrl');
   if (ev.altKey)   mods.push('alt');
   if (ev.shiftKey) mods.push('shift');
   if (ev.metaKey)  mods.push('super');
-  api('key', {key: mods.concat(base).join('+')});
+  api('key',{key: mods.concat(base).join('+')});
 }, true);
-
-window.addEventListener('keyup', ev => {
+window.addEventListener('keyup', ev=>{
   if (!kbGrabbed) return;
-  held.delete(ev.code);
-  ev.preventDefault();
+  held.delete(ev.code); ev.preventDefault();
 }, true);
+window.addEventListener('blur', ()=>held.clear());
 
-window.addEventListener('blur', () => { held.clear(); });
-
-// Initial kick: one shot + info request
-(async () => {
+// Initial info — populate pills + banner based on detected session
+(async()=>{
   const {j} = await api('info');
-  if (j && j.dimensions) logMsg('info: '+j.dimensions+' · control='+(j.control_works?'OK':'broken: '+(j.control_err||'')));
-  if (j && j.control_works === false) {
-    document.getElementById('st-ts').className = 'pill warn';
-    document.getElementById('st-ts').textContent = 'control broken — see log';
+  if (!j) return;
+  $('st-ses').textContent = 'session: '+(j.session_type||'?');
+  $('st-de').textContent  = 'de: '+(j.desktop||'?')+(j.plasma_version?(' '+j.plasma_version):'');
+  const ctl = j.control_tool || j.expected_control_tool || '—';
+  const ok  = j.control_works;
+  const ctlEl = $('st-ctl');
+  ctlEl.textContent = 'input: '+ctl+(ok===true?' ✓':ok===false?' ✗':'');
+  ctlEl.className = 'pill '+(ok===false?'err':ok===true?'ok':'');
+
+  // Big red banner with an exact-fix instruction when control is broken or
+  // when we're on Wayland with only xdotool installed.
+  const diags = j.diagnostics || [];
+  if (diags.length || ok === false){
+    const msgs = diags.slice();
+    if (ok === false) msgs.push('xdotool probe failed: '+(j.control_err||'no DISPLAY?'));
+    if (j.session_type === 'wayland' && j.control_tool === 'xdotool'){
+      msgs.push('Fix on KDE Plasma 6 Wayland:');
+      msgs.push('   sudo pacman -S ydotool');
+      msgs.push('   sudo gpasswd -a $USER input   # then log out + back in');
+      msgs.push('   systemctl --user enable --now ydotoold');
+      msgs.push('   ai api stop && ai api start   # pick up ydotool');
+    }
+    if (j.display === null && j.wayland === null){
+      msgs.push('No DISPLAY or WAYLAND_DISPLAY found — the API server was started outside the graphical session.');
+      msgs.push('Restart it inside your session: ai api stop && ai api start  (or `DISPLAY=:0 ai api start`).');
+    }
+    const bn = $('banner');
+    bn.innerHTML = '<b>⚠ Remote input not fully working</b><br>'
+      + msgs.map(m => m.replace(/`([^`]+)`/g,'<code>$1</code>')).join('<br>');
+    bn.className = 'banner show';
   }
-  shot();
+  logMsg('info: '+(j.dimensions||'?')+' · '+(j.session_type||'?')+' · '+(j.desktop||'?'));
+  refreshAll(); refreshProcs();
 })();
 </script>
 </body></html>"""
@@ -22225,6 +22850,7 @@ def v4_get_rdp(h, hdrs, qs):
     # JS can POST it back — hidden endpoint + Tailscale gating keeps it contained.
     panel = (_RDP_PANEL_HTML
              .replace("__HOST__", platform.node().replace("<", ""))
+             .replace("__VERSION__", VERSION)
              .replace("__PW_JSON__", json.dumps(pw)))
     _html(200, panel)
     return None
@@ -22251,31 +22877,117 @@ def v4_post_rdp(h, hdrs, qs):
 
     # --- info: report screen capabilities ---------------------------------
     if action == "info":
-        tools = {
-            "screenshot": _have("gnome-screenshot", "scrot", "grim", "screencapture", "import"),
-            "control":    _have("xdotool", "ydotool"),
-        }
         env = _rdp_env()
+        tools = {
+            "screenshot": _have("gnome-screenshot", "scrot", "grim", "spectacle",
+                                "screencapture", "import"),
+            "control_x11":    _have("xdotool"),
+            "control_wayland":_have("ydotool", "wtype", "dotool"),
+            "clipboard_x11":  _have("xclip", "xsel"),
+            "clipboard_wl":   _have("wl-copy", "wl-paste"),
+            "wm":             _have("wmctrl", "wlrctl"),
+            "notify":         _have("notify-send"),
+            "lock":           _have("loginctl", "qdbus6", "qdbus",
+                                    "xdg-screensaver", "gnome-screensaver-command",
+                                    "xscreensaver-command", "swaylock"),
+        }
+
+        # Detect session type and desktop environment
+        session_type = (env.get("XDG_SESSION_TYPE")
+                        or ("wayland" if env.get("WAYLAND_DISPLAY") else None)
+                        or ("x11" if env.get("DISPLAY") else None)
+                        or "unknown")
+        de_raw = (env.get("XDG_CURRENT_DESKTOP") or env.get("DESKTOP_SESSION") or "")
+        de = de_raw.lower()
+        plasma_ver = None
+        if "kde" in de or "plasma" in de:
+            de_name = "KDE Plasma"
+            # Detect Plasma 5 vs 6
+            for b in ("plasmashell",):
+                if shutil.which(b):
+                    try:
+                        r = subprocess.run([b, "--version"], capture_output=True, text=True, timeout=2)
+                        m = re.search(r"(\d+)\.(\d+)", r.stdout or "")
+                        if m: plasma_ver = f"{m.group(1)}.{m.group(2)}"
+                    except Exception: pass
+        elif "gnome" in de: de_name = "GNOME"
+        elif "xfce" in de:  de_name = "XFCE"
+        elif "mate" in de:  de_name = "MATE"
+        elif "cinnamon" in de: de_name = "Cinnamon"
+        elif "sway" in de:  de_name = "Sway"
+        elif "hypr" in de:  de_name = "Hyprland"
+        elif de_raw: de_name = de_raw
+        else: de_name = "unknown"
+
+        # Screen dimensions via xdpyinfo (X11) or wlr-randr (Wayland)
         dims = None
         try:
-            r = subprocess.run(["xdpyinfo"], capture_output=True, text=True,
-                               timeout=2, env=env)
-            for line in r.stdout.splitlines():
+            r = subprocess.run(["xdpyinfo"], capture_output=True, text=True, timeout=2, env=env)
+            for line in (r.stdout or "").splitlines():
                 if "dimensions" in line:
                     dims = line.strip(); break
         except Exception: pass
-        # Quick test: can xdotool actually drive the display?
-        ctl_ok = None; ctl_err = ""
+
+        # Pick the right control tool for the *expected* session
+        expected_ctl = None; expected_ctl_reason = ""
+        if session_type == "wayland":
+            # On Wayland, native Wayland apps IGNORE xdotool completely.
+            # We must use ydotool (needs ydotoold + /dev/uinput) or wtype.
+            if shutil.which("ydotool"):
+                expected_ctl = "ydotool"
+                # Check the daemon is actually up
+                try:
+                    r = subprocess.run(["pgrep", "-x", "ydotoold"],
+                                       capture_output=True, text=True, timeout=1)
+                    if r.returncode != 0:
+                        expected_ctl_reason = ("ydotool installed but ydotoold "
+                                               "daemon isn't running — start it "
+                                               "(systemctl --user start ydotoold)")
+                except Exception: pass
+                # Check /dev/uinput permissions
+                if not os.access("/dev/uinput", os.W_OK):
+                    expected_ctl_reason = (expected_ctl_reason or
+                        "/dev/uinput not writable — add user to 'input' group "
+                        "or run ydotoold as root")
+            elif shutil.which("wtype"):
+                expected_ctl = "wtype"
+            elif shutil.which("xdotool"):
+                expected_ctl = "xdotool"
+                expected_ctl_reason = ("Wayland session but only xdotool present — "
+                                       "will only work on XWayland apps. Install "
+                                       "ydotool for native Wayland input.")
+        else:
+            expected_ctl = shutil.which("xdotool")
+            if expected_ctl: expected_ctl = os.path.basename(expected_ctl)
+
+        # Live probe: does `xdotool getmouselocation` return anything?
+        ctl_ok = None; ctl_err = ""; probed = None
         ctl = shutil.which("xdotool") or shutil.which("ydotool")
         if ctl:
+            probed = os.path.basename(ctl)
             try:
-                r = subprocess.run([ctl, "getmouselocation"],
-                                   capture_output=True, text=True, timeout=2, env=env)
+                if probed == "xdotool":
+                    r = subprocess.run([ctl, "getmouselocation"],
+                                       capture_output=True, text=True, timeout=2, env=env)
+                else:  # ydotool doesn't have getmouselocation; --help is our probe
+                    r = subprocess.run([ctl, "--help"],
+                                       capture_output=True, text=True, timeout=2, env=env)
                 ctl_ok = r.returncode == 0
                 ctl_err = (r.stderr or "")[:200]
             except Exception as e: ctl_err = str(e)
+
+        # Synthesize a single human-readable diagnostic
+        diag = []
+        if session_type == "wayland" and probed == "xdotool" and not shutil.which("ydotool"):
+            diag.append("⚠ Wayland session + xdotool only → native-Wayland apps will ignore input. "
+                        "Install ydotool + start ydotoold.")
+        if expected_ctl_reason: diag.append(expected_ctl_reason)
+        if not shutil.which("wmctrl") and session_type != "wayland":
+            diag.append("wmctrl missing → window list will use xdotool fallback (no pid/geometry).")
+
         return (200, _env(t0, request_id=req_id,
                           action="info",
+                          version=VERSION,
                           tailscale=True,
                           client_ip=client_ip,
                           dimensions=dims,
@@ -22283,8 +22995,15 @@ def v4_post_rdp(h, hdrs, qs):
                           display=env.get("DISPLAY"),
                           wayland=env.get("WAYLAND_DISPLAY"),
                           xauthority=env.get("XAUTHORITY"),
+                          session_type=session_type,
+                          desktop=de_name,
+                          plasma_version=plasma_ver,
+                          expected_control_tool=expected_ctl,
+                          expected_control_reason=expected_ctl_reason,
+                          control_tool=probed,
                           control_works=ctl_ok,
                           control_err=ctl_err,
+                          diagnostics=diag,
                           platform=platform.system()))
 
     # --- screenshot: capture and return a fetchable URL -------------------
@@ -22356,79 +23075,150 @@ def v4_post_rdp(h, hdrs, qs):
                           url=f"/v4/files/fetch?name={out_name}&f={frame}"))
 
     # --- control actions: type, key, click, mousemove, mousedown, mouseup, scroll
-    ctl = shutil.which("xdotool") or shutil.which("ydotool")
-    if not ctl:
-        return (500, _err("no_control_tool",
-                          "install xdotool (X11) or ydotool (Wayland)", req_id))
+    # Pick the right tool for the session. On Wayland, xdotool only drives
+    # XWayland apps so prefer ydotool if present.
     env = _rdp_env()
+    session_type = (env.get("XDG_SESSION_TYPE")
+                    or ("wayland" if env.get("WAYLAND_DISPLAY") else None)
+                    or ("x11" if env.get("DISPLAY") else None))
+    if session_type == "wayland":
+        ctl = shutil.which("ydotool") or shutil.which("xdotool")
+    else:
+        ctl = shutil.which("xdotool") or shutil.which("ydotool")
+    if not ctl:
+        hint = ("install ydotool (Wayland) — also needs ydotoold running and "
+                "/dev/uinput writable" if session_type == "wayland"
+                else "install xdotool (X11)")
+        return (500, _err("no_control_tool", hint, req_id,
+                          session_type=session_type))
+    # Shared helpers: xdotool and ydotool take different argv.
+    tool_name = os.path.basename(ctl)
+    # Map xdotool key names → ydotool keycodes for the most common keys.
+    # ydotool uses Linux input-event codes: see /usr/include/linux/input-event-codes.h.
+    YDOTOOL_KEYMAP = {
+        "ctrl":"29", "ControlLeft":"29", "ControlRight":"97",
+        "shift":"42", "ShiftLeft":"42", "ShiftRight":"54",
+        "alt":"56",  "AltLeft":"56",  "AltRight":"100",
+        "super":"125", "Return":"28", "Escape":"1", "BackSpace":"14",
+        "Tab":"15", "space":"57", "Delete":"111",
+        "Up":"103", "Down":"108", "Left":"105", "Right":"106",
+        "period":"52", "comma":"51", "slash":"53", "minus":"12",
+        "F1":"59","F2":"60","F3":"61","F4":"62","F5":"63","F6":"64",
+        "F7":"65","F8":"66","F9":"67","F10":"68","F11":"87","F12":"88",
+    }
+    # a-z = 30..44/… it's non-contiguous but ydotool accepts key-names via "key a" too
+    def _ytype_cmd(txt):
+        return [ctl, "type", "--key-delay", "15", "--", txt]
+    def _ykey_cmd(combo):
+        # Try pass-through — ydotool understands "ctrl+alt+t" via `key`
+        return [ctl, "key", combo]
+
     if action == "type":
         text = b.get("text", "")
         if not text: return (400, _err("missing_input", "missing text", req_id))
         if len(text) > 4000:
             return (400, _err("too_large", "text must be ≤4000 chars", req_id))
-        r = subprocess.run([ctl, "type", "--delay", "15", text],
-                           capture_output=True, text=True, timeout=30, env=env)
+        if tool_name == "xdotool":
+            cmd = [ctl, "type", "--delay", "15", text]
+        else:  # ydotool
+            cmd = _ytype_cmd(text)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=env)
         return (200, _env(t0, request_id=req_id,
-                          action="type", tool=os.path.basename(ctl),
+                          action="type", tool=tool_name,
                           chars=len(text),
                           ok=r.returncode == 0,
                           display=env.get("DISPLAY"),
+                          session_type=session_type,
                           stderr=r.stderr[:200]))
     if action == "key":
         key = b.get("key", "")
         if not key: return (400, _err("missing_input", "missing key", req_id))
-        # Accept either a single key ("Return") or combo ("ctrl+alt+t")
-        r = subprocess.run([ctl, "key", key],
-                           capture_output=True, text=True, timeout=5, env=env)
+        if tool_name == "xdotool":
+            cmd = [ctl, "key", key]
+        else:
+            cmd = _ykey_cmd(key)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=env)
         return (200, _env(t0, request_id=req_id,
-                          action="key", key=key,
+                          action="key", key=key, tool=tool_name,
                           ok=r.returncode == 0,
                           display=env.get("DISPLAY"),
+                          session_type=session_type,
                           stderr=r.stderr[:200]))
     if action == "click":
-        button = str(b.get("button", 1))
+        # ydotool button numbers: 0=left, 1=right, 2=middle; 0xC0+button to press+release
+        button = int(b.get("button", 1) or 1)
         x = b.get("x"); y = b.get("y")
-        cmd = [ctl]
-        if x is not None and y is not None:
-            cmd += ["mousemove", "--sync", str(int(x)), str(int(y))]
-        cmd += ["click", button]
+        if tool_name == "xdotool":
+            cmd = [ctl]
+            if x is not None and y is not None:
+                cmd += ["mousemove", "--sync", str(int(x)), str(int(y))]
+            cmd += ["click", str(button)]
+        else:  # ydotool
+            if x is not None and y is not None:
+                subprocess.run([ctl, "mousemove", "--absolute", "--", str(int(x)), str(int(y))],
+                               capture_output=True, text=True, timeout=3, env=env)
+            # 0xC0 = press+release; buttons 0=left 1=right 2=middle
+            yd_btn = {1: 0x00, 2: 0x02, 3: 0x01}.get(button, 0x00)
+            cmd = [ctl, "click", f"0x{0xC0 | yd_btn:02X}"]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=env)
         return (200, _env(t0, request_id=req_id,
                           action="click", button=button,
-                          x=x, y=y,
+                          x=x, y=y, tool=tool_name,
                           ok=r.returncode == 0,
                           display=env.get("DISPLAY"),
+                          session_type=session_type,
                           stderr=r.stderr[:200]))
     if action == "mousemove":
         x = int(b.get("x") or 0); y = int(b.get("y") or 0)
-        cmd = [ctl, "mousemove", str(x), str(y)]
+        if tool_name == "xdotool":
+            cmd = [ctl, "mousemove", str(x), str(y)]
+        else:
+            cmd = [ctl, "mousemove", "--absolute", "--", str(x), str(y)]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=env)
         return (200, _env(t0, request_id=req_id,
-                          action="mousemove", x=x, y=y,
+                          action="mousemove", x=x, y=y, tool=tool_name,
                           ok=r.returncode == 0,
                           display=env.get("DISPLAY"),
+                          session_type=session_type,
                           stderr=r.stderr[:200]))
     if action in ("mousedown", "mouseup"):
-        button = str(b.get("button", 1))
+        button = int(b.get("button", 1) or 1)
         x = b.get("x"); y = b.get("y")
-        cmd = [ctl]
-        if x is not None and y is not None:
-            cmd += ["mousemove", "--sync", str(int(x)), str(int(y))]
-        cmd += ["mousedown" if action == "mousedown" else "mouseup", button]
+        if tool_name == "xdotool":
+            cmd = [ctl]
+            if x is not None and y is not None:
+                cmd += ["mousemove", "--sync", str(int(x)), str(int(y))]
+            cmd += ["mousedown" if action == "mousedown" else "mouseup", str(button)]
+        else:  # ydotool
+            if x is not None and y is not None:
+                subprocess.run([ctl, "mousemove", "--absolute", "--", str(int(x)), str(int(y))],
+                               capture_output=True, text=True, timeout=3, env=env)
+            yd_btn = {1: 0x00, 2: 0x02, 3: 0x01}.get(button, 0x00)
+            code = 0x40 | yd_btn if action == "mousedown" else 0x80 | yd_btn
+            cmd = [ctl, "click", f"0x{code:02X}"]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=env)
         return (200, _env(t0, request_id=req_id,
                           action=action, button=button, x=x, y=y,
-                          ok=r.returncode == 0,
+                          tool=tool_name, ok=r.returncode == 0,
+                          session_type=session_type,
                           stderr=r.stderr[:200]))
     if action == "scroll":
         dy = float(b.get("dy", 0) or 0)
         steps = max(1, min(10, int(abs(dy) / 40) or 1))
-        btn = "4" if dy < 0 else "5"
-        for _ in range(steps):
-            subprocess.run([ctl, "click", btn],
-                           capture_output=True, text=True, timeout=3, env=env)
+        if tool_name == "xdotool":
+            btn = "4" if dy < 0 else "5"
+            for _ in range(steps):
+                subprocess.run([ctl, "click", btn],
+                               capture_output=True, text=True, timeout=3, env=env)
+        else:  # ydotool: scroll via mousewheel
+            # `click 0xC3` = wheel up press+release, `0xC4` = wheel down
+            code = "0xC3" if dy < 0 else "0xC4"
+            for _ in range(steps):
+                subprocess.run([ctl, "click", code],
+                               capture_output=True, text=True, timeout=3, env=env)
         return (200, _env(t0, request_id=req_id,
-                          action="scroll", dy=dy, steps=steps, button=btn))
+                          action="scroll", dy=dy, steps=steps,
+                          tool=tool_name, session_type=session_type))
     if action == "keys_sequence":
         seq = b.get("keys") or []
         if not isinstance(seq, list) or not seq:
@@ -22437,16 +23227,317 @@ def v4_post_rdp(h, hdrs, qs):
             return (400, _err("too_large", "max 64 keys per batch", req_id))
         ok = True; errs = []
         for k in seq:
-            r = subprocess.run([ctl, "key", str(k)],
-                               capture_output=True, text=True, timeout=3, env=env)
+            cmd = [ctl, "key", str(k)]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=3, env=env)
             if r.returncode != 0:
                 ok = False; errs.append(f"{k}: {r.stderr.strip()[:80]}")
         return (200, _env(t0, request_id=req_id,
                           action="keys_sequence", count=len(seq), ok=ok,
                           errors=errs[:5]))
+
+    # ── screenshot-free desktop state actions ─────────────────────────────
+    if action == "windows":
+        wmctrl = shutil.which("wmctrl")
+        out = []
+        if wmctrl:
+            r = subprocess.run([wmctrl, "-l", "-G", "-p"],
+                               capture_output=True, text=True, timeout=3, env=env)
+            for line in (r.stdout or "").splitlines():
+                # wmctrl format:  WID  DESK  PID  X  Y  W  H  HOST  TITLE
+                parts = line.split(None, 8)
+                if len(parts) >= 9:
+                    out.append({"id": parts[0], "desktop": int(parts[1]),
+                                "pid": int(parts[2]),
+                                "x": int(parts[3]), "y": int(parts[4]),
+                                "w": int(parts[5]), "h": int(parts[6]),
+                                "host": parts[7], "title": parts[8]})
+        else:
+            # Fall back to xdotool — less detail, just IDs + names
+            r = subprocess.run([ctl, "search", "--onlyvisible", "--name", ""],
+                               capture_output=True, text=True, timeout=3, env=env)
+            for wid in (r.stdout or "").split():
+                try:
+                    n = subprocess.run([ctl, "getwindowname", wid],
+                                       capture_output=True, text=True, timeout=1, env=env)
+                    out.append({"id": wid, "title": (n.stdout or "").strip()})
+                except Exception: pass
+        return (200, _env(t0, request_id=req_id,
+                          action="windows", windows=out, count=len(out),
+                          tool=("wmctrl" if wmctrl else "xdotool")))
+
+    if action == "active":
+        wid = None; name = ""; geom = None; pid = None
+        try:
+            r = subprocess.run([ctl, "getactivewindow"],
+                               capture_output=True, text=True, timeout=2, env=env)
+            wid = (r.stdout or "").strip() or None
+            if wid:
+                n = subprocess.run([ctl, "getwindowname", wid],
+                                   capture_output=True, text=True, timeout=2, env=env)
+                name = (n.stdout or "").strip()
+                g = subprocess.run([ctl, "getwindowgeometry", wid],
+                                   capture_output=True, text=True, timeout=2, env=env)
+                # parse "Position: X,Y  Geometry: WxH"
+                pos = re.search(r"Position:\s*(\d+),(\d+)", g.stdout or "")
+                sz  = re.search(r"Geometry:\s*(\d+)x(\d+)", g.stdout or "")
+                if pos and sz:
+                    geom = {"x": int(pos.group(1)), "y": int(pos.group(2)),
+                            "w": int(sz.group(1)),  "h": int(sz.group(2))}
+                p = subprocess.run([ctl, "getwindowpid", wid],
+                                   capture_output=True, text=True, timeout=2, env=env)
+                try: pid = int((p.stdout or "").strip())
+                except Exception: pid = None
+        except Exception: pass
+        return (200, _env(t0, request_id=req_id,
+                          action="active", window_id=wid, title=name,
+                          geometry=geom, pid=pid))
+
+    if action == "cursor":
+        r = subprocess.run([ctl, "getmouselocation", "--shell"],
+                           capture_output=True, text=True, timeout=2, env=env)
+        d = {"x": None, "y": None, "screen": None, "window": None}
+        for line in (r.stdout or "").splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1); k = k.strip(); v = v.strip()
+                if k == "X": d["x"] = int(v)
+                elif k == "Y": d["y"] = int(v)
+                elif k == "SCREEN": d["screen"] = int(v)
+                elif k == "WINDOW": d["window"] = v
+        return (200, _env(t0, request_id=req_id, action="cursor", **d))
+
+    if action == "activate":
+        wid = b.get("id") or b.get("window_id") or ""
+        title = b.get("title") or ""
+        if not wid and not title:
+            return (400, _err("missing_input", "need id or title", req_id))
+        if wid:
+            r = subprocess.run([ctl, "windowactivate", "--sync", str(wid)],
+                               capture_output=True, text=True, timeout=3, env=env)
+        else:
+            r = subprocess.run([ctl, "search", "--name", title,
+                                "windowactivate", "--sync"],
+                               capture_output=True, text=True, timeout=3, env=env)
+        return (200, _env(t0, request_id=req_id, action="activate",
+                          window_id=wid or None, title=title or None,
+                          ok=r.returncode == 0,
+                          stderr=(r.stderr or "")[:200]))
+
+    if action == "clipboard_get":
+        # Try in order: xclip (X11), xsel (X11), wl-paste (Wayland)
+        for tool_name in ("xclip", "xsel", "wl-paste"):
+            tool = shutil.which(tool_name)
+            if not tool: continue
+            try:
+                if tool_name == "xclip":
+                    r = subprocess.run([tool, "-selection", "clipboard", "-o"],
+                                       capture_output=True, text=True, timeout=2, env=env)
+                elif tool_name == "xsel":
+                    r = subprocess.run([tool, "--output", "--clipboard"],
+                                       capture_output=True, text=True, timeout=2, env=env)
+                else:  # wl-paste
+                    r = subprocess.run([tool, "--no-newline"],
+                                       capture_output=True, text=True, timeout=2, env=env)
+                if r.returncode == 0:
+                    return (200, _env(t0, request_id=req_id,
+                                      action="clipboard_get",
+                                      tool=tool_name,
+                                      text=r.stdout,
+                                      bytes=len(r.stdout)))
+            except Exception: pass
+        return (500, _err("no_clipboard_tool",
+                          "install xclip / xsel (X11) or wl-clipboard (Wayland)", req_id))
+
+    if action == "clipboard_set":
+        text = b.get("text", "")
+        if text is None: text = ""
+        # Try tools in session-appropriate order
+        for tool_name in ("xclip", "xsel", "wl-copy"):
+            tool = shutil.which(tool_name)
+            if not tool: continue
+            try:
+                if tool_name == "xclip":
+                    args = [tool, "-selection", "clipboard"]
+                elif tool_name == "xsel":
+                    args = [tool, "--input", "--clipboard"]
+                else:  # wl-copy
+                    args = [tool]
+                p = subprocess.Popen(args, stdin=subprocess.PIPE, env=env)
+                p.communicate(input=text.encode(), timeout=5)
+                return (200, _env(t0, request_id=req_id,
+                                  action="clipboard_set",
+                                  tool=tool_name, bytes=len(text)))
+            except Exception: continue
+        return (500, _err("no_clipboard_tool",
+                          "install xclip / xsel (X11) or wl-clipboard (Wayland)", req_id))
+
+    if action == "processes":
+        top = max(5, min(100, int(b.get("limit", 25) or 25)))
+        try:
+            r = subprocess.run(["ps", "-eo", "pid,pcpu,pmem,comm", "--sort=-pcpu"],
+                               capture_output=True, text=True, timeout=3, env=env)
+            rows = []
+            for line in (r.stdout or "").splitlines()[1:top + 1]:
+                parts = line.strip().split(None, 3)
+                if len(parts) == 4:
+                    rows.append({"pid": int(parts[0]),
+                                 "cpu": float(parts[1]),
+                                 "mem": float(parts[2]),
+                                 "cmd": parts[3]})
+            return (200, _env(t0, request_id=req_id,
+                              action="processes", processes=rows,
+                              count=len(rows)))
+        except Exception as e:
+            return (500, _err("ps_failed", str(e), req_id))
+
+    if action == "volume":
+        # Best-effort master volume via amixer / pactl / osascript
+        get = bool(b.get("get", True))
+        set_pct = b.get("set")
+        mute = b.get("mute")
+        try:
+            if shutil.which("pactl"):
+                if set_pct is not None:
+                    subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@",
+                                    f"{int(set_pct)}%"], timeout=3, env=env)
+                if mute is not None:
+                    subprocess.run(["pactl", "set-sink-mute", "@DEFAULT_SINK@",
+                                    "1" if mute else "0"], timeout=3, env=env)
+                r = subprocess.run(["pactl", "get-sink-volume", "@DEFAULT_SINK@"],
+                                   capture_output=True, text=True, timeout=3, env=env)
+                m = re.search(r"(\d+)%", r.stdout or "")
+                pct = int(m.group(1)) if m else None
+                return (200, _env(t0, request_id=req_id,
+                                  action="volume", percent=pct, tool="pactl"))
+        except Exception: pass
+        return (404, _err("no_volume_tool", "no volume control tool found", req_id))
+
+    if action == "notify":
+        summary = (b.get("summary") or b.get("title") or "ai-cli")[:200]
+        body_txt = (b.get("body") or b.get("text") or "")[:1000]
+        urgency = b.get("urgency", "normal")  # low|normal|critical
+        tool = shutil.which("notify-send")
+        if not tool:
+            return (404, _err("no_notify_tool",
+                              "install libnotify (pacman -S libnotify / apt install libnotify-bin)",
+                              req_id))
+        r = subprocess.run([tool, "-u", urgency, summary, body_txt],
+                           capture_output=True, text=True, timeout=3, env=env)
+        return (200, _env(t0, request_id=req_id,
+                          action="notify",
+                          ok=r.returncode == 0, stderr=r.stderr[:200]))
+
+    if action == "launch":
+        app = b.get("app") or b.get("cmd") or ""
+        if not app:
+            return (400, _err("missing_input", "need app or cmd", req_id))
+        # Detach into its own session so it survives the API request
+        try:
+            if shutil.which(app.split()[0]):
+                subprocess.Popen(app.split(), start_new_session=True, env=env)
+                launcher = app.split()[0]
+            elif shutil.which("xdg-open"):
+                subprocess.Popen(["xdg-open", app], start_new_session=True, env=env)
+                launcher = "xdg-open"
+            elif shutil.which("gtk-launch"):
+                subprocess.Popen(["gtk-launch", app], start_new_session=True, env=env)
+                launcher = "gtk-launch"
+            else:
+                return (500, _err("no_launcher",
+                                  "install xdg-open / gtk-launch, or pass a binary on PATH", req_id))
+            return (200, _env(t0, request_id=req_id,
+                              action="launch", launcher=launcher, target=app, ok=True))
+        except Exception as e:
+            return (500, _err("launch_failed", str(e), req_id))
+
+    if action == "lock":
+        # Prefer session-native locks. qdbus6 (Plasma 6) → qdbus (Plasma 5) →
+        # loginctl → xdg-screensaver → gnome-screensaver → xscreensaver →
+        # swaylock → hyprlock.
+        for cmd in (["qdbus6", "org.kde.screensaver", "/ScreenSaver", "Lock"],
+                    ["qdbus", "org.kde.screensaver", "/ScreenSaver", "Lock"],
+                    ["loginctl", "lock-session"],
+                    ["xdg-screensaver", "lock"],
+                    ["gnome-screensaver-command", "--lock"],
+                    ["xscreensaver-command", "-lock"],
+                    ["swaylock"],
+                    ["hyprlock"]):
+            if shutil.which(cmd[0]):
+                try:
+                    subprocess.Popen(cmd, env=env, start_new_session=True)
+                    return (200, _env(t0, request_id=req_id,
+                                      action="lock", tool=cmd[0], ok=True))
+                except Exception: continue
+        return (404, _err("no_lock_tool",
+                          "install a screen locker (qdbus/KDE, loginctl, "
+                          "xscreensaver, swaylock, …)", req_id))
+
+    if action == "krunner":
+        # KDE-specific app launcher popup
+        q = b.get("query") or ""
+        for qd in ("qdbus6", "qdbus"):
+            if not shutil.which(qd): continue
+            try:
+                subprocess.run([qd, "org.kde.krunner", "/App", "display", q],
+                               capture_output=True, text=True, timeout=3, env=env)
+                return (200, _env(t0, request_id=req_id,
+                                  action="krunner", tool=qd, query=q, ok=True))
+            except Exception: continue
+        return (404, _err("no_krunner",
+                          "qdbus not found — this is a KDE-only action", req_id))
+
+    if action == "workspace":
+        op = (b.get("op") or b.get("action2") or "current").lower()
+        if op == "current":
+            # wmctrl -d shows desktops with * on current
+            if not shutil.which("wmctrl"):
+                return (404, _err("no_wmctrl", "install wmctrl", req_id))
+            r = subprocess.run(["wmctrl", "-d"],
+                               capture_output=True, text=True, timeout=2, env=env)
+            desktops = []; cur = None
+            for line in (r.stdout or "").splitlines():
+                parts = line.split(None, 8)
+                if len(parts) >= 2:
+                    d = {"index": int(parts[0]), "active": parts[1] == "*"}
+                    if parts[1] == "*": cur = d["index"]
+                    if len(parts) >= 9: d["name"] = parts[8]
+                    desktops.append(d)
+            return (200, _env(t0, request_id=req_id,
+                              action="workspace", op="current",
+                              desktops=desktops, current=cur))
+        if op == "switch":
+            idx = int(b.get("index", 0))
+            tool = shutil.which("wmctrl")
+            if not tool: return (404, _err("no_wmctrl", "install wmctrl", req_id))
+            r = subprocess.run([tool, "-s", str(idx)],
+                               capture_output=True, text=True, timeout=2, env=env)
+            return (200, _env(t0, request_id=req_id,
+                              action="workspace", op="switch", index=idx,
+                              ok=r.returncode == 0))
+        return (400, _err("bad_op", "expected op: current|switch", req_id))
+
+    if action == "window_close":
+        wid = str(b.get("id") or b.get("window_id") or "")
+        if not wid: return (400, _err("missing_input", "need id", req_id))
+        r = subprocess.run([ctl, "windowclose", wid],
+                           capture_output=True, text=True, timeout=2, env=env)
+        return (200, _env(t0, request_id=req_id, action="window_close",
+                          window_id=wid, ok=r.returncode == 0,
+                          stderr=r.stderr[:200]))
+
+    if action == "window_minimize":
+        wid = str(b.get("id") or b.get("window_id") or "")
+        if not wid: return (400, _err("missing_input", "need id", req_id))
+        r = subprocess.run([ctl, "windowminimize", wid],
+                           capture_output=True, text=True, timeout=2, env=env)
+        return (200, _env(t0, request_id=req_id, action="window_minimize",
+                          window_id=wid, ok=r.returncode == 0))
+
     return (400, _err("unknown_action",
                       "expected action: info|screenshot|type|key|keys_sequence|"
-                      "click|mousedown|mouseup|mousemove|scroll",
+                      "click|mousedown|mouseup|mousemove|scroll|"
+                      "windows|active|cursor|activate|clipboard_get|clipboard_set|"
+                      "processes|volume|notify|launch|lock|workspace|"
+                      "window_close|window_minimize",
                       req_id))
 
 
@@ -23086,6 +24177,9 @@ APIPY
     keys) cmd_api_keys_list ;;
     revoke) cmd_api_revoke "$@" ;;
     -Upgrade-k|-upgrade-k|upgrade-k|upgrade-key) cmd_api_upgrade_key "$@" ;;
+    share|public)   cmd_share "${1:-8080}" "${2:-auto}" ;;
+    share-stop|unshare) cmd_share stop ;;
+    share-url)      cmd_share url ;;
     *) cmd_api_help ;;
   esac
 }
