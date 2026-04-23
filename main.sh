@@ -12,7 +12,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.2.1.4"
+VERSION="3.2.1.5"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -20075,23 +20075,38 @@ cmd_api_v3() {
   local sub="${1:-help}"; shift 2>/dev/null || true
   case "$sub" in
     start)
-      local port="${API_PORT:-8080}" host="${API_HOST:-0.0.0.0}"
+      # Default bind is 0.0.0.0 so clients on the LAN can reach us. A stray
+      # API_HOST=127.0.0.1 in env/config would otherwise trap the user into a
+      # "nobody can find my server" state, so --local is explicit opt-in.
+      local port="${API_PORT:-8080}" host="0.0.0.0"
+      local _local_only=0
+      # Respect an explicit non-localhost override from env, but ignore
+      # 127.*/localhost so it can't silently lock the server to loopback.
+      if [[ -n "${API_HOST:-}" ]] && [[ "$API_HOST" != 127.* ]] \
+         && [[ "$API_HOST" != "localhost" ]]; then
+        host="$API_HOST"
+      fi
       while [[ $# -gt 0 ]]; do
         case "$1" in
           --port) port="$2"; shift 2 ;;
           --host) host="$2"; shift 2 ;;
           --public) host="0.0.0.0"; shift ;;
+          --local|--localhost) host="127.0.0.1"; _local_only=1; shift ;;
           --tailscale|--ts)
             if ! command -v tailscale >/dev/null 2>&1; then
               err "--tailscale: tailscale not installed — run: sudo pacman -S tailscale / apt install tailscale"
-              info "Falling back to ${host}"
+              info "Binding 0.0.0.0 (reachable on LAN) instead"
             else
               local ts; ts=$(tailscale ip -4 2>/dev/null | head -1 | tr -d '[:space:]')
               if [[ -z "$ts" ]]; then
                 err "--tailscale: tailscale daemon isn't up — run: sudo tailscale up"
-                info "Falling back to ${host}"
+                info "Binding 0.0.0.0 (reachable on LAN) instead"
               else
-                host="$ts"; info "Tailscale: $ts"
+                # Still bind 0.0.0.0 so LAN clients can reach us too; the
+                # Tailscale IP just becomes the advertised URL.
+                host="0.0.0.0"
+                info "Tailscale: $ts   (binding 0.0.0.0, advertising $ts)"
+                export AI_ADVERTISE_HOST="$ts"
               fi
             fi
             shift ;;
@@ -24729,18 +24744,104 @@ APIPY
       AI_CLI_BIN="$_cli_bin" API_HOST="$host" API_PORT="$port" \
         AI_MODEL="${ACTIVE_MODEL:-auto}" AI_VERSION="$VERSION" \
         "$PYTHON" "$_api_script" >"$_api_log" 2>&1 &
-      local pid=$!; echo "$pid" > "$API_PID_FILE"; sleep 1
-      if kill -0 "$pid" 2>/dev/null; then
-        ok "API v3 + v4 running on http://${host}:${port}"
-        info "Dashboard:       http://${host}:${port}/v3/site"
-        info "Chat:            http://${host}:${port}/chat"
-        info "Remote desktop:  http://${host}:${port}/v4/_rdp    (needs PC password + Tailscale)"
-        info "v4 health:       http://${host}:${port}/v4/health"
-        info "v4 docs:         http://${host}:${port}/v4/endpoints"
+      local pid=$!; echo "$pid" > "$API_PID_FILE"
+      # Active readiness probe: poll /health for up to 5 s instead of blind sleep
+      local _ready=0 _i=0
+      while (( _i < 25 )); do
+        if curl -sS --max-time 1 "http://127.0.0.1:${port}/health" 2>/dev/null | grep -q '"status": *"ok"'; then
+          _ready=1; break
+        fi
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.2; _i=$((_i + 1))
+      done
+      if [[ $_ready -eq 1 ]] && kill -0 "$pid" 2>/dev/null; then
+        # Collect every IP the server is reachable on.
+        local _ips=()
+        if [[ $_local_only -eq 1 ]]; then
+          _ips=("127.0.0.1")
+        else
+          # hostname -I works on Linux; on macOS we fall back to ifconfig
+          local _raw=""
+          if command -v hostname >/dev/null 2>&1; then
+            _raw=$(hostname -I 2>/dev/null || true)
+          fi
+          if [[ -z "$_raw" ]] && command -v ip >/dev/null 2>&1; then
+            _raw=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | tr '\n' ' ')
+          fi
+          if [[ -z "$_raw" ]] && command -v ifconfig >/dev/null 2>&1; then
+            _raw=$(ifconfig 2>/dev/null | awk '/inet /{print $2}' | grep -v '^127\.' | tr '\n' ' ')
+          fi
+          for _ip in $_raw; do
+            [[ "$_ip" =~ ^127\. ]] && continue
+            _ips+=("$_ip")
+          done
+          _ips=("127.0.0.1" "${_ips[@]}")
+        fi
+        # Tailscale IP gets highlighted separately
+        local _ts_ip=""
+        if command -v tailscale >/dev/null 2>&1; then
+          _ts_ip=$(tailscale ip -4 2>/dev/null | head -1 | tr -d '[:space:]')
+        fi
+        ok "API v3 + v4 running (pid $pid, port $port)"
+        echo ""
+        info "Reachable URLs:"
+        for _ip in "${_ips[@]}"; do
+          if [[ "$_ip" == "$_ts_ip" ]]; then
+            printf "    ${GREEN}http://%s:%s${R}  ${YELLOW}(tailnet)${R}\n" "$_ip" "$port"
+          elif [[ "$_ip" =~ ^(100\.6[4-9]|100\.[7-9][0-9]|100\.1[01][0-9]|100\.12[0-7])\. ]]; then
+            printf "    ${GREEN}http://%s:%s${R}  ${YELLOW}(tailnet)${R}\n" "$_ip" "$port"
+          elif [[ "$_ip" == "127.0.0.1" ]]; then
+            printf "    http://%s:%s  ${DIM}(this machine only)${R}\n" "$_ip" "$port"
+          else
+            printf "    ${GREEN}http://%s:%s${R}  ${DIM}(LAN)${R}\n" "$_ip" "$port"
+          fi
+        done
+        echo ""
+        # Surface the tailnet URL for copy-paste if we have one and it wasn't
+        # listed above (e.g. tailscale IP not yet in `hostname -I`)
+        if [[ -n "$_ts_ip" ]]; then
+          local _found=0
+          for _ip in "${_ips[@]}"; do [[ "$_ip" == "$_ts_ip" ]] && _found=1; done
+          [[ $_found -eq 0 ]] && info "    ${GREEN}http://${_ts_ip}:${port}${R}  ${YELLOW}(tailnet)${R}"
+        fi
+        # Canonical endpoints — prefer a LAN/tailnet IP when available,
+        # falling back to 127.0.0.1.
+        local _canon="${_ts_ip:-${_ips[1]:-127.0.0.1}}"
+        info "Dashboard:       http://${_canon}:${port}/v3/site"
+        info "Chat:            http://${_canon}:${port}/chat"
+        info "Remote desktop:  http://${_canon}:${port}/v4/_rdp    (needs PC password + Tailscale)"
+        info "v4 health:       http://${_canon}:${port}/v4/health"
+        info "v4 docs:         http://${_canon}:${port}/v4/endpoints"
+        echo ""
         info "Create v4 key:   ai api new-k \"my-key\" 500k"
         info "Public share:    ai share            (auto-downloads cloudflared)"
+        info "Self-test:       ai api diag         (or: ai api test)"
         info "Server log:      $_api_log"
         info "Stop:            ai api stop"
+        # Check for firewalls that might block incoming traffic
+        if [[ $_local_only -eq 0 ]]; then
+          local _fw=""
+          if command -v firewall-cmd >/dev/null 2>&1 \
+               && firewall-cmd --state 2>/dev/null | grep -q running; then
+            _fw="firewalld"
+          elif command -v ufw >/dev/null 2>&1 \
+               && ufw status 2>/dev/null | grep -q '^Status: active'; then
+            _fw="ufw"
+          elif command -v iptables >/dev/null 2>&1 \
+               && iptables -L INPUT -n 2>/dev/null | grep -qE 'policy DROP|REJECT'; then
+            _fw="iptables"
+          fi
+          if [[ -n "$_fw" ]]; then
+            echo ""
+            warn "Firewall detected ($_fw) — clients on your LAN may be blocked."
+            info "Allow the port:"
+            case "$_fw" in
+              firewalld) info "    sudo firewall-cmd --add-port=${port}/tcp --permanent && sudo firewall-cmd --reload" ;;
+              ufw)       info "    sudo ufw allow ${port}/tcp" ;;
+              iptables)  info "    sudo iptables -I INPUT -p tcp --dport ${port} -j ACCEPT" ;;
+            esac
+          fi
+        fi
       else
         err "Server failed to start on ${host}:${port}"
         if [[ -s "$_api_log" ]]; then
@@ -24752,11 +24853,18 @@ APIPY
           info "Port ${port} is already bound. Stop the existing server first:"
           info "    ai api stop    # or   fuser -k ${port}/tcp"
         fi
+        # Or it could have died before answering /health
+        if [[ $_ready -eq 0 ]] && kill -0 "$pid" 2>/dev/null; then
+          err "Server process is alive but /health didn't answer in 5 s."
+          info "Check the log: tail -f $_api_log"
+        fi
+        kill "$pid" 2>/dev/null
         rm -f "$API_PID_FILE" "$_api_script"
         return 1
       fi ;;
     stop) [[ -f "$API_PID_FILE" ]] && { kill "$(cat "$API_PID_FILE")" 2>/dev/null; rm -f "$API_PID_FILE"; ok "Stopped"; } || info "Not running" ;;
     status) [[ -f "$API_PID_FILE" ]] && kill -0 "$(cat "$API_PID_FILE" 2>/dev/null)" 2>/dev/null && ok "Running" || info "Not running" ;;
+    diag|doctor|selftest|self-test) cmd_api_diag "${1:-}" ;;
     test) curl -sS "http://localhost:${1:-8080}/health" 2>/dev/null | grep -q ok && ok "Healthy" || err "Not responding" ;;
     endpoints|ep|list) cmd_api_endpoints ;;
     new-k|newkey|new-key) cmd_api_new_key "$@" ;;
@@ -24793,6 +24901,129 @@ _api_parse_budget_spec() {
     h|H)   seconds=$(awk "BEGIN{printf \"%d\", $num * 3600}") ;;
   esac
   echo "${tokens}|${seconds}"
+}
+
+cmd_api_diag() {
+  # Connectivity self-test: is the server process alive? Is the port
+  # bound? Is it reachable on 127.0.0.1? Is it reachable on each LAN IP?
+  # On Tailnet? Reports exactly where the breakage is.
+  local port="${1:-${API_PORT:-8080}}"
+  local api_pid_file="${API_PID_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/ai-cli/api.pid}"
+  echo ""
+  hdr "AI CLI — API diagnostic (port ${port})"
+  echo ""
+
+  # 1. Server process
+  local pid=""
+  if [[ -f "$api_pid_file" ]]; then
+    pid=$(cat "$api_pid_file" 2>/dev/null)
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      ok  "Process:     pid $pid is running"
+    else
+      err "Process:     pid file says $pid but process is dead"
+      info "  → Start it:  ai api start"
+      return 1
+    fi
+  else
+    err "Process:     no pid file at $api_pid_file"
+    info "  → Start it:  ai api start"
+    return 1
+  fi
+
+  # 2. Is the port actually bound?
+  local bound_on=""
+  if command -v ss >/dev/null 2>&1; then
+    bound_on=$(ss -tlnp 2>/dev/null | awk -v p=":${port}" '$4 ~ p {print $4}' | head -1)
+  elif command -v netstat >/dev/null 2>&1; then
+    bound_on=$(netstat -tln 2>/dev/null | awk -v p=":${port}" '$4 ~ p {print $4}' | head -1)
+  elif command -v lsof >/dev/null 2>&1; then
+    bound_on=$(lsof -iTCP:${port} -sTCP:LISTEN -P 2>/dev/null | awk 'NR==2{print $9}')
+  fi
+  if [[ -n "$bound_on" ]]; then
+    ok  "Bind:        $bound_on"
+    if [[ "$bound_on" =~ ^127\.|^localhost ]]; then
+      err "  → Server is bound to LOCALHOST ONLY — clients on LAN/Tailnet can't reach it."
+      info "  → Restart:  ai api stop && ai api start --public"
+    fi
+  else
+    err "Bind:        nothing listening on :${port}"
+    info "  → Check:    tail -f /tmp/ai_api_log_*"
+    return 1
+  fi
+
+  # 3. Local reachability
+  if curl -sS --max-time 2 "http://127.0.0.1:${port}/health" 2>/dev/null | grep -q '"status": *"ok"'; then
+    ok  "Loopback:    http://127.0.0.1:${port}/health  responds"
+  else
+    err "Loopback:    http://127.0.0.1:${port}/health  DID NOT respond"
+    info "  → The server is bound but not answering. Check: tail -f /tmp/ai_api_log_*"
+    return 1
+  fi
+
+  # 4. Each LAN IP
+  local _raw=""
+  if command -v hostname >/dev/null 2>&1; then _raw=$(hostname -I 2>/dev/null || true); fi
+  [[ -z "$_raw" ]] && command -v ip >/dev/null 2>&1 && \
+    _raw=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | tr '\n' ' ')
+  local any_lan_ok=0
+  for _ip in $_raw; do
+    [[ "$_ip" =~ ^127\. ]] && continue
+    if curl -sS --max-time 2 "http://${_ip}:${port}/health" 2>/dev/null | grep -q ok; then
+      ok  "Network:     http://${_ip}:${port}  responds"
+      any_lan_ok=1
+    else
+      err "Network:     http://${_ip}:${port}  DID NOT respond  (firewall?)"
+    fi
+  done
+
+  # 5. Tailnet
+  if command -v tailscale >/dev/null 2>&1; then
+    local ts_ip; ts_ip=$(tailscale ip -4 2>/dev/null | head -1 | tr -d '[:space:]')
+    if [[ -n "$ts_ip" ]]; then
+      if curl -sS --max-time 2 "http://${ts_ip}:${port}/health" 2>/dev/null | grep -q ok; then
+        ok  "Tailnet:     http://${ts_ip}:${port}  responds"
+      else
+        err "Tailnet:     http://${ts_ip}:${port}  DID NOT respond"
+        info "  → If the server is bound to 0.0.0.0 this is a tailscale routing issue."
+      fi
+    else
+      warn "Tailnet:     tailscale installed but no IP — run: sudo tailscale up"
+    fi
+  else
+    warn "Tailnet:     tailscale not installed"
+  fi
+
+  # 6. Firewall
+  local fw=""
+  if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state 2>/dev/null | grep -q running; then
+    fw="firewalld"
+  elif command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+    fw="ufw"
+  elif command -v iptables >/dev/null 2>&1 && iptables -L INPUT -n 2>/dev/null | grep -qE 'policy DROP|REJECT'; then
+    fw="iptables"
+  fi
+  if [[ -n "$fw" ]]; then
+    warn "Firewall:    $fw is active"
+    case "$fw" in
+      firewalld) info "  → Allow:     sudo firewall-cmd --add-port=${port}/tcp --permanent && sudo firewall-cmd --reload" ;;
+      ufw)       info "  → Allow:     sudo ufw allow ${port}/tcp" ;;
+      iptables)  info "  → Allow:     sudo iptables -I INPUT -p tcp --dport ${port} -j ACCEPT" ;;
+    esac
+  else
+    ok  "Firewall:    not active / permissive"
+  fi
+
+  echo ""
+  if [[ $any_lan_ok -eq 1 ]]; then
+    ok "All green — other machines on your LAN can reach this server."
+  else
+    echo ""
+    warn "LAN reachability failed. Most likely causes, in order:"
+    info "  1. Server is bound to 127.0.0.1 only   → ai api stop && ai api start --public"
+    info "  2. Firewall is blocking the port       → see firewall hint above"
+    info "  3. Client is on a different subnet     → check their gateway"
+    info "  4. Your router has AP isolation on     → check wifi settings"
+  fi
 }
 
 cmd_api_new_key() {
