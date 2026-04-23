@@ -12,7 +12,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.2.1.1"
+VERSION="3.2.1.2"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -19596,124 +19596,375 @@ ANSWER:"
 
 cmd_hy() {
   # HyperNix integration — https://pypi.org/project/hypernix/
-  # HyperNix is a PyTorch model quantization + chat toolkit for the
-  # ray0rf1re/hyper-nix.1 model family. We shell out to its CLI.
+  # Full toolkit wrapper: chat, generate, download, convert, quantize,
+  # verify, upload, doctor, train init|expand|run, plus local cache mgmt.
   local sub="${1:-help}"; shift 2>/dev/null || true
   local hy_repo="${HYPERNIX_REPO:-nix2.5}"
 
   _hy_bin() {
     if command -v hypernix >/dev/null 2>&1; then echo "hypernix"; return 0; fi
-    if "$PYTHON" -c "import hypernix" >/dev/null 2>&1; then
+    if [[ -n "$PYTHON" ]] && "$PYTHON" -c "import hypernix" >/dev/null 2>&1; then
       echo "$PYTHON -m hypernix"; return 0
     fi
     return 1
   }
+  _hy_require() {
+    if _hy_bin >/dev/null; then return 0; fi
+    err "hypernix is not installed"
+    info "Install:  ai hy install            (core)"
+    info "          ai hy install --extras llama-cpp   (for quantization)"
+    info "          ai hy install --extras train       (for fine-tuning)"
+    return 1
+  }
+  # Where HuggingFace-hub (and therefore hypernix) caches snapshots.
+  _hy_cache_dir() {
+    echo "${HF_HOME:-$HOME/.cache/huggingface}/hub"
+  }
 
   case "$sub" in
     help|"")
-      cat <<'EOF'
+      cat <<EOF
 Usage: ai hy <subcommand> [options]
 
-HyperNix wrapper — PyTorch model quantization + chat toolkit.
+HyperNix — PyTorch model quantization + chat toolkit.
 Upstream: https://pypi.org/project/hypernix/
 
-Subcommands:
-  help                       Show this help
-  install [--extras E]       pip install hypernix[E]   (E: llama-cpp | train)
-  info                       Installed version + python path
-  models                     Common --repo-id values (nix2.5, qwen3.5-4b, …)
-  ask|a|chat "prompt"        Chat via hypernix (uses --repo-id, default nix2.5)
-  repo ID                    Set default repo for this shell (exports HYPERNIX_REPO)
-  passthrough ARGS...        Run the raw `hypernix ARGS` command
+Core
+  help                          This help
+  install [--extras E]          pip install hypernix[E]     (E: llama-cpp | train | dev)
+  info                          Installed version + python + cache size
+  doctor [--fix]                Upstream env diagnostic (auto-install deps with --fix)
+  models                        Supported short names (nix/qwen/gemma/llama/phi/…)
+  repo ID                       Set default repo-id for this shell (persists)
 
-Environment:
-  HYPERNIX_REPO   default repo-id (current: ${HYPERNIX_REPO:-nix2.5})
+Chat + generation
+  ask|a "prompt" [--repo ID]    Single-shot message to a model
+  chat|i [--repo ID]            Interactive REPL (passthrough to hypernix chat)
+  generate "prompt" [--repo ID] Non-chat text sampling
+  bench [--repo ID] [--n 20]    Quick tokens/sec benchmark
 
-Examples:
+Model pipeline
+  download <repo-id>            Fetch a HuggingFace snapshot into the cache
+  convert <repo> [--quants Q…]  Snapshot → GGUF (quants: fp32 fp16 q8_0 q6_k q4_k_m q5_k_m)
+  quantize <file.gguf> <qtype>  llama-quantize pass on an existing GGUF
+  all <repo> [--quants Q…]      download → convert → quantize pipeline
+  verify <file.gguf>            Read-validate a GGUF and print headers
+  upload <repo> <file>          Push a file to a HuggingFace repo
+
+Local cache
+  local                         List locally-downloaded hypernix models (with size)
+  rm <repo-id>                  Delete a cached snapshot
+  cache                         Show cache path + total size
+
+Training (passthrough)
+  train-init <repo> [opts]      hypernix train init
+  train-expand <from> <to>      hypernix train expand
+  train-run <snapshot> [opts]   hypernix train run
+
+Advanced
+  passthrough|raw ARGS…         Run the raw \`hypernix ARGS\` command
+
+Environment
+  HYPERNIX_REPO   default repo-id (current: ${hy_repo})
+  HF_HOME         cache root (currently: \$(_hy_cache_dir))
+  HF_TOKEN        HuggingFace token for gated repos
+
+Examples
   ai hy install --extras llama-cpp
   ai hy ask "explain rotary embeddings"
-  ai hy chat "write a haiku" --repo-id gemma-4-e4b
-  ai hy repo qwen3.5-4b
-  ai hy passthrough quantize --help
+  ai hy chat --repo qwen3.5-4b
+  ai hy all nix2.5 --quants fp16 q8_0 q4_k_m
+  ai hy local
+  ai hy bench --repo gemma-4-e4b
 EOF
       ;;
 
     install)
-      local extras=""
+      local extras="" upgrade=1
       while [[ $# -gt 0 ]]; do
         case "$1" in
           --extras) extras="$2"; shift 2 ;;
+          --no-upgrade) upgrade=0; shift ;;
           *) shift ;;
         esac
       done
-      [[ -z "$PYTHON" ]] && { err "Python required"; return 1; }
+      [[ -z "$PYTHON" ]] && { err "Python required — run: ai install-deps"; return 1; }
       local spec="hypernix"
       [[ -n "$extras" ]] && spec="hypernix[${extras}]"
+      local args=(install "$spec")
+      [[ $upgrade -eq 1 ]] && args=(install --upgrade "$spec")
       info "Installing $spec via pip..."
-      if "$PYTHON" -m pip install --upgrade "$spec"; then
-        ok "Installed. Try: ai hy ask \"hello\""
+      if "$PYTHON" -m pip "${args[@]}" 2>&1; then
+        ok "Installed. Try: ai hy doctor   then   ai hy ask \"hello\""
       else
-        err "pip install failed — try: $PYTHON -m pip install --user $spec"
-        return 1
+        warn "pip failed; retrying --user (PEP 668 systems)"
+        "$PYTHON" -m pip "${args[@]}" --user 2>&1 \
+          || "$PYTHON" -m pip "${args[@]}" --break-system-packages 2>&1 \
+          || { err "Install failed"; return 1; }
       fi
       ;;
 
     info)
-      local b; if ! b=$(_hy_bin); then
-        warn "hypernix is not installed"
-        info "Install:  ai hy install"
-        return 1
+      local b; b=$(_hy_bin) || { _hy_require; return 1; }
+      info "Binary:  $b"
+      info "Python:  $PYTHON"
+      "$PYTHON" -c "import hypernix, importlib.metadata as m; print('Version:', m.version('hypernix'))" 2>/dev/null \
+        || warn "Could not read version (metadata missing)"
+      info "Default repo-id:  $hy_repo"
+      local cache; cache=$(_hy_cache_dir)
+      if [[ -d "$cache" ]]; then
+        local sz; sz=$(du -sh "$cache" 2>/dev/null | awk '{print $1}')
+        info "Cache:   $cache  (${sz:-?})"
+      else
+        info "Cache:   $cache  (not created yet)"
       fi
-      info "Binary:   $b"
-      info "Python:   $PYTHON"
-      "$PYTHON" -c "import hypernix, importlib.metadata as m; print('Version: ' + m.version('hypernix'))" 2>/dev/null \
-        || warn "Could not read version (hypernix importable but metadata missing)"
-      info "Default repo-id: $hy_repo  (override: HYPERNIX_REPO=... or ai hy repo ID)"
+      # Pull upstream `hypernix info` for extra detail
+      # shellcheck disable=SC2086
+      $b info 2>/dev/null | sed 's/^/    /' || true
+      ;;
+
+    doctor)
+      _hy_require || return 1
+      local b; b=$(_hy_bin)
+      local args=(doctor)
+      [[ "${1:-}" == "--fix" ]] && args+=(--fix)
+      # shellcheck disable=SC2086
+      $b "${args[@]}"
       ;;
 
     models)
       cat <<'EOF'
-Common --repo-id values (not exhaustive — see upstream):
+HyperNix short-name families (use with --repo-id or HYPERNIX_REPO):
 
-  nix2.5                HyperNix flagship
-  qwen3.5-4b            Qwen 3.5, 4 B parameters
-  qwen3.5-8b            Qwen 3.5, 8 B parameters
-  gemma-4-e4b           Gemma 4, E4B
-  gemma-4-e12b          Gemma 4, E12B
-  llama-3.2-3b          Llama 3.2, 3 B
-  mistral-nemo-12b      Mistral Nemo, 12 B
+  HyperNix     hyper-nix.1  hyper-nix  hypernix  nano-nano-v4  nano-mini-6.99-v2
+  Nix          nix  nix2.5  nix2.6-m  nix2.6-mm  nix-2.7a  nix2.7  nix2.6
+  Llama 3.x    llama-3.1-8b  llama-3.1-8b-instruct  llama-3.2-1b  llama-3.2-3b
+  Qwen         qwen2.5-*  qwen3-*  qwen3.5-*  qwen3.6-35b-a3b
+  Gemma        gemma-2-{2b,9b,27b}  gemma-3-{1b,4b}  gemma-4-{e2b,e4b,26b-a4b,31b}
+  Phi          phi-3-mini  phi-3.5-mini  phi-4
+  DeepSeek     deepseek-r1-distill-llama-8b  deepseek-v2-lite  deepseek-v3
+  GLM          glm-4-9b-chat  glm-4.1v  glm-5  glm-5.1-fp8
+  Mistral      mistral-7b-instruct  mixtral-8x7b-instruct  mistral-nemo-12b
+  NVIDIA       nemotron-4-15b  llama-3.1-nemotron-70b-instruct
+  OpenAI       gpt-oss-20b  gpt-oss-120b
 
-Use any with:  ai hy ask "prompt" --repo-id <id>
-Set default:   ai hy repo <id>
+Quant aliases: fp32, fp16, q8_0, q6_k, q4_k_m, q5_k_m
+
+Use with:  ai hy ask "hi" --repo gemma-4-e4b
+Set default: ai hy repo qwen3.5-4b
 EOF
       ;;
 
-    ask|a|chat)
-      local prompt="" repo="$hy_repo"
-      # collect prompt + optional flags
+    ask|a)
+      local prompt="" repo="$hy_repo" device="" dtype=""
       while [[ $# -gt 0 ]]; do
         case "$1" in
           --repo-id|--repo) repo="$2"; shift 2 ;;
+          --device)         device="$2"; shift 2 ;;
+          --dtype)          dtype="$2"; shift 2 ;;
           --)               shift; prompt="${prompt}${prompt:+ }$*"; break ;;
           *)                prompt="${prompt}${prompt:+ }$1"; shift ;;
         esac
       done
-      [[ -z "$prompt" ]] && { err "Usage: ai hy ask \"prompt\" [--repo-id ID]"; return 1; }
-      local b; if ! b=$(_hy_bin); then
-        err "hypernix is not installed"
-        info "Run:  ai hy install"
-        return 1
-      fi
-      info "HyperNix ask → repo=$repo"
+      [[ -z "$prompt" ]] && { err "Usage: ai hy ask \"prompt\" [--repo ID]"; return 1; }
+      _hy_require || return 1
+      local b; b=$(_hy_bin)
+      local args=(chat --repo-id "$repo" --message "$prompt")
+      [[ -n "$device" ]] && args+=(--device "$device")
+      [[ -n "$dtype"  ]] && args+=(--dtype  "$dtype")
+      info "HyperNix ask → repo=$repo${device:+  device=$device}${dtype:+  dtype=$dtype}"
       # shellcheck disable=SC2086
-      $b chat --repo-id "$repo" --message "$prompt"
+      $b "${args[@]}"
+      ;;
+
+    chat|i|interactive)
+      local repo="$hy_repo" extra=()
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --repo-id|--repo) repo="$2"; shift 2 ;;
+          *) extra+=("$1"); shift ;;
+        esac
+      done
+      _hy_require || return 1
+      local b; b=$(_hy_bin)
+      info "HyperNix chat REPL → repo=$repo  (Ctrl+C / Ctrl+D to exit)"
+      # shellcheck disable=SC2086
+      $b chat --repo-id "$repo" "${extra[@]}"
+      ;;
+
+    generate|gen)
+      local prompt="" repo="$hy_repo" extra=()
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --repo-id|--repo) repo="$2"; shift 2 ;;
+          --*) extra+=("$1" "${2:-}"); shift 2 ;;
+          *) prompt="${prompt}${prompt:+ }$1"; shift ;;
+        esac
+      done
+      [[ -z "$prompt" ]] && { err "Usage: ai hy generate \"prompt\" [--repo ID]"; return 1; }
+      _hy_require || return 1
+      local b; b=$(_hy_bin)
+      # shellcheck disable=SC2086
+      $b generate --repo-id "$repo" --prompt "$prompt" "${extra[@]}"
+      ;;
+
+    bench)
+      local repo="$hy_repo" n=20
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --repo-id|--repo) repo="$2"; shift 2 ;;
+          --n|-n) n="$2"; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      _hy_require || return 1
+      local b; b=$(_hy_bin)
+      info "Benchmarking $repo  (n=$n prompts)..."
+      local t0 t1 total=0
+      t0=$(date +%s.%N)
+      local i; for ((i=0;i<n;i++)); do
+        # shellcheck disable=SC2086
+        $b chat --repo-id "$repo" --message "Say ready." >/dev/null 2>&1
+        total=$((total+1))
+      done
+      t1=$(date +%s.%N)
+      awk -v t0="$t0" -v t1="$t1" -v n="$n" 'BEGIN{
+        dt=t1-t0;
+        if(dt<=0) dt=0.001;
+        printf "  %d prompts in %.2fs  →  %.2f prompts/s  (%.0f ms each)\n",
+               n, dt, n/dt, (dt/n)*1000
+      }'
+      ;;
+
+    download|dl)
+      local repo="${1:-}"; [[ -z "$repo" ]] && { err "Usage: ai hy download <repo-id>"; return 1; }
+      shift; _hy_require || return 1
+      local b; b=$(_hy_bin)
+      # shellcheck disable=SC2086
+      $b download --repo-id "$repo" "$@"
+      ;;
+
+    convert)
+      local repo="${1:-}"; [[ -z "$repo" ]] && { err "Usage: ai hy convert <repo-id> [--quants fp16 q8_0 …]"; return 1; }
+      shift; _hy_require || return 1
+      local b; b=$(_hy_bin)
+      # shellcheck disable=SC2086
+      $b convert --repo-id "$repo" "$@"
+      ;;
+
+    quantize|quant)
+      local f="${1:-}" q="${2:-q4_k_m}"
+      [[ -z "$f" ]] && { err "Usage: ai hy quantize <file.gguf> <qtype>  (qtype: q8_0 q6_k q4_k_m q5_k_m fp16)"; return 1; }
+      shift 2 2>/dev/null; _hy_require || return 1
+      local b; b=$(_hy_bin)
+      # shellcheck disable=SC2086
+      $b quantize "$f" "$q" "$@"
+      ;;
+
+    all)
+      local repo="${1:-}"; [[ -z "$repo" ]] && { err "Usage: ai hy all <repo-id> [--quants fp16 q8_0 q4_k_m …]"; return 1; }
+      shift; _hy_require || return 1
+      local b; b=$(_hy_bin)
+      info "Pipeline: download → convert → quantize  for $repo"
+      # shellcheck disable=SC2086
+      $b all --repo-id "$repo" "$@"
+      ;;
+
+    verify)
+      local f="${1:-}"
+      [[ -z "$f" ]] && { err "Usage: ai hy verify <file.gguf>"; return 1; }
+      _hy_require || return 1
+      local b; b=$(_hy_bin)
+      # shellcheck disable=SC2086
+      $b verify "$f"
+      ;;
+
+    upload)
+      local repo="${1:-}" path="${2:-}"
+      [[ -z "$repo" || -z "$path" ]] && { err "Usage: ai hy upload <repo-id> <file-or-dir>"; return 1; }
+      shift 2; _hy_require || return 1
+      [[ -z "${HF_TOKEN:-}" ]] && { err "HF_TOKEN not set — run: ai keys set HF_TOKEN hf_..."; return 1; }
+      local b; b=$(_hy_bin)
+      # shellcheck disable=SC2086
+      $b upload --repo-id "$repo" --path "$path" "$@"
+      ;;
+
+    local|ls)
+      local cache; cache=$(_hy_cache_dir)
+      [[ ! -d "$cache" ]] && { info "No cache yet: $cache"; return 0; }
+      printf "%-48s %10s   %s\n" "MODEL" "SIZE" "PATH"
+      printf '%s\n' "────────────────────────────────────────────────────────────────────────────────"
+      # HF-hub caches as models--<org>--<name>
+      local total=0
+      for d in "$cache"/models--*; do
+        [[ -d "$d" ]] || continue
+        local name; name=$(basename "$d")
+        name=${name#models--}
+        name=${name//--/\/}
+        local sz; sz=$(du -sm "$d" 2>/dev/null | awk '{print $1}')
+        total=$((total + sz))
+        printf "%-48s %7d MB   %s\n" "$name" "${sz:-0}" "$d"
+      done
+      echo
+      info "Total cached: ${total} MB in $cache"
+      ;;
+
+    rm|remove|delete)
+      local repo="${1:-}"; [[ -z "$repo" ]] && { err "Usage: ai hy rm <repo-id>"; return 1; }
+      local cache; cache=$(_hy_cache_dir)
+      # Convert "org/name" or short name to cache folder
+      local slug="models--${repo//\//--}"
+      local dir="$cache/$slug"
+      if [[ -d "$dir" ]]; then
+        local sz; sz=$(du -sh "$dir" 2>/dev/null | awk '{print $1}')
+        read -rp "Delete $dir ($sz) ? [y/N] " ans
+        [[ "$ans" == [yY]* ]] || { info "aborted"; return 0; }
+        rm -rf "$dir" && ok "Deleted $repo ($sz)"
+      else
+        # Try fuzzy match
+        local matches=()
+        for d in "$cache"/models--*"${repo##*/}"*; do
+          [[ -d "$d" ]] && matches+=("$d")
+        done
+        if (( ${#matches[@]} == 1 )); then
+          local sz; sz=$(du -sh "${matches[0]}" 2>/dev/null | awk '{print $1}')
+          read -rp "Delete ${matches[0]} ($sz) ? [y/N] " ans
+          [[ "$ans" == [yY]* ]] || { info "aborted"; return 0; }
+          rm -rf "${matches[0]}" && ok "Deleted ($sz)"
+        elif (( ${#matches[@]} > 1 )); then
+          err "Multiple matches — be more specific:"
+          for m in "${matches[@]}"; do echo "  $(basename "$m")"; done
+          return 1
+        else
+          err "No cached model matches: $repo"
+          return 1
+        fi
+      fi
+      ;;
+
+    cache)
+      local cache; cache=$(_hy_cache_dir)
+      if [[ -d "$cache" ]]; then
+        local sz; sz=$(du -sh "$cache" 2>/dev/null | awk '{print $1}')
+        info "Path: $cache"
+        info "Size: ${sz:-?}"
+      else
+        info "Cache does not exist yet: $cache"
+      fi
+      ;;
+
+    train-init|train-expand|train-run)
+      _hy_require || return 1
+      local b; b=$(_hy_bin)
+      local subcmd="${sub#train-}"
+      # shellcheck disable=SC2086
+      $b train "$subcmd" "$@"
       ;;
 
     repo)
       local new="${1:-}"
       [[ -z "$new" ]] && { info "Current HYPERNIX_REPO: $hy_repo"; info "Set with: ai hy repo <id>"; return 0; }
       export HYPERNIX_REPO="$new"
-      # Persist to the user's ai-cli config so it survives shells
       local cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ai-cli"
       mkdir -p "$cfg_dir"
       local envf="$cfg_dir/aliases.env"
@@ -19724,11 +19975,12 @@ EOF
         printf 'export HYPERNIX_REPO="%s"\n' "$new" >> "$envf"
       fi
       ok "Default repo set to: $new"
-      info "Sourced from: $envf (runs on next shell; this shell already exported)"
+      info "Persisted in: $envf"
       ;;
 
     passthrough|raw)
-      local b; if ! b=$(_hy_bin); then err "hypernix not installed"; return 1; fi
+      _hy_require || return 1
+      local b; b=$(_hy_bin)
       # shellcheck disable=SC2086
       $b "$@"
       ;;
@@ -22153,11 +22405,20 @@ _RDP_PANEL_HTML = """<!doctype html>
   .log{font:11px ui-monospace,monospace;background:#0b1020;padding:8px;border-radius:6px;max-height:130px;overflow:auto;color:#94a2d2}
   .kbd{padding:1px 5px;background:#22305a;border-radius:4px;font:11px ui-monospace,monospace}
   .shell{font:12px ui-monospace,monospace;background:#000;color:#bef7b0;padding:8px;border-radius:6px;min-height:100px;max-height:200px;overflow:auto;white-space:pre-wrap}
+  .banner{padding:10px 14px;background:#3f1b1b;color:#ffd7d7;border-bottom:1px solid #7a2b2b;
+          font-size:13px;display:none}
+  .banner.show{display:block}
+  .banner b{color:#fff}
+  .banner code{background:#1e1e2e;padding:1px 6px;border-radius:4px;color:#f1d58c;font-family:ui-monospace,monospace}
+  .vbadge{font-size:11px;background:#1e1e2e;color:#f9e2af;padding:2px 8px;border-radius:6px;font-family:ui-monospace,monospace}
 </style></head><body>
 <header>
   <h1>🖥 __HOST__</h1>
+  <span class="vbadge">v__VERSION__</span>
   <span class="pill ok" id="st-ts">Tailscale OK</span>
-  <span class="pill" id="st-dpy">display —</span>
+  <span class="pill" id="st-ses">session —</span>
+  <span class="pill" id="st-de">de —</span>
+  <span class="pill" id="st-ctl">input —</span>
   <span class="pill" id="st-active" title="active window">active —</span>
   <span class="pill" id="st-cur">cursor —</span>
   <div class="sp"></div>
@@ -22168,6 +22429,8 @@ _RDP_PANEL_HTML = """<!doctype html>
   </div>
   <button id="kbBtn" class="ghost" onclick="toggleKbGrab()">⌨ Capture keyboard</button>
 </header>
+
+<div class="banner" id="banner"></div>
 
 <div class="wrap">
   <!-- ─── Left: Window list ───────────────────────────────────────────── -->
@@ -22507,15 +22770,41 @@ window.addEventListener('keyup', ev=>{
 }, true);
 window.addEventListener('blur', ()=>held.clear());
 
-// Initial info
+// Initial info — populate pills + banner based on detected session
 (async()=>{
   const {j} = await api('info');
-  if (j && j.display) $('st-dpy').textContent = 'DISPLAY='+j.display;
-  if (j && j.control_works === false){
-    $('st-ts').className = 'pill warn';
-    $('st-ts').textContent = 'control broken — see log';
-    logMsg('control err: '+(j.control_err||''));
+  if (!j) return;
+  $('st-ses').textContent = 'session: '+(j.session_type||'?');
+  $('st-de').textContent  = 'de: '+(j.desktop||'?')+(j.plasma_version?(' '+j.plasma_version):'');
+  const ctl = j.control_tool || j.expected_control_tool || '—';
+  const ok  = j.control_works;
+  const ctlEl = $('st-ctl');
+  ctlEl.textContent = 'input: '+ctl+(ok===true?' ✓':ok===false?' ✗':'');
+  ctlEl.className = 'pill '+(ok===false?'err':ok===true?'ok':'');
+
+  // Big red banner with an exact-fix instruction when control is broken or
+  // when we're on Wayland with only xdotool installed.
+  const diags = j.diagnostics || [];
+  if (diags.length || ok === false){
+    const msgs = diags.slice();
+    if (ok === false) msgs.push('xdotool probe failed: '+(j.control_err||'no DISPLAY?'));
+    if (j.session_type === 'wayland' && j.control_tool === 'xdotool'){
+      msgs.push('Fix on KDE Plasma 6 Wayland:');
+      msgs.push('   sudo pacman -S ydotool');
+      msgs.push('   sudo gpasswd -a $USER input   # then log out + back in');
+      msgs.push('   systemctl --user enable --now ydotoold');
+      msgs.push('   ai api stop && ai api start   # pick up ydotool');
+    }
+    if (j.display === null && j.wayland === null){
+      msgs.push('No DISPLAY or WAYLAND_DISPLAY found — the API server was started outside the graphical session.');
+      msgs.push('Restart it inside your session: ai api stop && ai api start  (or `DISPLAY=:0 ai api start`).');
+    }
+    const bn = $('banner');
+    bn.innerHTML = '<b>⚠ Remote input not fully working</b><br>'
+      + msgs.map(m => m.replace(/`([^`]+)`/g,'<code>$1</code>')).join('<br>');
+    bn.className = 'banner show';
   }
+  logMsg('info: '+(j.dimensions||'?')+' · '+(j.session_type||'?')+' · '+(j.desktop||'?'));
   refreshAll(); refreshProcs();
 })();
 </script>
@@ -22561,6 +22850,7 @@ def v4_get_rdp(h, hdrs, qs):
     # JS can POST it back — hidden endpoint + Tailscale gating keeps it contained.
     panel = (_RDP_PANEL_HTML
              .replace("__HOST__", platform.node().replace("<", ""))
+             .replace("__VERSION__", VERSION)
              .replace("__PW_JSON__", json.dumps(pw)))
     _html(200, panel)
     return None
@@ -22587,31 +22877,117 @@ def v4_post_rdp(h, hdrs, qs):
 
     # --- info: report screen capabilities ---------------------------------
     if action == "info":
-        tools = {
-            "screenshot": _have("gnome-screenshot", "scrot", "grim", "screencapture", "import"),
-            "control":    _have("xdotool", "ydotool"),
-        }
         env = _rdp_env()
+        tools = {
+            "screenshot": _have("gnome-screenshot", "scrot", "grim", "spectacle",
+                                "screencapture", "import"),
+            "control_x11":    _have("xdotool"),
+            "control_wayland":_have("ydotool", "wtype", "dotool"),
+            "clipboard_x11":  _have("xclip", "xsel"),
+            "clipboard_wl":   _have("wl-copy", "wl-paste"),
+            "wm":             _have("wmctrl", "wlrctl"),
+            "notify":         _have("notify-send"),
+            "lock":           _have("loginctl", "qdbus6", "qdbus",
+                                    "xdg-screensaver", "gnome-screensaver-command",
+                                    "xscreensaver-command", "swaylock"),
+        }
+
+        # Detect session type and desktop environment
+        session_type = (env.get("XDG_SESSION_TYPE")
+                        or ("wayland" if env.get("WAYLAND_DISPLAY") else None)
+                        or ("x11" if env.get("DISPLAY") else None)
+                        or "unknown")
+        de_raw = (env.get("XDG_CURRENT_DESKTOP") or env.get("DESKTOP_SESSION") or "")
+        de = de_raw.lower()
+        plasma_ver = None
+        if "kde" in de or "plasma" in de:
+            de_name = "KDE Plasma"
+            # Detect Plasma 5 vs 6
+            for b in ("plasmashell",):
+                if shutil.which(b):
+                    try:
+                        r = subprocess.run([b, "--version"], capture_output=True, text=True, timeout=2)
+                        m = re.search(r"(\d+)\.(\d+)", r.stdout or "")
+                        if m: plasma_ver = f"{m.group(1)}.{m.group(2)}"
+                    except Exception: pass
+        elif "gnome" in de: de_name = "GNOME"
+        elif "xfce" in de:  de_name = "XFCE"
+        elif "mate" in de:  de_name = "MATE"
+        elif "cinnamon" in de: de_name = "Cinnamon"
+        elif "sway" in de:  de_name = "Sway"
+        elif "hypr" in de:  de_name = "Hyprland"
+        elif de_raw: de_name = de_raw
+        else: de_name = "unknown"
+
+        # Screen dimensions via xdpyinfo (X11) or wlr-randr (Wayland)
         dims = None
         try:
-            r = subprocess.run(["xdpyinfo"], capture_output=True, text=True,
-                               timeout=2, env=env)
-            for line in r.stdout.splitlines():
+            r = subprocess.run(["xdpyinfo"], capture_output=True, text=True, timeout=2, env=env)
+            for line in (r.stdout or "").splitlines():
                 if "dimensions" in line:
                     dims = line.strip(); break
         except Exception: pass
-        # Quick test: can xdotool actually drive the display?
-        ctl_ok = None; ctl_err = ""
+
+        # Pick the right control tool for the *expected* session
+        expected_ctl = None; expected_ctl_reason = ""
+        if session_type == "wayland":
+            # On Wayland, native Wayland apps IGNORE xdotool completely.
+            # We must use ydotool (needs ydotoold + /dev/uinput) or wtype.
+            if shutil.which("ydotool"):
+                expected_ctl = "ydotool"
+                # Check the daemon is actually up
+                try:
+                    r = subprocess.run(["pgrep", "-x", "ydotoold"],
+                                       capture_output=True, text=True, timeout=1)
+                    if r.returncode != 0:
+                        expected_ctl_reason = ("ydotool installed but ydotoold "
+                                               "daemon isn't running — start it "
+                                               "(systemctl --user start ydotoold)")
+                except Exception: pass
+                # Check /dev/uinput permissions
+                if not os.access("/dev/uinput", os.W_OK):
+                    expected_ctl_reason = (expected_ctl_reason or
+                        "/dev/uinput not writable — add user to 'input' group "
+                        "or run ydotoold as root")
+            elif shutil.which("wtype"):
+                expected_ctl = "wtype"
+            elif shutil.which("xdotool"):
+                expected_ctl = "xdotool"
+                expected_ctl_reason = ("Wayland session but only xdotool present — "
+                                       "will only work on XWayland apps. Install "
+                                       "ydotool for native Wayland input.")
+        else:
+            expected_ctl = shutil.which("xdotool")
+            if expected_ctl: expected_ctl = os.path.basename(expected_ctl)
+
+        # Live probe: does `xdotool getmouselocation` return anything?
+        ctl_ok = None; ctl_err = ""; probed = None
         ctl = shutil.which("xdotool") or shutil.which("ydotool")
         if ctl:
+            probed = os.path.basename(ctl)
             try:
-                r = subprocess.run([ctl, "getmouselocation"],
-                                   capture_output=True, text=True, timeout=2, env=env)
+                if probed == "xdotool":
+                    r = subprocess.run([ctl, "getmouselocation"],
+                                       capture_output=True, text=True, timeout=2, env=env)
+                else:  # ydotool doesn't have getmouselocation; --help is our probe
+                    r = subprocess.run([ctl, "--help"],
+                                       capture_output=True, text=True, timeout=2, env=env)
                 ctl_ok = r.returncode == 0
                 ctl_err = (r.stderr or "")[:200]
             except Exception as e: ctl_err = str(e)
+
+        # Synthesize a single human-readable diagnostic
+        diag = []
+        if session_type == "wayland" and probed == "xdotool" and not shutil.which("ydotool"):
+            diag.append("⚠ Wayland session + xdotool only → native-Wayland apps will ignore input. "
+                        "Install ydotool + start ydotoold.")
+        if expected_ctl_reason: diag.append(expected_ctl_reason)
+        if not shutil.which("wmctrl") and session_type != "wayland":
+            diag.append("wmctrl missing → window list will use xdotool fallback (no pid/geometry).")
+
         return (200, _env(t0, request_id=req_id,
                           action="info",
+                          version=VERSION,
                           tailscale=True,
                           client_ip=client_ip,
                           dimensions=dims,
@@ -22619,8 +22995,15 @@ def v4_post_rdp(h, hdrs, qs):
                           display=env.get("DISPLAY"),
                           wayland=env.get("WAYLAND_DISPLAY"),
                           xauthority=env.get("XAUTHORITY"),
+                          session_type=session_type,
+                          desktop=de_name,
+                          plasma_version=plasma_ver,
+                          expected_control_tool=expected_ctl,
+                          expected_control_reason=expected_ctl_reason,
+                          control_tool=probed,
                           control_works=ctl_ok,
                           control_err=ctl_err,
+                          diagnostics=diag,
                           platform=platform.system()))
 
     # --- screenshot: capture and return a fetchable URL -------------------
@@ -22692,79 +23075,150 @@ def v4_post_rdp(h, hdrs, qs):
                           url=f"/v4/files/fetch?name={out_name}&f={frame}"))
 
     # --- control actions: type, key, click, mousemove, mousedown, mouseup, scroll
-    ctl = shutil.which("xdotool") or shutil.which("ydotool")
-    if not ctl:
-        return (500, _err("no_control_tool",
-                          "install xdotool (X11) or ydotool (Wayland)", req_id))
+    # Pick the right tool for the session. On Wayland, xdotool only drives
+    # XWayland apps so prefer ydotool if present.
     env = _rdp_env()
+    session_type = (env.get("XDG_SESSION_TYPE")
+                    or ("wayland" if env.get("WAYLAND_DISPLAY") else None)
+                    or ("x11" if env.get("DISPLAY") else None))
+    if session_type == "wayland":
+        ctl = shutil.which("ydotool") or shutil.which("xdotool")
+    else:
+        ctl = shutil.which("xdotool") or shutil.which("ydotool")
+    if not ctl:
+        hint = ("install ydotool (Wayland) — also needs ydotoold running and "
+                "/dev/uinput writable" if session_type == "wayland"
+                else "install xdotool (X11)")
+        return (500, _err("no_control_tool", hint, req_id,
+                          session_type=session_type))
+    # Shared helpers: xdotool and ydotool take different argv.
+    tool_name = os.path.basename(ctl)
+    # Map xdotool key names → ydotool keycodes for the most common keys.
+    # ydotool uses Linux input-event codes: see /usr/include/linux/input-event-codes.h.
+    YDOTOOL_KEYMAP = {
+        "ctrl":"29", "ControlLeft":"29", "ControlRight":"97",
+        "shift":"42", "ShiftLeft":"42", "ShiftRight":"54",
+        "alt":"56",  "AltLeft":"56",  "AltRight":"100",
+        "super":"125", "Return":"28", "Escape":"1", "BackSpace":"14",
+        "Tab":"15", "space":"57", "Delete":"111",
+        "Up":"103", "Down":"108", "Left":"105", "Right":"106",
+        "period":"52", "comma":"51", "slash":"53", "minus":"12",
+        "F1":"59","F2":"60","F3":"61","F4":"62","F5":"63","F6":"64",
+        "F7":"65","F8":"66","F9":"67","F10":"68","F11":"87","F12":"88",
+    }
+    # a-z = 30..44/… it's non-contiguous but ydotool accepts key-names via "key a" too
+    def _ytype_cmd(txt):
+        return [ctl, "type", "--key-delay", "15", "--", txt]
+    def _ykey_cmd(combo):
+        # Try pass-through — ydotool understands "ctrl+alt+t" via `key`
+        return [ctl, "key", combo]
+
     if action == "type":
         text = b.get("text", "")
         if not text: return (400, _err("missing_input", "missing text", req_id))
         if len(text) > 4000:
             return (400, _err("too_large", "text must be ≤4000 chars", req_id))
-        r = subprocess.run([ctl, "type", "--delay", "15", text],
-                           capture_output=True, text=True, timeout=30, env=env)
+        if tool_name == "xdotool":
+            cmd = [ctl, "type", "--delay", "15", text]
+        else:  # ydotool
+            cmd = _ytype_cmd(text)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=env)
         return (200, _env(t0, request_id=req_id,
-                          action="type", tool=os.path.basename(ctl),
+                          action="type", tool=tool_name,
                           chars=len(text),
                           ok=r.returncode == 0,
                           display=env.get("DISPLAY"),
+                          session_type=session_type,
                           stderr=r.stderr[:200]))
     if action == "key":
         key = b.get("key", "")
         if not key: return (400, _err("missing_input", "missing key", req_id))
-        # Accept either a single key ("Return") or combo ("ctrl+alt+t")
-        r = subprocess.run([ctl, "key", key],
-                           capture_output=True, text=True, timeout=5, env=env)
+        if tool_name == "xdotool":
+            cmd = [ctl, "key", key]
+        else:
+            cmd = _ykey_cmd(key)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=env)
         return (200, _env(t0, request_id=req_id,
-                          action="key", key=key,
+                          action="key", key=key, tool=tool_name,
                           ok=r.returncode == 0,
                           display=env.get("DISPLAY"),
+                          session_type=session_type,
                           stderr=r.stderr[:200]))
     if action == "click":
-        button = str(b.get("button", 1))
+        # ydotool button numbers: 0=left, 1=right, 2=middle; 0xC0+button to press+release
+        button = int(b.get("button", 1) or 1)
         x = b.get("x"); y = b.get("y")
-        cmd = [ctl]
-        if x is not None and y is not None:
-            cmd += ["mousemove", "--sync", str(int(x)), str(int(y))]
-        cmd += ["click", button]
+        if tool_name == "xdotool":
+            cmd = [ctl]
+            if x is not None and y is not None:
+                cmd += ["mousemove", "--sync", str(int(x)), str(int(y))]
+            cmd += ["click", str(button)]
+        else:  # ydotool
+            if x is not None and y is not None:
+                subprocess.run([ctl, "mousemove", "--absolute", "--", str(int(x)), str(int(y))],
+                               capture_output=True, text=True, timeout=3, env=env)
+            # 0xC0 = press+release; buttons 0=left 1=right 2=middle
+            yd_btn = {1: 0x00, 2: 0x02, 3: 0x01}.get(button, 0x00)
+            cmd = [ctl, "click", f"0x{0xC0 | yd_btn:02X}"]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=env)
         return (200, _env(t0, request_id=req_id,
                           action="click", button=button,
-                          x=x, y=y,
+                          x=x, y=y, tool=tool_name,
                           ok=r.returncode == 0,
                           display=env.get("DISPLAY"),
+                          session_type=session_type,
                           stderr=r.stderr[:200]))
     if action == "mousemove":
         x = int(b.get("x") or 0); y = int(b.get("y") or 0)
-        cmd = [ctl, "mousemove", str(x), str(y)]
+        if tool_name == "xdotool":
+            cmd = [ctl, "mousemove", str(x), str(y)]
+        else:
+            cmd = [ctl, "mousemove", "--absolute", "--", str(x), str(y)]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=env)
         return (200, _env(t0, request_id=req_id,
-                          action="mousemove", x=x, y=y,
+                          action="mousemove", x=x, y=y, tool=tool_name,
                           ok=r.returncode == 0,
                           display=env.get("DISPLAY"),
+                          session_type=session_type,
                           stderr=r.stderr[:200]))
     if action in ("mousedown", "mouseup"):
-        button = str(b.get("button", 1))
+        button = int(b.get("button", 1) or 1)
         x = b.get("x"); y = b.get("y")
-        cmd = [ctl]
-        if x is not None and y is not None:
-            cmd += ["mousemove", "--sync", str(int(x)), str(int(y))]
-        cmd += ["mousedown" if action == "mousedown" else "mouseup", button]
+        if tool_name == "xdotool":
+            cmd = [ctl]
+            if x is not None and y is not None:
+                cmd += ["mousemove", "--sync", str(int(x)), str(int(y))]
+            cmd += ["mousedown" if action == "mousedown" else "mouseup", str(button)]
+        else:  # ydotool
+            if x is not None and y is not None:
+                subprocess.run([ctl, "mousemove", "--absolute", "--", str(int(x)), str(int(y))],
+                               capture_output=True, text=True, timeout=3, env=env)
+            yd_btn = {1: 0x00, 2: 0x02, 3: 0x01}.get(button, 0x00)
+            code = 0x40 | yd_btn if action == "mousedown" else 0x80 | yd_btn
+            cmd = [ctl, "click", f"0x{code:02X}"]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=env)
         return (200, _env(t0, request_id=req_id,
                           action=action, button=button, x=x, y=y,
-                          ok=r.returncode == 0,
+                          tool=tool_name, ok=r.returncode == 0,
+                          session_type=session_type,
                           stderr=r.stderr[:200]))
     if action == "scroll":
         dy = float(b.get("dy", 0) or 0)
         steps = max(1, min(10, int(abs(dy) / 40) or 1))
-        btn = "4" if dy < 0 else "5"
-        for _ in range(steps):
-            subprocess.run([ctl, "click", btn],
-                           capture_output=True, text=True, timeout=3, env=env)
+        if tool_name == "xdotool":
+            btn = "4" if dy < 0 else "5"
+            for _ in range(steps):
+                subprocess.run([ctl, "click", btn],
+                               capture_output=True, text=True, timeout=3, env=env)
+        else:  # ydotool: scroll via mousewheel
+            # `click 0xC3` = wheel up press+release, `0xC4` = wheel down
+            code = "0xC3" if dy < 0 else "0xC4"
+            for _ in range(steps):
+                subprocess.run([ctl, "click", code],
+                               capture_output=True, text=True, timeout=3, env=env)
         return (200, _env(t0, request_id=req_id,
-                          action="scroll", dy=dy, steps=steps, button=btn))
+                          action="scroll", dy=dy, steps=steps,
+                          tool=tool_name, session_type=session_type))
     if action == "keys_sequence":
         seq = b.get("keys") or []
         if not isinstance(seq, list) or not seq:
@@ -22773,8 +23227,8 @@ def v4_post_rdp(h, hdrs, qs):
             return (400, _err("too_large", "max 64 keys per batch", req_id))
         ok = True; errs = []
         for k in seq:
-            r = subprocess.run([ctl, "key", str(k)],
-                               capture_output=True, text=True, timeout=3, env=env)
+            cmd = [ctl, "key", str(k)]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=3, env=env)
             if r.returncode != 0:
                 ok = False; errs.append(f"{k}: {r.stderr.strip()[:80]}")
         return (200, _env(t0, request_id=req_id,
@@ -22996,12 +23450,17 @@ def v4_post_rdp(h, hdrs, qs):
             return (500, _err("launch_failed", str(e), req_id))
 
     if action == "lock":
-        # Try: loginctl lock-session → xdg-screensaver lock → gnome-screensaver-command
-        for cmd in (["loginctl", "lock-session"],
+        # Prefer session-native locks. qdbus6 (Plasma 6) → qdbus (Plasma 5) →
+        # loginctl → xdg-screensaver → gnome-screensaver → xscreensaver →
+        # swaylock → hyprlock.
+        for cmd in (["qdbus6", "org.kde.screensaver", "/ScreenSaver", "Lock"],
+                    ["qdbus", "org.kde.screensaver", "/ScreenSaver", "Lock"],
+                    ["loginctl", "lock-session"],
                     ["xdg-screensaver", "lock"],
                     ["gnome-screensaver-command", "--lock"],
                     ["xscreensaver-command", "-lock"],
-                    ["swaylock"]):
+                    ["swaylock"],
+                    ["hyprlock"]):
             if shutil.which(cmd[0]):
                 try:
                     subprocess.Popen(cmd, env=env, start_new_session=True)
@@ -23009,7 +23468,22 @@ def v4_post_rdp(h, hdrs, qs):
                                       action="lock", tool=cmd[0], ok=True))
                 except Exception: continue
         return (404, _err("no_lock_tool",
-                          "install a screen locker (xscreensaver, swaylock, …)", req_id))
+                          "install a screen locker (qdbus/KDE, loginctl, "
+                          "xscreensaver, swaylock, …)", req_id))
+
+    if action == "krunner":
+        # KDE-specific app launcher popup
+        q = b.get("query") or ""
+        for qd in ("qdbus6", "qdbus"):
+            if not shutil.which(qd): continue
+            try:
+                subprocess.run([qd, "org.kde.krunner", "/App", "display", q],
+                               capture_output=True, text=True, timeout=3, env=env)
+                return (200, _env(t0, request_id=req_id,
+                                  action="krunner", tool=qd, query=q, ok=True))
+            except Exception: continue
+        return (404, _err("no_krunner",
+                          "qdbus not found — this is a KDE-only action", req_id))
 
     if action == "workspace":
         op = (b.get("op") or b.get("action2") or "current").lower()

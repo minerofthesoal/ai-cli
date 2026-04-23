@@ -10,7 +10,7 @@
 #   pacstall -I https://raw.githubusercontent.com/minerofthesoal/ai-cli/main/ai-cli.pacscript
 
 pkgname="ai-cli"
-pkgver="3.2.1.1"
+pkgver="3.2.1.2"
 pkgdesc="AI CLI — local + cloud LLM terminal toolkit with 195 models, 44 API endpoints, streaming, voice, share, agent, RAG, Canvas v3 TUI, GUI+ v4"
 url="https://github.com/minerofthesoal/ai-cli"
 gives="ai"
