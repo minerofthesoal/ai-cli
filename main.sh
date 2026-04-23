@@ -12,7 +12,7 @@
 # Windows 10:  Run in Git Bash / WSL; see 'ai install-deps --windows' for setup
 # Install:     curl -fsSL .../installers/install.sh | sh
 set -uo pipefail
-VERSION="3.2.1.2"
+VERSION="3.2.1.3"
 
 # Remove old lib/ files immediately — they cause CONFIG_DIR unbound errors
 for _d in /usr/local/share/ai-cli/lib /usr/share/ai-cli/lib; do
@@ -7530,16 +7530,17 @@ cmd_install_deps() {
       sudo pacman -S --noconfirm --needed \
         xdotool xclip xsel wmctrl scrot libnotify \
         2>/dev/null || true
-      # Wayland / Hyprland / Sway friends — installed alongside on Arch because
-      # the same box often has both sessions available
+      # Wayland / KDE Plasma / Sway friends — installed alongside on Arch
+      # because the same box often has both sessions available.  spectacle
+      # is KDE's native screenshot tool; grim is for wlroots (Sway/Hypr).
       sudo pacman -S --noconfirm --needed \
-        wl-clipboard grim slurp 2>/dev/null || true
-      # cloudflared is in AUR; try AUR helpers first, then fall back to the
-      # GitHub-hosted binary (handled later by _ensure_cloudflared).
+        wl-clipboard grim slurp spectacle 2>/dev/null || true
+      # AUR-only helpers: kdotool (KDE-native xdotool equivalent on Wayland),
+      # cloudflared (tunnels), ydotool (uinput-backed control).
       if command -v yay &>/dev/null; then
-        yay -S --noconfirm --needed python-soundfile cloudflared ydotool 2>/dev/null || true
+        yay -S --noconfirm --needed python-soundfile cloudflared ydotool kdotool-git 2>/dev/null || true
       elif command -v paru &>/dev/null; then
-        paru -S --noconfirm --needed python-soundfile cloudflared ydotool 2>/dev/null || true
+        paru -S --noconfirm --needed python-soundfile cloudflared ydotool kdotool-git 2>/dev/null || true
       fi
     elif command -v dnf &>/dev/null; then
       info "Detected DNF (Fedora/RHEL)..."
@@ -20016,6 +20017,7 @@ cmd_api_v3() {
       fi
       cat > "$_api_script" << 'APIPY'
 import http.server, json, os, subprocess, sys, secrets, time, glob, platform, shutil, threading, re
+import pty, fcntl, select, termios, struct, signal, errno
 
 _CLI_RAW = os.environ.get("AI_CLI_BIN", "ai")
 
@@ -20890,6 +20892,7 @@ def ai_ask_capture(prompt, timeout, extra_args=None):
 V4_COUNTERS = {"requests": 0, "errors": 0, "tokens_in": 0, "tokens_out": 0}
 V4_JOBS = {}   # job_id → {"status", "kind", "target", "started", "ended", "output"}
 V4_TERM_SESSIONS = {}  # token → {"created", "expires", "client"}
+V4_PTY = {}    # pty session_id → {fd, pid, buffer, cwd, shell, cols, rows, closed}
 
 def _new_job(kind, target):
     jid = "job_" + secrets.token_hex(6)
@@ -22473,16 +22476,52 @@ _RDP_PANEL_HTML = """<!doctype html>
       <button onclick="k('super+d')">Show Desktop</button>
       <button onclick="k('ctrl+alt+Delete')">C+A+Del</button>
     </div>
-    <h3>Shell</h3>
+    <h3>Shell (one-shot)</h3>
     <div class="row">
       <input type="text" id="cmd" placeholder="shell command (needs PC password)">
       <button onclick="runCmd()">Run</button>
     </div>
     <div class="shell" id="shellout">$ _</div>
+
+    <h3>Screen snapshot</h3>
+    <div class="row">
+      <button onclick="takeShot()">📸 Snapshot</button>
+      <label style="margin:0;display:flex;align-items:center;gap:4px">
+        <input type="checkbox" id="shotAuto"> auto
+      </label>
+      <select id="shotEvery" style="max-width:90px">
+        <option value="1000">1 s</option><option value="2000" selected>2 s</option>
+        <option value="3000">3 s</option><option value="5000">5 s</option>
+      </select>
+      <span id="shotEngine" class="pill">—</span>
+    </div>
+    <div id="shotWrap" style="margin-top:6px;max-height:420px;overflow:auto">
+      <img id="shot" style="max-width:100%;border-radius:6px;display:none" draggable="false" alt="">
+      <div id="shotHint" style="color:var(--mute);font-size:12px">Click Snapshot to capture (opens in a separate viewer if you want to avoid capturing this browser).</div>
+    </div>
   </div>
 
-  <!-- ─── Right: Clipboard + processes + keyboard grab info ───────────── -->
+  <!-- ─── Right: Clipboard + processes + Sudo terminal + keyboard grab ─── -->
   <div class="col">
+    <h3>Sudo terminal <span id="ptySt" class="pill">idle</span></h3>
+    <div class="row">
+      <button id="ptyStartBtn" onclick="ptyStart()">▶ New shell</button>
+      <button class="ghost" onclick="ptyClear()">Clear</button>
+      <button class="ghost" onclick="ptyKill()">× Kill</button>
+    </div>
+    <div id="ptyOut" class="shell" style="min-height:180px;max-height:320px">(click "New shell" to start)</div>
+    <div class="row">
+      <input type="text" id="ptyIn" placeholder='try: sudo pacman -Syu    (Enter=send, ↑/↓ for history)' disabled>
+      <button id="ptySendBtn" onclick="ptySend()" disabled>Send</button>
+    </div>
+    <div class="row" style="margin-top:4px" id="ptyConfirmRow" style="display:none">
+      <button class="ghost" onclick="ptyReply('y')">y ✓</button>
+      <button class="ghost" onclick="ptyReply('n')">n ✗</button>
+      <button class="ghost" onclick="ptyCtrlC()">Ctrl+C</button>
+      <button class="ghost" onclick="ptyCtrlD()">Ctrl+D</button>
+      <button class="ghost" onclick="ptyTab()">Tab</button>
+    </div>
+
     <h3>Keyboard grab</h3>
     <div style="font-size:12px;color:var(--mute)">
       Press <b>⌨ Capture keyboard</b> above and every key you press is forwarded to the remote PC.<br>
@@ -22708,6 +22747,129 @@ async function openShare(){
   if (d.url){ logMsg('share: '+d.url); window.open(d.url+'/v3/site','_blank'); }
   else { logMsg('share failed: '+(d.error&&d.error.message||JSON.stringify(d))); }
 }
+
+// ─── screen snapshot (manual or auto) ─────────────────────────────────────
+let shotTimer = null, shotInFlight = false;
+async function takeShot(){
+  if (shotInFlight) return;
+  shotInFlight = true;
+  try {
+    const {code, j} = await api('screenshot');
+    if (code !== 200){
+      logMsg('shot '+code+': '+(j.error&&j.error.message||'err'));
+      $('shotHint').textContent = (j.error&&j.error.message)||'screenshot failed';
+      return;
+    }
+    const img = $('shot');
+    img.onload = ()=>{ img.style.display='block'; $('shotHint').style.display='none'; };
+    img.src = j.url + '&t=' + Date.now();
+    $('shotEngine').textContent = j.engine||'?';
+  } catch(e){ logMsg('shot err '+e); }
+  finally { shotInFlight = false; }
+}
+$('shotAuto').addEventListener('change', ()=>{
+  if ($('shotAuto').checked){
+    const ms = +$('shotEvery').value || 2000;
+    shotTimer = setInterval(takeShot, ms);
+    logMsg('auto-snapshot every '+ms+'ms');
+  } else {
+    clearInterval(shotTimer); shotTimer = null;
+    logMsg('auto-snapshot off');
+  }
+});
+$('shotEvery').addEventListener('change', ()=>{
+  if (shotTimer){
+    clearInterval(shotTimer);
+    shotTimer = setInterval(takeShot, +$('shotEvery').value || 2000);
+  }
+});
+
+// ─── PTY terminal (sudo + confirmations) ──────────────────────────────────
+let ptySid = null, ptyPoll = null;
+const ptyHistory = []; let ptyHistIdx = 0;
+
+function ptyEsc(s){
+  // Minimal ANSI strip for readability
+  return s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+          .replace(/\x1b\]0;[^\x07]*\x07/g,'')
+          .replace(/\r(?!\n)/g,'');
+}
+function ptyAppend(t){
+  const el = $('ptyOut');
+  const stripped = ptyEsc(t);
+  if (stripped){
+    el.textContent += stripped;
+    el.scrollTop = el.scrollHeight;
+  }
+}
+async function ptyStart(){
+  if (ptySid){ logMsg('pty already running: '+ptySid); return; }
+  const {j, code} = await api('term_start', {cols:120, rows:30});
+  if (code !== 200){ logMsg('term_start failed: '+(j.error&&j.error.message)); return; }
+  ptySid = j.session;
+  $('ptyOut').textContent = '';
+  $('ptyIn').disabled = false; $('ptyIn').focus();
+  $('ptySendBtn').disabled = false;
+  $('ptySt').textContent = 'pid '+j.pid; $('ptySt').className = 'pill ok';
+  logMsg('pty started: '+ptySid+' (pid '+j.pid+')');
+  ptyPoll = setInterval(ptyRead, 400);
+  ptyRead();
+}
+async function ptyRead(){
+  if (!ptySid) return;
+  const {j, code} = await api('term_read', {session: ptySid});
+  if (code !== 200){ clearInterval(ptyPoll); ptyPoll=null; ptySid=null; return; }
+  if (j.data) ptyAppend(j.data);
+  // Show/hide confirm row based on heuristic
+  $('ptyConfirmRow').style.display = j.wants_confirm ? 'flex' : 'none';
+  if (j.closed){
+    logMsg('pty ended (exit='+(j.exit_status ?? '?')+')');
+    $('ptySt').textContent = 'closed'; $('ptySt').className = 'pill err';
+    clearInterval(ptyPoll); ptyPoll = null;
+    $('ptyIn').disabled = true; $('ptySendBtn').disabled = true;
+    ptySid = null;
+  }
+}
+async function ptySend(){
+  if (!ptySid) return;
+  const v = $('ptyIn').value;
+  if (v.trim()) { ptyHistory.push(v); ptyHistIdx = ptyHistory.length; }
+  await api('term_send', {session: ptySid, data: v + '\n'});
+  $('ptyIn').value = '';
+  setTimeout(ptyRead, 120);
+}
+async function ptyReply(s){
+  if (!ptySid) return;
+  await api('term_send', {session: ptySid, data: s + '\n'});
+  setTimeout(ptyRead, 120);
+}
+async function ptyCtrlC(){ if (ptySid) await api('term_send',{session:ptySid,data:'\x03'}); setTimeout(ptyRead,120); }
+async function ptyCtrlD(){ if (ptySid) await api('term_send',{session:ptySid,data:'\x04'}); setTimeout(ptyRead,120); }
+async function ptyTab(){   if (ptySid) await api('term_send',{session:ptySid,data:'\t'});   setTimeout(ptyRead,120); }
+async function ptyKill(){
+  if (!ptySid) return;
+  await api('term_stop', {session: ptySid});
+  $('ptySt').textContent='idle'; $('ptySt').className='pill';
+  $('ptyIn').disabled=true; $('ptySendBtn').disabled=true;
+  clearInterval(ptyPoll); ptyPoll=null; ptySid=null;
+  logMsg('pty killed');
+}
+function ptyClear(){ $('ptyOut').textContent=''; }
+$('ptyIn').addEventListener('keydown', ev=>{
+  if (ev.key === 'Enter' && !ev.shiftKey){ ev.preventDefault(); ptySend(); }
+  else if (ev.key === 'ArrowUp'){
+    ev.preventDefault();
+    if (ptyHistIdx > 0) ptyHistIdx--;
+    $('ptyIn').value = ptyHistory[ptyHistIdx] || '';
+  } else if (ev.key === 'ArrowDown'){
+    ev.preventDefault();
+    if (ptyHistIdx < ptyHistory.length - 1){
+      ptyHistIdx++;
+      $('ptyIn').value = ptyHistory[ptyHistIdx] || '';
+    } else { ptyHistIdx = ptyHistory.length; $('ptyIn').value = ''; }
+  } else if (ev.ctrlKey && ev.key === 'c'){ ev.preventDefault(); ptyCtrlC(); }
+  else if (ev.ctrlKey && ev.key === 'd'){ ev.preventDefault(); ptyCtrlD(); }
+});
 
 // ─── keyboard grab ────────────────────────────────────────────────────────
 let kbGrabbed = false;
@@ -23030,38 +23192,58 @@ def v4_post_rdp(h, hdrs, qs):
         scale = float(b.get("scale", 1.0) or 1.0)
         env = _rdp_env()
         last_err = ""
-        for bin in ("gnome-screenshot", "scrot", "grim", "screencapture", "import"):
+        # Pick the right capture tool per session. KDE Plasma Wayland ONLY
+        # works with spectacle (grim needs wlroots; KDE is KWin). Put spectacle
+        # first so KDE users get a real capture instead of a blank/failed
+        # grim call. screencapture is macOS; import is ImageMagick.
+        is_wayland = bool(env.get("WAYLAND_DISPLAY")) or env.get("XDG_SESSION_TYPE") == "wayland"
+        if is_wayland:
+            candidates = ("spectacle", "grim", "gnome-screenshot", "scrot",
+                          "screencapture", "import")
+        else:
+            candidates = ("scrot", "gnome-screenshot", "spectacle", "grim",
+                          "screencapture", "import")
+        for bin in candidates:
             if not shutil.which(bin): continue
             try:
                 if bin == "gnome-screenshot":
                     r = subprocess.run([bin, "-f", out_path],
                                        capture_output=True, text=True, timeout=10, env=env)
                 elif bin == "scrot":
-                    r = subprocess.run([bin, "-q", str(max(1, min(100, quality))), out_path],
+                    r = subprocess.run([bin, "-q", str(max(1, min(100, quality))),
+                                        "-o", out_path],
                                        capture_output=True, text=True, timeout=10, env=env)
                 elif bin == "grim":
                     cmd = [bin]
                     if scale and scale != 1.0: cmd += ["-s", f"{scale:.2f}"]
                     cmd += [out_path]
                     r = subprocess.run(cmd, capture_output=True, text=True, timeout=10, env=env)
+                elif bin == "spectacle":
+                    # -b background, -n no notify, -f fullscreen, -o path.
+                    # Works on KDE Plasma 5 & 6 (X11 + Wayland).
+                    r = subprocess.run([bin, "-b", "-n", "-f", "-o", out_path],
+                                       capture_output=True, text=True, timeout=10, env=env)
                 elif bin == "screencapture":
                     r = subprocess.run([bin, "-x", out_path],
                                        capture_output=True, text=True, timeout=10, env=env)
                 else:  # import (ImageMagick)
                     r = subprocess.run([bin, "-window", "root", out_path],
                                        capture_output=True, text=True, timeout=10, env=env)
-                if r.returncode == 0 and os.path.isfile(out_path):
+                if r.returncode == 0 and os.path.isfile(out_path) \
+                   and os.path.getsize(out_path) > 0:
                     engine = bin; break
-                last_err = (r.stderr or "")[:200]
+                last_err = (r.stderr or "")[:200] or f"{bin} returned {r.returncode}"
             except Exception as e:
                 last_err = str(e); continue
         if not engine:
-            return (500, _err("no_screenshot_tool",
-                              "install one of: gnome-screenshot, scrot, grim, "
-                              "screencapture, imagemagick", req_id,
+            hint = ("install spectacle (KDE) or grim (wlroots/Sway)" if is_wayland
+                    else "install scrot / gnome-screenshot / spectacle / imagemagick")
+            return (500, _err("no_screenshot_tool", hint, req_id,
                               last_stderr=last_err,
                               display=env.get("DISPLAY"),
-                              wayland=env.get("WAYLAND_DISPLAY")))
+                              wayland=env.get("WAYLAND_DISPLAY"),
+                              session_type=env.get("XDG_SESSION_TYPE"),
+                              candidates_tried=candidates))
         # Cache-bust using a frame counter (the client appends ?t= anyway)
         frame = int((time.time() - START_TIME) * 1000)
         return (200, _env(t0, request_id=req_id,
@@ -23237,13 +23419,68 @@ def v4_post_rdp(h, hdrs, qs):
 
     # ── screenshot-free desktop state actions ─────────────────────────────
     if action == "windows":
-        wmctrl = shutil.which("wmctrl")
-        out = []
-        if wmctrl:
-            r = subprocess.run([wmctrl, "-l", "-G", "-p"],
+        out = []; tool_used = None
+        session_type = env.get("XDG_SESSION_TYPE") or \
+                       ("wayland" if env.get("WAYLAND_DISPLAY") else "x11")
+
+        # Compositor-specific JSON interfaces first — these work where
+        # wmctrl/xdotool silently return nothing on Wayland.
+        if not out and shutil.which("hyprctl"):
+            try:
+                r = subprocess.run(["hyprctl", "-j", "clients"],
+                                   capture_output=True, text=True, timeout=3, env=env)
+                if r.returncode == 0:
+                    for c in json.loads(r.stdout or "[]"):
+                        at = c.get("at") or [0, 0]; sz = c.get("size") or [0, 0]
+                        out.append({"id": c.get("address",""),
+                                    "pid": c.get("pid"),
+                                    "x": at[0], "y": at[1],
+                                    "w": sz[0], "h": sz[1],
+                                    "workspace": (c.get("workspace") or {}).get("id"),
+                                    "title": c.get("title", ""),
+                                    "class": c.get("class","")})
+                    if out: tool_used = "hyprctl"
+            except Exception: pass
+
+        if not out and shutil.which("swaymsg"):
+            try:
+                r = subprocess.run(["swaymsg", "-t", "get_tree"],
+                                   capture_output=True, text=True, timeout=3, env=env)
+                if r.returncode == 0:
+                    def _walk(node, acc):
+                        if node.get("type") in ("con", "floating_con") and node.get("name"):
+                            rect = node.get("rect") or {}
+                            acc.append({"id": str(node.get("id")),
+                                        "pid": node.get("pid"),
+                                        "x": rect.get("x", 0), "y": rect.get("y", 0),
+                                        "w": rect.get("width", 0), "h": rect.get("height", 0),
+                                        "title": node.get("name",""),
+                                        "app_id": node.get("app_id","")})
+                        for k in ("nodes", "floating_nodes"):
+                            for c in node.get(k, []) or []: _walk(c, acc)
+                    _walk(json.loads(r.stdout or "{}"), out)
+                    if out: tool_used = "swaymsg"
+            except Exception: pass
+
+        # KDE Wayland: kdotool is xdotool-compatible for Wayland+KWin
+        if not out and shutil.which("kdotool"):
+            try:
+                r = subprocess.run(["kdotool", "search", "--name", ""],
+                                   capture_output=True, text=True, timeout=3, env=env)
+                for wid in (r.stdout or "").split():
+                    try:
+                        n = subprocess.run(["kdotool", "getwindowname", wid],
+                                           capture_output=True, text=True, timeout=1, env=env)
+                        out.append({"id": wid, "title": (n.stdout or "").strip()})
+                    except Exception: pass
+                if out: tool_used = "kdotool"
+            except Exception: pass
+
+        # Classic X11 (also works for XWayland windows on KDE Wayland)
+        if not out and shutil.which("wmctrl"):
+            r = subprocess.run(["wmctrl", "-l", "-G", "-p"],
                                capture_output=True, text=True, timeout=3, env=env)
             for line in (r.stdout or "").splitlines():
-                # wmctrl format:  WID  DESK  PID  X  Y  W  H  HOST  TITLE
                 parts = line.split(None, 8)
                 if len(parts) >= 9:
                     out.append({"id": parts[0], "desktop": int(parts[1]),
@@ -23251,19 +23488,49 @@ def v4_post_rdp(h, hdrs, qs):
                                 "x": int(parts[3]), "y": int(parts[4]),
                                 "w": int(parts[5]), "h": int(parts[6]),
                                 "host": parts[7], "title": parts[8]})
-        else:
-            # Fall back to xdotool — less detail, just IDs + names
-            r = subprocess.run([ctl, "search", "--onlyvisible", "--name", ""],
+            if out: tool_used = "wmctrl"
+
+        if not out and shutil.which("xdotool"):
+            r = subprocess.run(["xdotool", "search", "--onlyvisible", "--name", ""],
                                capture_output=True, text=True, timeout=3, env=env)
             for wid in (r.stdout or "").split():
                 try:
-                    n = subprocess.run([ctl, "getwindowname", wid],
+                    n = subprocess.run(["xdotool", "getwindowname", wid],
                                        capture_output=True, text=True, timeout=1, env=env)
                     out.append({"id": wid, "title": (n.stdout or "").strip()})
                 except Exception: pass
+            if out: tool_used = "xdotool"
+
+        if not out:
+            # Final fallback: enumerate GUI processes so the panel isn't empty.
+            # (This gives NO window IDs you can activate, but at least something.)
+            try:
+                r = subprocess.run(["ps", "-eo", "pid,comm",
+                                    "--sort=-pcpu"],
+                                   capture_output=True, text=True, timeout=2, env=env)
+                gui_names = {"firefox","chromium","code","konsole","dolphin",
+                             "kate","spectacle","systemsettings","plasmashell",
+                             "kwin_wayland","kwin_x11","gedit","gnome-terminal"}
+                for line in (r.stdout or "").splitlines()[1:]:
+                    parts = line.split(None, 1)
+                    if len(parts) != 2: continue
+                    pid, comm = parts
+                    if comm.strip() in gui_names:
+                        out.append({"id": "pid-"+pid, "pid": int(pid),
+                                    "title": comm.strip(),
+                                    "note": "process fallback (no window tool found)"})
+                if out: tool_used = "ps-fallback"
+            except Exception: pass
+
+        note = None
+        if not out and session_type == "wayland":
+            note = ("No window tool worked. On KDE Plasma Wayland, install "
+                    "kdotool (AUR: kdotool-git) or enable X11 session. "
+                    "XWayland apps also show up through wmctrl/xdotool.")
         return (200, _env(t0, request_id=req_id,
                           action="windows", windows=out, count=len(out),
-                          tool=("wmctrl" if wmctrl else "xdotool")))
+                          tool=tool_used, session_type=session_type,
+                          note=note))
 
     if action == "active":
         wid = None; name = ""; geom = None; pid = None
@@ -23532,12 +23799,168 @@ def v4_post_rdp(h, hdrs, qs):
         return (200, _env(t0, request_id=req_id, action="window_minimize",
                           window_id=wid, ok=r.returncode == 0))
 
+    # ─── PTY-backed terminal (sudo with confirmations) ──────────────────────
+    # Sessions live in V4_PTY. Each spawns a real bash (or given cmd) inside
+    # a pseudo-TTY so sudo, apt/pacman, pacman -Syu etc. prompt normally.
+    if action == "term_start":
+        cwd = b.get("cwd") or os.path.expanduser("~")
+        shell = b.get("shell") or os.environ.get("SHELL") or "/bin/bash"
+        cols = int(b.get("cols", 120)); rows = int(b.get("rows", 32))
+        # Start with a login-ish shell so user's aliases/env load
+        sid = "pty_" + secrets.token_hex(6)
+        try:
+            pid, fd = pty.fork()
+        except Exception as e:
+            return (500, _err("pty_fork_failed", str(e), req_id))
+        if pid == 0:
+            # Child
+            try: os.chdir(cwd)
+            except Exception: pass
+            child_env = dict(os.environ)
+            child_env["TERM"] = "xterm-256color"
+            child_env["PS1"] = r"\u@\h:\w\$ "
+            os.execvpe(shell, [shell, "-i"], child_env)
+            os._exit(1)
+        # Parent
+        # non-blocking reads
+        flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+        fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+        # Set window size
+        try:
+            fcntl.ioctl(fd, termios.TIOCSWINSZ,
+                        struct.pack("HHHH", rows, cols, 0, 0))
+        except Exception: pass
+        V4_PTY[sid] = {"fd": fd, "pid": pid, "buffer": b"",
+                       "created": time.time(), "cwd": cwd, "shell": shell,
+                       "cols": cols, "rows": rows, "closed": False}
+        return (200, _env(t0, request_id=req_id,
+                          action="term_start", session=sid, pid=pid,
+                          cols=cols, rows=rows, shell=shell, cwd=cwd))
+
+    if action == "term_send":
+        sid = b.get("session", "")
+        data = b.get("data", "")
+        if not sid or sid not in V4_PTY:
+            return (404, _err("no_session", "unknown pty session", req_id))
+        s = V4_PTY[sid]
+        if s["closed"]:
+            return (410, _err("session_closed", "session already closed", req_id))
+        try:
+            if isinstance(data, str): data = data.encode()
+            os.write(s["fd"], data)
+        except BrokenPipeError:
+            s["closed"] = True
+            return (410, _err("pty_gone", "pty closed", req_id))
+        except Exception as e:
+            return (500, _err("write_failed", str(e), req_id))
+        return (200, _env(t0, request_id=req_id, action="term_send",
+                          session=sid, bytes=len(data)))
+
+    if action == "term_read":
+        sid = b.get("session", "")
+        if not sid or sid not in V4_PTY:
+            return (404, _err("no_session", "unknown pty session", req_id))
+        s = V4_PTY[sid]
+        # Drain up to 64 KB of pending output
+        chunks = []; total = 0
+        while total < 65536:
+            try:
+                part = os.read(s["fd"], 8192)
+            except (BlockingIOError, OSError) as e:
+                if getattr(e, "errno", None) == errno.EIO:
+                    s["closed"] = True
+                break
+            if not part: break
+            chunks.append(part); total += len(part)
+        data = b"".join(chunks)
+        # Check whether child is still alive
+        try:
+            done_pid, status = os.waitpid(s["pid"], os.WNOHANG)
+            if done_pid != 0:
+                s["closed"] = True
+                s["exit_status"] = status
+        except ChildProcessError:
+            s["closed"] = True
+        text = data.decode("utf-8", errors="replace")
+        # Heuristic: does the tail look like a prompt awaiting input?
+        tail = text[-300:]
+        wants_confirm = bool(re.search(
+            r"\[Y/n\]|\[y/N\]|\(y/n\)|\[yes/no\]|\? *$|"
+            r":\s*$|password.*:|\[sudo\]",
+            tail, re.IGNORECASE))
+        return (200, _env(t0, request_id=req_id, action="term_read",
+                          session=sid, data=text, bytes=len(data),
+                          closed=s["closed"], wants_confirm=wants_confirm,
+                          exit_status=s.get("exit_status")))
+
+    if action == "term_resize":
+        sid = b.get("session", "")
+        cols = int(b.get("cols", 120)); rows = int(b.get("rows", 32))
+        if sid not in V4_PTY:
+            return (404, _err("no_session", "unknown pty session", req_id))
+        try:
+            fcntl.ioctl(V4_PTY[sid]["fd"], termios.TIOCSWINSZ,
+                        struct.pack("HHHH", rows, cols, 0, 0))
+            V4_PTY[sid]["cols"] = cols; V4_PTY[sid]["rows"] = rows
+        except Exception as e:
+            return (500, _err("resize_failed", str(e), req_id))
+        return (200, _env(t0, request_id=req_id, action="term_resize",
+                          session=sid, cols=cols, rows=rows))
+
+    if action == "term_stop":
+        sid = b.get("session", "")
+        if sid not in V4_PTY:
+            return (404, _err("no_session", "unknown pty session", req_id))
+        s = V4_PTY[sid]
+        try: os.kill(s["pid"], signal.SIGTERM)
+        except Exception: pass
+        try: os.close(s["fd"])
+        except Exception: pass
+        V4_PTY.pop(sid, None)
+        return (200, _env(t0, request_id=req_id, action="term_stop",
+                          session=sid, ok=True))
+
+    if action == "term_list":
+        rows = []
+        for sid, s in V4_PTY.items():
+            rows.append({"session": sid, "pid": s["pid"],
+                         "cwd": s["cwd"], "shell": s["shell"],
+                         "cols": s["cols"], "rows": s["rows"],
+                         "created": int(s["created"]),
+                         "closed": s["closed"]})
+        return (200, _env(t0, request_id=req_id, action="term_list",
+                          sessions=rows, count=len(rows)))
+
+    # Convenience: "sudo_run" = spawn a PTY, send `sudo -S <cmd>\n`, stream.
+    # (The UI uses term_* directly, but this wraps the common one-shot case.)
+    if action == "sudo_run":
+        cmd = b.get("cmd", "")
+        pw = b.get("sudo_password", "")
+        if not cmd: return (400, _err("missing_input", "missing cmd", req_id))
+        if not pw:  return (400, _err("missing_input",
+                                      "missing sudo_password", req_id))
+        try:
+            inp = f"{pw}\n".encode()
+            r = subprocess.run(["sudo", "-S", "-p", "", "bash", "-lc", cmd],
+                               input=inp, capture_output=True, timeout=120,
+                               env=env)
+            return (200, _env(t0, request_id=req_id, action="sudo_run",
+                              stdout=r.stdout.decode("utf-8", errors="replace"),
+                              stderr=r.stderr.decode("utf-8", errors="replace"),
+                              rc=r.returncode, ok=r.returncode == 0))
+        except subprocess.TimeoutExpired:
+            return (504, _err("timeout", "sudo command timed out (>120s)", req_id))
+        except Exception as e:
+            return (500, _err("sudo_failed", str(e), req_id))
+
     return (400, _err("unknown_action",
                       "expected action: info|screenshot|type|key|keys_sequence|"
                       "click|mousedown|mouseup|mousemove|scroll|"
                       "windows|active|cursor|activate|clipboard_get|clipboard_set|"
-                      "processes|volume|notify|launch|lock|workspace|"
-                      "window_close|window_minimize",
+                      "processes|volume|notify|launch|lock|krunner|workspace|"
+                      "window_close|window_minimize|"
+                      "term_start|term_send|term_read|term_resize|term_stop|term_list|"
+                      "sudo_run",
                       req_id))
 
 
