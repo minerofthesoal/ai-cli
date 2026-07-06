@@ -1,1 +1,1 @@
-CONTENT_TOO_LARGE
+# File too large - will be handled separately
