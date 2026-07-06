@@ -12,6 +12,7 @@ curl -fsSL https://raw.githubusercontent.com/minerofthesoal/ai-cli/main/installe
 
 # Then:
 ai install-deps        # auto-detects CUDA / Metal / CPU
+ai setup               # interactive first-time setup wizard (v3.3)
 ai recommended         # browse 195 curated models
 ai ask "Hello!"
 ```
@@ -29,6 +30,41 @@ ai ask "Hello!"
 | **C++ (compile)** | `g++ -std=c++17 -o install installers/install.cpp && ./install` |
 | **Manual** | `chmod +x main.sh && sudo cp main.sh /usr/local/bin/ai` |
 
+## What's New in v3.3
+
+### 15+ New Features
+
+| Feature | Command | Description |
+|---------|---------|-------------|
+| **Setup Wizard** | `ai setup` | Interactive first-time configuration |
+| **Shell Completions** | `ai completion bash` | Generate bash/zsh/fish completions |
+| **LM Studio Integration** | `ai import-models` | Auto-detect and use LM Studio models folder |
+| **Ollama Support** | `ai use ollama://llama3` | Use Ollama-hosted models |
+| **Quick Model Switch** | `ai use <model>` | Fast model switching with aliases |
+| **Model Favorites** | `ai model fav <name>` | Bookmark frequently used models |
+| **Model Tags** | `ai model tags` | Organize models with custom tags |
+| **Model Info** | `ai model info` | Detailed model metadata display |
+| **Config Profiles** | `ai profile save/load` | Save and switch config presets |
+| **Health Check** | `ai health` | Full system diagnostics |
+| **Quant Recommendations** | `ai recommend-quant` | VRAM-aware quantization advice |
+| **Chat Export** | `ai export-chat md` | Export conversations to markdown |
+| **Model Import** | `ai import-models` | Import from LM Studio, Ollama, GPT4All |
+| **Improved Help** | `ai help --search <term>` | Searchable help with categories |
+
+### Improved Help Menu (v3.3)
+
+```bash
+ai help                    # Full command list with categories
+ai help --search model     # Search commands by keyword
+ai -h <command>            # Detailed help for any command
+```
+
+The new help menu features:
+- **Color-coded sections** — Chat, Models, Media, Training, Settings
+- **Search functionality** — Find commands by keyword
+- **Pro tips section** — Common usage patterns
+- **External integration status** — LM Studio, Ollama detection
+
 ## Features
 
 ### Local AI
@@ -36,6 +72,7 @@ ai ask "Hello!"
 - **195 curated models** with recommendations by hardware tier
 - **CPU auto-detection**: AVX-512, AVX2, NEON, SVE
 - **GPU support**: CUDA (NVIDIA), Metal (Apple Silicon), ROCm (AMD)
+- **Multi-model backends**: LM Studio, Ollama, GPT4All integration
 
 ### Cloud APIs
 - OpenAI (GPT-4o, o1, o3)
@@ -56,6 +93,14 @@ ai ask "Hello!"
 - **GUI+ v4** — tkinter 9-tab interface (Chat · Models · Agent · API · Write · RAG · Canvas · Tools · Status)
 - **HTTP API v3.2** — 44 endpoints, 12-tab web dashboard, OpenAI-compatible
 
+### Model Management (v3.3)
+- **Quick switch**: `ai use <model>` — instant model switching
+- **Favorites**: `ai model fav` — bookmark frequently used models
+- **Tags**: `ai model tags` — categorize and organize models
+- **Profiles**: `ai profile save/load` — config presets for different tasks
+- **Import**: `ai import-models` — import from LM Studio, Ollama, GPT4All
+- **Info**: `ai model info` — detailed model metadata and system status
+
 ### Extras
 - Batch processing & watch mode
 - Dataset generation
@@ -68,6 +113,8 @@ ai ask "Hello!"
 - Public sharing via Cloudflare/ngrok tunnel (`ai share`)
 - Autonomous agent loop (`ai agent "goal" --steps N`)
 - AI diff reviewer (`ai diff-review staged`)
+- Shell completions (`ai completion bash|zsh|fish`)
+- Health diagnostics (`ai health`)
 
 ## Usage Examples
 
@@ -81,7 +128,12 @@ ai ask -m claude "Review this code" < file.py
 # Models
 ai recommended                    # browse 195 models
 ai recommended download 1         # download first model
-ai recommended use 1              # activate it
+ai use 1                          # activate model #1 (v3.3)
+ai use llama3.3                   # quick switch by name (v3.3)
+ai use ollama://llama3           # use Ollama model (v3.3)
+ai model fav llama3.3             # add to favorites (v3.3)
+ai model info                     # show model details (v3.3)
+ai import-models                  # import external models (v3.3)
 
 # Canvas workspace
 ai canvas new myproject python
@@ -106,6 +158,24 @@ ai -apip SECRET                   # set Terminal-tab password (<=8 chars)
 #            /v3/web /v3/benchmark /v3/agent /v3/diff/review
 #            /v3/voice/tts /v3/share /v3/rag/* /v3/files/* /v3/run
 curl http://localhost:8080/v3/endpoints | jq
+
+# v3.3 new commands
+ai setup                          # interactive first-time wizard
+ai completion bash                # generate shell completions
+ai completion bash >> ~/.bashrc   # install completions
+ai use qwen2.5                    # quick model switch
+ai use ollama://llama3           # use Ollama model
+ai model fav qwen2.5              # add to favorites
+ai model tags                     # list tagged models
+ai model tag qwen2.5 coding       # tag a model
+ai profile save coding            # save config profile
+ai profile load coding            # load config profile
+ai health                         # full system diagnostics
+ai recommend-quant                # VRAM-aware quantization advice
+ai export-chat md > chat.md      # export conversation to markdown
+ai import-models                  # auto-detect LM Studio / Ollama
+ai import-models --lmstudio ~/.lmstudio/models
+ai import-models --ollama --link
 
 # v3.2 new commands
 ai voice tts "hello world"        # speak via piper/espeak/say
@@ -133,7 +203,9 @@ ai -Su                            # self-update from GitHub
 
 ```
 ai-cli/
-├── main.sh                    # Core CLI (~20k lines of Bash)
+├── main.sh                    # Core CLI (~25k lines of Bash)
+├── patches/
+│   └── v3.3-additions.sh      # v3.3 feature additions
 ├── installers/
 │   ├── install.sh             # Universal POSIX sh installer
 │   ├── install-arch.sh        # Arch Linux / pacman
@@ -174,7 +246,7 @@ The project uses two GitHub Actions workflows:
 
 ```bash
 # To create a release:
-git tag v2.8.5.6
+git tag v3.3.0
 git push origin main --tags
 # GitHub Actions handles the rest
 ```
